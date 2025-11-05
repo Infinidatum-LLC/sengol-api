@@ -199,6 +199,14 @@ async function start() {
   })
 }
 
+// For Vercel serverless deployment
+export default async function handler(req: any, res: any) {
+  const fastify = await build()
+  await fastify.ready()
+  fastify.server.emit('request', req, res)
+}
+
+// For local development and traditional deployments
 if (require.main === module) {
   start()
 }
