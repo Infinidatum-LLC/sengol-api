@@ -57,7 +57,7 @@ export async function generateQuestionsController(
       selectedDomains,
       jurisdictions,
       industry,
-      selectedTech: [...selectedTech, ...customTech]
+      techStack: [...(selectedTech || []), ...(customTech || [])]
     })
 
     return reply.send({
@@ -65,7 +65,9 @@ export async function generateQuestionsController(
       data: {
         riskQuestions: result.riskQuestions,
         complianceQuestions: result.complianceQuestions,
-        metadata: result.metadata
+        scoringFormula: result.scoringFormula,
+        incidentSummary: result.incidentSummary,
+        generationMetadata: result.generationMetadata
       }
     })
   } catch (error) {
@@ -77,15 +79,20 @@ export async function generateQuestionsController(
   }
 }
 
+interface SaveQuestionsBody {
+  riskQuestions: any[]
+  complianceQuestions: any[]
+}
+
 export async function saveQuestionsController(
   request: FastifyRequest<{
     Params: GenerateQuestionsParams
-    Body: any
+    Body: SaveQuestionsBody
   }>,
   reply: FastifyReply
 ) {
   const { id } = request.params
-  const { riskQuestions, complianceQuestions } = request.body
+  const { riskQuestions = [], complianceQuestions = [] } = request.body
 
   try {
     const assessment = await prisma.riskAssessment.findUnique({

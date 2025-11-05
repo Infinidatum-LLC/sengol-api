@@ -1,26 +1,30 @@
 /**
- * d-vecDB Embeddings Service
+ * d-vecDB Embeddings Service (RESILIENT VERSION)
  *
  * Integrates d-vecDB vector database with OpenAI embeddings for incident RAG system.
  *
- * This replaces the Prisma + pgvector implementation which had stability issues.
+ * Resilience Features:
+ * - Circuit breaker pattern for fault tolerance
+ * - Automatic retry with exponential backoff
+ * - Request timeout handling
+ * - Response caching for performance
+ * - Health monitoring
+ * - Graceful degradation
  *
- * Features:
+ * Original Features:
  * - OpenAI text-embedding-3-small (1536 dimensions)
  * - d-vecDB for vector storage and search
  * - Metadata filtering for industry, severity, incident type
  * - Batch operations for efficient embedding generation
- *
- * Setup:
- * 1. Start d-vecDB server: d-vecdb-server --port 8080 start
- * 2. Set environment variables: DVECDB_HOST, DVECDB_PORT, OPENAI_API_KEY
- * 3. Create collection: await initializeCollection()
- * 4. Generate embeddings: await upsertEmbedding(...)
- * 5. Search: await searchSimilar(...)
  */
 
 import { VectorDBClient, DistanceMetric } from 'd-vecdb'
 import OpenAI from 'openai'
+import { resilientDvecdbClient } from '../lib/dvecdb-resilient'
+import { vectorSearchCache, llmResponseCache, generateCacheKey } from '../lib/cache'
+import { withRetry, withTimeout } from '../lib/retry'
+import { LLMError, VectorDBError } from '../lib/errors'
+import { config } from '../config/env'
 
 // Lazy initialization to ensure environment variables are loaded
 // (module-level init runs before Next.js loads .env.local)
@@ -163,26 +167,60 @@ export async function initializeCollection(): Promise<void> {
 }
 
 /**
- * Generate OpenAI embedding for text
+ * Generate OpenAI embedding for text with caching and retry logic
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
+  // Check cache first
+  const cacheKey = generateCacheKey('embedding', text)
+  const cached = llmResponseCache.get(cacheKey)
+  if (cached) {
+    console.log('[Embedding] Cache hit')
+    return cached
+  }
+
   try {
-    const response = await getOpenAIClient().embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: text,
-      encoding_format: 'float',
-    })
+    const embedding = await withRetry(
+      async () => {
+        return await withTimeout(
+          (async () => {
+            const response = await getOpenAIClient().embeddings.create({
+              model: EMBEDDING_MODEL,
+              input: text,
+              encoding_format: 'float',
+            })
 
-    if (!response.data || response.data.length === 0) {
-      throw new Error('No embedding data returned from OpenAI')
-    }
+            if (!response.data || response.data.length === 0) {
+              throw new LLMError('No embedding data returned from OpenAI')
+            }
 
-    return response.data[0].embedding
+            return response.data[0].embedding
+          })(),
+          config.openaiTimeout,
+          'openai-embedding'
+        )
+      },
+      {
+        maxRetries: config.openaiMaxRetries,
+        initialDelay: 1000,
+        maxDelay: 10000,
+        onRetry: (error, attempt) => {
+          console.warn(`[Embedding] Retry attempt ${attempt}/${config.openaiMaxRetries}`, {
+            error: error.message,
+          })
+        },
+      }
+    )
+
+    // Cache the result
+    llmResponseCache.set(cacheKey, embedding)
+
+    return embedding
   } catch (error) {
     console.error('Failed to generate embedding:', error)
-    throw new Error(
+    throw new LLMError(
       'Embedding generation failed: ' +
-        (error instanceof Error ? error.message : 'Unknown error')
+        (error instanceof Error ? error.message : 'Unknown error'),
+      { text: text.substring(0, 100) }
     )
   }
 }
@@ -332,7 +370,7 @@ export async function searchSimilar(
 }
 
 /**
- * Search by text query (generates embedding first, then searches)
+ * Search by text query using resilient client with caching
  *
  * @param queryText - Text to search for
  * @param filter - Metadata filters
@@ -344,8 +382,77 @@ export async function searchByText(
   filter?: Partial<IncidentMetadata>,
   topK: number = 10
 ): Promise<SearchResult[]> {
-  const queryEmbedding = await generateEmbedding(queryText)
-  return searchSimilar(queryEmbedding, filter, topK)
+  // Check cache first
+  const cacheKey = generateCacheKey('search', queryText, filter, topK)
+  const cached = vectorSearchCache.get(cacheKey)
+  if (cached) {
+    console.log('[d-vecDB] Search cache hit')
+    return cached
+  }
+
+  try {
+    // Generate embedding with retry logic
+    const queryEmbedding = await generateEmbedding(queryText)
+
+    // Use resilient client for search
+    const rawResults = await resilientDvecdbClient.searchByVector(
+      queryEmbedding,
+      filter as any,
+      topK,
+      {
+        timeout: config.dvecdbTimeout,
+        maxRetries: config.dvecdbMaxRetries,
+      }
+    )
+
+    // Map results to our format
+    const results: SearchResult[] = rawResults.map((result: any) => {
+      const rawMetadata = result.metadata as any
+
+      // Map d-vecDB metadata to our expected IncidentMetadata structure
+      const mappedMetadata: IncidentMetadata = {
+        incidentId: rawMetadata.source_id || rawMetadata.original_id || result.id,
+        incidentType: rawMetadata.source || rawMetadata.incidentType || 'unknown',
+        organization: rawMetadata.org || rawMetadata.organization || '',
+        industry: rawMetadata.industry || '',
+        severity: rawMetadata.severity || 'medium',
+        incidentDate: rawMetadata.date || rawMetadata.incidentDate || '',
+        embeddingText: rawMetadata.content_preview || rawMetadata.embeddingText || rawMetadata.title || '',
+
+        // Financial impact
+        estimatedCost: rawMetadata.estimatedCost || rawMetadata.cost,
+        downtimeHours: rawMetadata.downtimeHours || rawMetadata.downtime,
+        recordsAffected: rawMetadata.recordsAffected || rawMetadata.records,
+
+        // Security controls
+        hadMfa: rawMetadata.hadMfa,
+        hadBackups: rawMetadata.hadBackups,
+        hadIrPlan: rawMetadata.hadIrPlan,
+
+        // Additional context
+        attackType: rawMetadata.attackType || rawMetadata.attack_type,
+        attackVector: rawMetadata.attackVector || rawMetadata.attack_vector,
+        failureType: rawMetadata.failureType || rawMetadata.failure_type,
+        rootCause: rawMetadata.rootCause || rawMetadata.root_cause,
+        tags: rawMetadata.tags,
+      }
+
+      return {
+        id: result.id,
+        distance: result.distance,
+        score: 1 - result.distance / 2, // Cosine distance is 0-2, convert to similarity 0-1
+        metadata: mappedMetadata,
+      }
+    })
+
+    // Cache the results
+    vectorSearchCache.set(cacheKey, results)
+
+    return results
+  } catch (error) {
+    console.error('[d-vecDB] Search by text failed:', error)
+    throw error
+  }
 }
 
 /**
