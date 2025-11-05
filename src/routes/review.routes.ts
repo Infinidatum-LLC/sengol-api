@@ -1,8 +1,7 @@
 import { FastifyInstance } from 'fastify'
+import { generateQuestionsController, saveQuestionsController } from '../controllers/review.controller'
 
 export async function reviewRoutes(fastify: FastifyInstance) {
-  fastify.post('/api/review/:id/generate-questions', async (request, reply) => {
-    // TODO: Implement question generation
-    return reply.send({ message: 'Generate questions - to be implemented' })
-  })
+  fastify.post('/api/review/:id/generate-questions', generateQuestionsController)
+  fastify.put('/api/review/:id/save-questions', saveQuestionsController)
 }
