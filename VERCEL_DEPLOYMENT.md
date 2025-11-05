@@ -24,7 +24,7 @@ PostgreSQL + d-vecDB
 
 1. Go to [vercel.com](https://vercel.com)
 2. Click **"Add New"** → **"Project"**
-3. Import **rdmurugan/sengol-api** from GitHub
+3. Import **Infinidatum-LLC/sengol-api** from GitHub
 4. Vercel will auto-detect the configuration from `vercel.json`
 
 ### 2. Configure Environment Variables
