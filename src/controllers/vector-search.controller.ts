@@ -1,0 +1,372 @@
+/**
+ * Vector Search Controller
+ *
+ * Implements semantic vector search across AI knowledge base with full resiliency:
+ * - Circuit breaker for all external services
+ * - Retry logic with exponential backoff
+ * - Request timeout handling
+ * - Response caching
+ * - Performance tracking
+ * - Comprehensive error handling
+ *
+ * Based on: docs/VECTOR_SEARCH_API_SPECIFICATION.md
+ */
+
+import { FastifyRequest, FastifyReply } from 'fastify'
+import { resilientOpenAIClient } from '../lib/openai-resilient'
+import { resilientDvecdbClient } from '../lib/dvecdb-resilient'
+import { resilientPrisma } from '../lib/prisma-resilient'
+import { ValidationError, VectorDBError, LLMError } from '../lib/errors'
+import { vectorSearchCache, generateCacheKey } from '../lib/cache'
+
+// Get raw Prisma client for operations
+const prisma = resilientPrisma.getRawClient()
+
+// =============================================================================
+// Types
+// =============================================================================
+
+interface VectorSearchBody {
+  query: string
+  limit?: number
+  type?: 'research_paper' | 'ai_news' | 'regulation' | null
+}
+
+interface SearchResult {
+  distance: number
+  score: number
+  type: string
+  table: string
+  data: any
+}
+
+interface VectorSearchResponse {
+  query: string
+  limit: number
+  type: string
+  results: SearchResult[]
+  total: number
+  metadata: {
+    search_time_ms: number
+    embedding_time_ms: number
+    dvecdb_time_ms: number
+    postgres_time_ms: number
+  }
+}
+
+// =============================================================================
+// Main Endpoint: POST /api/v1/vector-search
+// =============================================================================
+
+export async function vectorSearchController(
+  request: FastifyRequest<{ Body: VectorSearchBody }>,
+  reply: FastifyReply
+) {
+  const startTime = Date.now()
+  let embeddingTime = 0
+  let dvecdbTime = 0
+  let postgresTime = 0
+
+  try {
+    const { query, limit = 10, type = null } = request.body
+
+    request.log.info({ query, limit, type }, 'Vector search request')
+
+    // Check cache first
+    const cacheKey = generateCacheKey('vector-search', query, limit, type)
+    const cached = vectorSearchCache.get(cacheKey)
+
+    if (cached) {
+      request.log.info('Vector search cache HIT')
+      return reply.send({
+        ...cached,
+        metadata: {
+          ...cached.metadata,
+          search_time_ms: Date.now() - startTime,
+          cached: true,
+        },
+      })
+    }
+
+    request.log.info('Vector search cache MISS')
+
+    // Step 1: Generate embedding with OpenAI
+    const embeddingStart = Date.now()
+    let queryVector: number[]
+
+    try {
+      queryVector = await resilientOpenAIClient.generateEmbedding(query, {
+        model: 'text-embedding-3-small',
+        useCache: true,
+      })
+      embeddingTime = Date.now() - embeddingStart
+      request.log.info({ embeddingTime }, 'Embedding generated')
+    } catch (error) {
+      embeddingTime = Date.now() - embeddingStart
+      request.log.error({ err: error, embeddingTime }, 'Embedding generation failed')
+      throw new LLMError(
+        `Failed to generate embedding: ${(error as Error).message}`,
+        {
+          query: query.substring(0, 100),
+          embeddingTime,
+        }
+      )
+    }
+
+    // Step 2: Search d-VecDB for similar vectors
+    const dvecdbStart = Date.now()
+    let dvecdbResults: any[]
+
+    try {
+      dvecdbResults = await resilientDvecdbClient.searchByVector(
+        queryVector,
+        type ? { type } : undefined, // Filter by type if specified
+        Math.min(limit, 50),
+        {
+          timeout: 30000,
+          maxRetries: 3,
+        }
+      )
+      dvecdbTime = Date.now() - dvecdbStart
+      request.log.info({ dvecdbTime, resultCount: dvecdbResults.length }, 'd-VecDB search complete')
+    } catch (error) {
+      dvecdbTime = Date.now() - dvecdbStart
+      request.log.error({ err: error, dvecdbTime }, 'd-VecDB search failed')
+      throw new VectorDBError(
+        `Vector database search failed: ${(error as Error).message}`,
+        {
+          query: query.substring(0, 100),
+          limit,
+          dvecdbTime,
+        }
+      )
+    }
+
+    // Step 3: Fetch metadata from PostgreSQL for each result
+    const postgresStart = Date.now()
+    const results: SearchResult[] = []
+
+    try {
+      for (const result of dvecdbResults) {
+        if (!result.metadata?.pg_id || !result.metadata?.pg_table) {
+          request.log.warn(
+            { result },
+            'Skipping d-VecDB result: missing metadata'
+          )
+          continue
+        }
+
+        const { pg_id, pg_table, type: resultType } = result.metadata
+
+        // Filter by type if specified (secondary filter after d-VecDB)
+        if (type && resultType !== type) {
+          continue
+        }
+
+        // Fetch record from appropriate table with retry
+        let record: any = null
+
+        try {
+          record = await resilientPrisma.executeQuery(
+            async () => {
+              // Note: research_papers and ai_news tables not yet in schema
+              // Currently only supporting scraped_financial_data
+              // TODO: Add research_papers and ai_news models to schema
+              if (pg_table === 'scraped_financial_data') {
+                return await prisma.scraped_financial_data.findUnique({
+                  where: { id: pg_id },
+                  select: {
+                    id: true,
+                    source: true,
+                    source_url: true,
+                    metadata: true,
+                    created_at: true,
+                    scraped_at: true,
+                    // Exclude raw_content (too large)
+                  },
+                })
+              } else {
+                // Skip unsupported tables for now
+                request.log.warn(
+                  { pg_table, pg_id },
+                  'Skipping unsupported table (not yet in Prisma schema)'
+                )
+                return null
+              }
+            },
+            {
+              operationName: `fetchMetadata:${pg_table}`,
+              maxRetries: 2,
+              timeout: 5000,
+            }
+          )
+        } catch (error) {
+          request.log.error(
+            { err: error, pg_id, pg_table },
+            'Failed to fetch metadata for result'
+          )
+          // Continue with other results instead of failing entire search
+          continue
+        }
+
+        if (record) {
+          // Calculate similarity score from distance
+          // d-VecDB returns cosine distance (0 = identical, 2 = opposite)
+          // Convert to similarity score: score = 1 - (distance / 2)
+          // This gives us a 0-1 scale where 1 = identical, 0 = opposite
+          const distance = result.distance || 0
+          const score = Math.max(0, Math.min(1, 1 - distance / 2))
+
+          results.push({
+            distance,
+            score,
+            type: resultType,
+            table: pg_table,
+            data: record,
+          })
+        }
+      }
+
+      postgresTime = Date.now() - postgresStart
+      request.log.info({ postgresTime, resultsEnriched: results.length }, 'Metadata enrichment complete')
+    } catch (error) {
+      postgresTime = Date.now() - postgresStart
+      request.log.error({ err: error, postgresTime }, 'Metadata enrichment failed')
+      throw error
+    }
+
+    // Step 4: Prepare response
+    const totalTime = Date.now() - startTime
+
+    const response: VectorSearchResponse = {
+      query,
+      limit,
+      type: type || 'all',
+      results,
+      total: results.length,
+      metadata: {
+        search_time_ms: totalTime,
+        embedding_time_ms: embeddingTime,
+        dvecdb_time_ms: dvecdbTime,
+        postgres_time_ms: postgresTime,
+      },
+    }
+
+    // Cache the results (24 hour TTL for vector searches)
+    vectorSearchCache.set(cacheKey, response, 24 * 60 * 60 * 1000)
+
+    request.log.info(
+      {
+        totalTime,
+        embeddingTime,
+        dvecdbTime,
+        postgresTime,
+        results: results.length,
+      },
+      'Vector search completed'
+    )
+
+    return reply.send(response)
+  } catch (error) {
+    const totalTime = Date.now() - startTime
+
+    request.log.error(
+      {
+        err: error,
+        totalTime,
+        embeddingTime,
+        dvecdbTime,
+        postgresTime,
+      },
+      'Vector search failed'
+    )
+
+    if (error instanceof ValidationError || error instanceof VectorDBError || error instanceof LLMError) {
+      return reply.code(error.statusCode).send({
+        error: error.message,
+        code: error.code,
+        statusCode: error.statusCode,
+        metadata: error.metadata,
+      })
+    }
+
+    return reply.code(500).send({
+      error: 'Vector search failed',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+// =============================================================================
+// Health Check for Vector Search Components
+// =============================================================================
+
+export async function vectorSearchHealthController(
+  request: FastifyRequest,
+  reply: FastifyReply
+) {
+  const checks = {
+    openai: 'unknown',
+    dvecdb: 'unknown',
+    postgres: 'unknown',
+  }
+
+  const latency = {
+    openai_ms: 0,
+    dvecdb_ms: 0,
+    postgres_ms: 0,
+  }
+
+  // Check OpenAI
+  const openaiStart = Date.now()
+  try {
+    await resilientOpenAIClient.generateEmbedding('test', {
+      model: 'text-embedding-3-small',
+      useCache: true,
+    })
+    checks.openai = 'up'
+    latency.openai_ms = Date.now() - openaiStart
+  } catch (error) {
+    checks.openai = 'down'
+    latency.openai_ms = Date.now() - openaiStart
+  }
+
+  // Check d-VecDB
+  const dvecdbStart = Date.now()
+  try {
+    const isHealthy = await resilientDvecdbClient.healthCheck()
+    checks.dvecdb = isHealthy ? 'up' : 'down'
+    latency.dvecdb_ms = Date.now() - dvecdbStart
+  } catch (error) {
+    checks.dvecdb = 'down'
+    latency.dvecdb_ms = Date.now() - dvecdbStart
+  }
+
+  // Check PostgreSQL
+  const postgresStart = Date.now()
+  try {
+    const isHealthy = await resilientPrisma.healthCheck()
+    checks.postgres = isHealthy ? 'up' : 'down'
+    latency.postgres_ms = Date.now() - postgresStart
+  } catch (error) {
+    checks.postgres = 'down'
+    latency.postgres_ms = Date.now() - postgresStart
+  }
+
+  const status = Object.values(checks).every(s => s === 'up') ? 'healthy' : 'degraded'
+
+  const statusCode = status === 'healthy' ? 200 : 503
+
+  return reply.code(statusCode).send({
+    status,
+    services: {
+      api: 'up',
+      ...checks,
+    },
+    latency,
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+  })
+}

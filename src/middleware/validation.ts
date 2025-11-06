@@ -115,4 +115,25 @@ export const schemas = {
     page: z.coerce.number().int().min(1).default(1),
     limit: z.coerce.number().int().min(1).max(100).default(20),
   }),
+
+  // Vector Search
+  vectorSearch: z.object({
+    query: z
+      .string()
+      .min(2, 'Query must be at least 2 characters')
+      .max(500, 'Query must be at most 500 characters')
+      .trim(),
+    limit: z
+      .coerce
+      .number()
+      .int()
+      .min(1, 'Limit must be at least 1')
+      .max(50, 'Limit must be at most 50')
+      .optional()
+      .default(10),
+    type: z
+      .enum(['research_paper', 'ai_news', 'regulation'])
+      .optional()
+      .nullable(),
+  }),
 }

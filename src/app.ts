@@ -12,6 +12,7 @@ import { riskRoutes } from './routes/risk.routes'
 import { assessmentsRoutes } from './routes/assessments.routes'
 import { projectsGatedRoutes } from './routes/projects-gated.routes'
 import { userRoutes } from './routes/user.routes'
+import { vectorSearchRoutes } from './routes/vector-search.routes'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
@@ -79,6 +80,7 @@ export async function build() {
   await fastify.register(assessmentsRoutes)
   await fastify.register(projectsGatedRoutes)
   await fastify.register(userRoutes)
+  await fastify.register(vectorSearchRoutes)
 
   // Error handler with AppError support
   fastify.setErrorHandler((error, request, reply) => {
