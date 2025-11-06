@@ -433,22 +433,22 @@ async function generateRiskQuestions(
     // Generate questions for this domain
     for (let i = 0; i < Math.min(questionsPerDomain, domainRiskAreas.length); i++) {
       const riskArea = domainRiskAreas[i]
-      const relatedIncidents = findRelatedIncidents(riskArea.area, incidents)
 
-      // ✅ Only generate if we have evidence
-      if (relatedIncidents.length > 0) {
-        const question = await generateSingleRiskQuestion(
-          riskArea,
-          relatedIncidents,
-          request,
-          llmAnalysis,
-          domain as 'ai' | 'cyber' | 'cloud'
-        )
+      // ✅ generateSingleRiskQuestion now does question-specific search
+      // No need to pre-filter incidents - each question searches for its own
+      const question = await generateSingleRiskQuestion(
+        riskArea,
+        [], // Empty array - question will do its own vector search
+        request,
+        llmAnalysis,
+        domain as 'ai' | 'cyber' | 'cloud'
+      )
 
-        // ✅ Filter by risk threshold (70%+ by default)
-        if (question.finalWeight >= minWeight) {
-          questions.push(question)
-        }
+      // ✅ Filter by risk threshold (70%+ by default)
+      if (question.finalWeight >= minWeight) {
+        questions.push(question)
+      } else {
+        console.log(`[FILTER] Skipping "${riskArea.area}" - weight ${question.finalWeight.toFixed(2)} below threshold ${minWeight}`)
       }
     }
 
@@ -531,11 +531,32 @@ function getDomainSpecificRiskAreas(
 
 async function generateSingleRiskQuestion(
   priorityArea: { area: string; priority: number; reasoning: string },
-  relatedIncidents: IncidentMatch[],
+  relatedIncidents: IncidentMatch[], // Kept for backward compatibility, will be replaced by question-specific search
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis,
   domain?: 'ai' | 'cyber' | 'cloud'
 ): Promise<DynamicQuestion> {
+  // ✅ FIX: Search for question-specific incidents instead of using shared pool
+  // Generate embedding query based on the specific question context
+  const questionSearchQuery = `${priorityArea.area} ${priorityArea.reasoning} ${request.systemDescription}`.substring(0, 500)
+
+  console.log(`[QUESTION_SEARCH] Searching for incidents specific to "${priorityArea.area}"...`)
+
+  // Perform question-specific vector search
+  const questionSpecificIncidents = await findSimilarIncidents(
+    questionSearchQuery,
+    {
+      limit: 20, // Get 20 incidents specific to this question
+      minSimilarity: 0.6,
+      industry: request.industry,
+      severity: ['medium', 'high', 'critical'],
+    }
+  )
+
+  console.log(`[QUESTION_SEARCH] Found ${questionSpecificIncidents.length} incidents for "${priorityArea.area}"`)
+
+  // Use question-specific incidents instead of shared pool
+  relatedIncidents = questionSpecificIncidents
   // Calculate weights
   const baseWeight = priorityArea.priority / 100 // LLM priority as weight
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
@@ -679,19 +700,11 @@ async function generateComplianceQuestions(
 
   // Generate questions based on identified compliance requirements
   for (const regulation of llmAnalysis.complianceRequirements) {
-    const relatedIncidents = incidents.filter(i => {
-      if (!i.embeddingText) return false
-      const text = i.embeddingText.toLowerCase()
-      return (
-        text.includes(regulation.toLowerCase()) ||
-        text.includes('compliance') ||
-        text.includes('regulation')
-      )
-    })
-
+    // ✅ generateSingleComplianceQuestion now does question-specific search
+    // No need to pre-filter incidents - each question searches for its own
     const question = await generateSingleComplianceQuestion(
       regulation,
-      relatedIncidents,
+      [], // Empty array - question will do its own vector search
       request,
       llmAnalysis
     )
@@ -703,10 +716,10 @@ async function generateComplianceQuestions(
   const criticalCompliance = ['Data Inventory', 'Consent Management', 'Security Measures', 'Breach Response']
   for (const area of criticalCompliance) {
     if (!questions.find(q => q.label.toLowerCase().includes(area.toLowerCase()))) {
-      const relatedIncidents = findRelatedIncidents(area, incidents)
+      // ✅ generateSingleComplianceQuestion now does question-specific search
       const question = await generateSingleComplianceQuestion(
         area,
-        relatedIncidents,
+        [], // Empty array - question will do its own vector search
         request,
         llmAnalysis
       )
@@ -719,10 +732,29 @@ async function generateComplianceQuestions(
 
 async function generateSingleComplianceQuestion(
   complianceArea: string,
-  relatedIncidents: IncidentMatch[],
+  relatedIncidents: IncidentMatch[], // Kept for backward compatibility, will be replaced by question-specific search
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion> {
+  // ✅ FIX: Search for question-specific compliance incidents
+  const complianceSearchQuery = `${complianceArea} compliance regulatory violation ${request.systemDescription}`.substring(0, 500)
+
+  console.log(`[COMPLIANCE_SEARCH] Searching for compliance incidents specific to "${complianceArea}"...`)
+
+  // Perform question-specific vector search for compliance incidents
+  const questionSpecificIncidents = await findSimilarIncidents(
+    complianceSearchQuery,
+    {
+      limit: 10, // Get 10 compliance incidents specific to this question
+      minSimilarity: 0.5, // Lower threshold for compliance (broader matching)
+      industry: request.industry,
+    }
+  )
+
+  console.log(`[COMPLIANCE_SEARCH] Found ${questionSpecificIncidents.length} compliance incidents for "${complianceArea}"`)
+
+  // Use question-specific incidents instead of shared pool
+  relatedIncidents = questionSpecificIncidents
   // Calculate weights for compliance
   const baseWeight = llmAnalysis.complianceRequirements.includes(complianceArea) ? 0.9 : 0.7
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
