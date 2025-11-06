@@ -781,6 +781,101 @@ async function generateSingleRiskQuestion(
   const avgMultiFactorRelevance = filteredIncidents.length > 0
     ? filteredIncidents.reduce((sum, i) => sum + i.multiFactorRelevance, 0) / filteredIncidents.length
     : 0
+
+  // ✅ NEW: Generate formalized question using LLM
+  console.log(`[LLM_QUESTION] Generating formalized question for "${priorityArea.area}"...`)
+
+  const avgCost = relatedIncidents.length > 0
+    ? relatedIncidents
+        .filter(i => i.estimatedCost)
+        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
+    : 0
+
+  const avgSeverity = relatedIncidents.length > 0
+    ? relatedIncidents
+        .filter(i => i.severity)
+        .reduce((sum, i) => {
+          const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
+          return sum + (severityMap[i.severity!.toLowerCase()] || 5)
+        }, 0) / relatedIncidents.filter(i => i.severity).length
+    : 5
+
+  const evidenceSummary = `
+Risk Category: ${priorityArea.area}
+Risk Reasoning: ${priorityArea.reasoning}
+
+System Context:
+- Description: ${request.systemDescription.substring(0, 300)}
+- Technology Stack: ${(request.techStack || []).slice(0, 5).join(', ') || 'Not specified'}
+- Data Types: ${(request.dataTypes || []).slice(0, 5).join(', ') || 'Not specified'}
+- Data Sources: ${(request.dataSources || []).slice(0, 5).join(', ') || 'Not specified'}
+- Industry: ${request.industry || 'Not specified'}
+- Deployment: ${request.deployment || 'Not specified'}
+
+Evidence from Incident Database (78K+ incidents):
+- ${relatedIncidents.length} highly relevant incidents found
+- Average severity: ${avgSeverity.toFixed(1)}/10
+- Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%
+- Estimated avg cost: $${(avgCost / 1000).toFixed(0)}K per incident
+
+Recent Examples (Top 3):
+${relatedIncidents.slice(0, 3).map((ex, i) =>
+  `${i + 1}. ${ex.organization || 'Organization'} - ${ex.incidentType} (${ex.incidentDate ? new Date(ex.incidentDate).toISOString().split('T')[0] : 'Recent'}, severity: ${ex.severity || 'medium'})`
+).join('\n')}
+`.trim()
+
+  let questionText = priorityArea.area // Fallback
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a cybersecurity and AI risk assessment expert. Generate a formal, structured risk assessment question based on real-world incident data and comprehensive system context.
+
+The question MUST:
+1. Be highly specific to the user's system:
+   - Technologies: ${(request.techStack || []).slice(0, 3).join(', ')}
+   - Data types: ${(request.dataTypes || []).slice(0, 3).join(', ')}
+   - Data sources: ${(request.dataSources || []).slice(0, 3).join(', ')}
+2. Reference the risk category: ${priorityArea.area}
+3. Incorporate evidence from ${relatedIncidents.length} real-world incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance
+4. Be clear and actionable (answerable with: "addressed", "partially addressed", "not addressed", or "not applicable")
+5. Focus on specific controls, mitigations, or safeguards
+6. Use formal, professional language
+7. Be concise (1-2 sentences max)
+8. Highlight the connection to the user's specific technology/data context
+
+Format: Return ONLY the question text, nothing else. Do not include any preamble or explanation.`
+        },
+        {
+          role: 'user',
+          content: evidenceSummary
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 250
+    })
+
+    questionText = completion.choices[0].message.content?.trim() || questionText
+    console.log(`[LLM_QUESTION] Generated: ${questionText.substring(0, 80)}...`)
+  } catch (error) {
+    console.error(`[LLM_QUESTION] Failed to generate question for ${priorityArea.area}:`, error)
+    // Use fallback question generation
+    const tech = (request.techStack || [])[0] || 'your system'
+    const data = (request.dataTypes || [])[0] || 'data'
+    questionText = `How do you address ${priorityArea.area.toLowerCase()} risks in your ${request.deployment || 'system'} using ${tech} with ${data}?`
+  }
+
+  // ✅ Validate question text
+  if (questionText.length < 20 || questionText === priorityArea.area) {
+    console.warn(`[VALIDATION] Invalid question text, using fallback for ${priorityArea.area}`)
+    const tech = (request.techStack || [])[0] || 'your system'
+    const data = (request.dataTypes || [])[0] || 'data'
+    questionText = `How do you address ${priorityArea.area.toLowerCase()} risks in your ${request.deployment || 'system'} using ${tech} with ${data}?`
+  }
+
   // Calculate weights
   const baseWeight = priorityArea.priority / 100 // LLM priority as weight
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
@@ -793,23 +888,6 @@ async function generateSingleRiskQuestion(
     const org = incident.organization || 'Organization'
     return `${org} - ${incident.incidentType}${cost}`
   })
-
-  // Calculate average cost for this risk area
-  const avgCost = relatedIncidents.length > 0
-    ? relatedIncidents
-        .filter(i => i.estimatedCost)
-        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
-    : 0
-
-  // Calculate average severity from incidents
-  const avgSeverity = relatedIncidents.length > 0
-    ? relatedIncidents
-        .filter(i => i.severity)
-        .reduce((sum, i) => {
-          const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
-          return sum + (severityMap[i.severity!.toLowerCase()] || 5)
-        }, 0) / relatedIncidents.filter(i => i.severity).length
-    : 5
 
   // Calculate total cost
   const totalCost = relatedIncidents
@@ -872,11 +950,15 @@ async function generateSingleRiskQuestion(
     }
   }
 
+  // ✅ Create short label for UI (category + key tech)
+  const keyTech = (request.techStack || [])[0]
+  const shortLabel = keyTech ? `${priorityArea.area} - ${keyTech}` : priorityArea.area
+
   const question: DynamicQuestion = {
     id: `dynamic_${priorityArea.area.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
-    label: priorityArea.area,
-    text: priorityArea.area,
-    question: priorityArea.area,
+    label: shortLabel, // ✅ SHORT: For UI labels/headers
+    text: questionText, // ✅ FULL QUESTION: What users see and answer
+    question: questionText, // ✅ ALIAS: For backward compatibility
     description: `Evidence from ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance) with average severity ${avgSeverity.toFixed(1)}/10`,
     priority: determinePriority(finalWeight),
 
@@ -1005,6 +1087,101 @@ async function generateSingleComplianceQuestion(
   const avgMultiFactorRelevance = filteredIncidents.length > 0
     ? filteredIncidents.reduce((sum, i) => sum + i.multiFactorRelevance, 0) / filteredIncidents.length
     : 0
+
+  // ✅ NEW: Generate formalized compliance question using LLM
+  console.log(`[LLM_COMPLIANCE] Generating formalized compliance question for "${complianceArea}"...`)
+
+  const avgFine = relatedIncidents.length > 0
+    ? relatedIncidents
+        .filter(i => i.estimatedCost)
+        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
+    : 0
+
+  const avgSeverity = relatedIncidents.length > 0
+    ? relatedIncidents
+        .filter(i => i.severity)
+        .reduce((sum, i) => {
+          const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
+          return sum + (severityMap[i.severity!.toLowerCase()] || 5)
+        }, 0) / relatedIncidents.filter(i => i.severity).length
+    : 5
+
+  const complianceEvidenceSummary = `
+Compliance Area: ${complianceArea}
+Regulatory Requirements: ${llmAnalysis.complianceRequirements.join(', ')}
+
+System Context:
+- Description: ${request.systemDescription.substring(0, 300)}
+- Technology Stack: ${(request.techStack || []).slice(0, 5).join(', ') || 'Not specified'}
+- Data Types: ${(request.dataTypes || []).slice(0, 5).join(', ') || 'Not specified'}
+- Data Sources: ${(request.dataSources || []).slice(0, 5).join(', ') || 'Not specified'}
+- Industry: ${request.industry || 'Not specified'}
+- Jurisdictions: ${(request.jurisdictions || []).join(', ') || 'Not specified'}
+
+Evidence from Compliance Violations Database:
+- ${relatedIncidents.length} relevant compliance incidents found
+- Average severity: ${avgSeverity.toFixed(1)}/10
+- Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%
+- Average fine: $${(avgFine / 1000).toFixed(0)}K per violation
+
+Recent Examples (Top 3):
+${relatedIncidents.slice(0, 3).map((ex, i) =>
+  `${i + 1}. ${ex.organization || 'Organization'} - ${ex.incidentType} (${ex.incidentDate ? new Date(ex.incidentDate).toISOString().split('T')[0] : 'Recent'}, fine: $${ex.estimatedCost ? (Number(ex.estimatedCost) / 1000).toFixed(0) + 'K' : 'Unknown'})`
+).join('\n')}
+`.trim()
+
+  let complianceQuestionText = complianceArea // Fallback
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'system',
+          content: `You are a compliance and regulatory risk expert. Generate a formal, structured compliance assessment question based on real-world regulatory violations and system context.
+
+The question MUST:
+1. Be highly specific to the user's system and regulatory requirements:
+   - Technologies: ${(request.techStack || []).slice(0, 3).join(', ')}
+   - Data types: ${(request.dataTypes || []).slice(0, 3).join(', ')}
+   - Jurisdictions: ${(request.jurisdictions || []).slice(0, 3).join(', ')}
+2. Reference the compliance area: ${complianceArea}
+3. Incorporate evidence from ${relatedIncidents.length} real compliance violations with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance
+4. Be clear and actionable (answerable with: "addressed", "partially addressed", "not addressed", or "not applicable")
+5. Focus on specific compliance controls or requirements
+6. Use formal, professional language
+7. Be concise (1-2 sentences max)
+8. Highlight connections to regulatory frameworks: ${llmAnalysis.complianceRequirements.join(', ')}
+
+Format: Return ONLY the question text, nothing else. Do not include any preamble or explanation.`
+        },
+        {
+          role: 'user',
+          content: complianceEvidenceSummary
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 250
+    })
+
+    complianceQuestionText = completion.choices[0].message.content?.trim() || complianceQuestionText
+    console.log(`[LLM_COMPLIANCE] Generated: ${complianceQuestionText.substring(0, 80)}...`)
+  } catch (error) {
+    console.error(`[LLM_COMPLIANCE] Failed to generate compliance question for ${complianceArea}:`, error)
+    // Use fallback question generation
+    const regulations = llmAnalysis.complianceRequirements.slice(0, 2).join(' and ')
+    const data = (request.dataTypes || [])[0] || 'data'
+    complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
+  }
+
+  // ✅ Validate compliance question text
+  if (complianceQuestionText.length < 20 || complianceQuestionText === complianceArea) {
+    console.warn(`[VALIDATION] Invalid compliance question text, using fallback for ${complianceArea}`)
+    const regulations = llmAnalysis.complianceRequirements.slice(0, 2).join(' and ')
+    const data = (request.dataTypes || [])[0] || 'data'
+    complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
+  }
+
   // Calculate weights for compliance
   const baseWeight = llmAnalysis.complianceRequirements.includes(complianceArea) ? 0.9 : 0.7
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
@@ -1016,22 +1193,6 @@ async function generateSingleComplianceQuestion(
     const cost = incident.estimatedCost ? ` (Fine: $${Number(incident.estimatedCost).toLocaleString()})` : ''
     return `${incident.organization || 'Organization'} - ${incident.incidentType}${cost}`
   })
-
-  const avgFine = relatedIncidents.length > 0
-    ? relatedIncidents
-        .filter(i => i.estimatedCost)
-        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
-    : 0
-
-  // Calculate average severity from compliance incidents
-  const avgSeverity = relatedIncidents.length > 0
-    ? relatedIncidents
-        .filter(i => i.severity)
-        .reduce((sum, i) => {
-          const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
-          return sum + (severityMap[i.severity!.toLowerCase()] || 5)
-        }, 0) / relatedIncidents.filter(i => i.severity).length
-    : 5
 
   // Calculate total cost
   const totalCost = relatedIncidents
@@ -1094,11 +1255,17 @@ async function generateSingleComplianceQuestion(
     }
   }
 
+  // ✅ Create short label for compliance questions (category + key regulation)
+  const keyRegulation = llmAnalysis.complianceRequirements[0]
+  const complianceShortLabel = keyRegulation && keyRegulation !== complianceArea
+    ? `${complianceArea} - ${keyRegulation}`
+    : complianceArea
+
   const question: DynamicQuestion = {
     id: `compliance_${complianceArea.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
-    label: complianceArea,
-    text: complianceArea,
-    question: complianceArea,
+    label: complianceShortLabel, // ✅ SHORT: For UI labels/headers
+    text: complianceQuestionText, // ✅ FULL QUESTION: What users see and answer
+    question: complianceQuestionText, // ✅ ALIAS: For backward compatibility
     description: `Based on ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance)`,
     priority: determinePriority(finalWeight),
 
