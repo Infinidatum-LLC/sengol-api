@@ -79,6 +79,7 @@ export interface DynamicQuestion {
 
   // Metadata
   category: 'ai' | 'cyber' | 'cloud' | 'compliance'
+  domain?: 'ai' | 'cyber' | 'cloud' | 'compliance' // For frontend filtering
   generatedFrom: 'llm' | 'evidence' | 'hybrid'
   confidence: number | string // 0-1 (how confident we are in this question) or 'high'/'medium'/'low'
   aiGenerated?: boolean
@@ -96,6 +97,12 @@ export interface QuestionGenerationRequest {
   techStack?: string[] // Technologies used (GPT-4, PostgreSQL, AWS, etc.)
   dataTypes?: string[] // Data types processed (PII, Financial, etc.)
   systemCriticality?: string // High, Medium, Low
+
+  // Question generation controls
+  maxQuestions?: number // Total questions (default: 75)
+  questionsPerDomain?: number // Questions per domain (default: 25)
+  minWeight?: number // Minimum weight threshold (0-1 scale, default: 0.7 for 70%+)
+  minRiskPotential?: number // Alias for minWeight
 }
 
 export interface QuestionGenerationResult {
@@ -121,6 +128,14 @@ export interface QuestionGenerationResult {
     incidentSearchCount: number
     avgSimilarityScore: number
     generationTimeMs: number
+    // Per-domain question counts
+    totalRiskQuestions: number
+    totalComplianceQuestions: number
+    aiQuestions?: number
+    cyberQuestions?: number
+    cloudQuestions?: number
+    avgRiskWeight: number
+    avgComplianceWeight: number
   }
 }
 
@@ -155,12 +170,12 @@ export async function generateDynamicQuestions(
   console.log('Domains:', request.selectedDomains || 'Not specified')
   console.log('Industry:', request.industry || 'Not specified')
 
-  // Step 1: Find similar incidents from d-vecDB
+  // Step 1: Find similar incidents from d-vecDB (increased from 50 to 100 for better coverage)
   console.log('\n📊 Step 1: Finding similar historical incidents from d-vecDB...')
   const similarIncidents = await findSimilarIncidents(
     request.systemDescription,
     {
-      limit: 50,
+      limit: 100, // ✅ Increased from 50 to support more questions
       minSimilarity: 0.6,
       industry: request.industry,
       severity: ['medium', 'high', 'critical'],
@@ -195,6 +210,13 @@ export async function generateDynamicQuestions(
   console.log(`\n✅ Generation complete in ${generationTimeMs}ms`)
   console.log(`Generated ${riskQuestions.length} risk questions + ${complianceQuestions.length} compliance questions`)
 
+  // ✅ Calculate per-domain question counts
+  const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
+  const domainCounts = selectedDomains.reduce((acc, domain) => {
+    acc[`${domain}Questions`] = riskQuestions.filter(q => q.domain === domain).length
+    return acc
+  }, {} as Record<string, number>)
+
   return {
     riskQuestions,
     complianceQuestions,
@@ -214,6 +236,16 @@ export async function generateDynamicQuestions(
         ? similarIncidents.reduce((sum, i) => sum + i.similarity, 0) / similarIncidents.length
         : 0,
       generationTimeMs,
+      // ✅ Add metadata fields for frontend
+      totalRiskQuestions: riskQuestions.length,
+      totalComplianceQuestions: complianceQuestions.length,
+      ...domainCounts, // aiQuestions, cyberQuestions, cloudQuestions
+      avgRiskWeight: riskQuestions.length > 0
+        ? riskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / riskQuestions.length
+        : 0,
+      avgComplianceWeight: complianceQuestions.length > 0
+        ? complianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / complianceQuestions.length
+        : 0,
     },
   }
 }
@@ -311,54 +343,125 @@ async function generateRiskQuestions(
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion[]> {
   const questions: DynamicQuestion[] = []
+  const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
+  const questionsPerDomain = request.questionsPerDomain || 25 // ✅ Default 25 per domain
+  const minWeight = request.minRiskPotential || request.minWeight || 0.7 // ✅ Default 70% risk threshold
 
-  // Group incidents by type to find patterns
-  const incidentsByType = new Map<string, IncidentMatch[]>()
-  incidents.forEach(incident => {
-    const type = incident.incidentType
-    if (!incidentsByType.has(type)) {
-      incidentsByType.set(type, [])
+  console.log(`Generating ${questionsPerDomain} questions per domain for: ${selectedDomains.join(', ')}`)
+  console.log(`Minimum risk threshold: ${(minWeight * 100).toFixed(0)}%`)
+
+  // ✅ Generate questions for each selected domain
+  for (const domain of selectedDomains) {
+    console.log(`\n🔍 Generating questions for ${domain.toUpperCase()} domain...`)
+
+    // Get domain-specific risk areas based on LLM analysis and domain
+    const domainRiskAreas = getDomainSpecificRiskAreas(domain, llmAnalysis)
+
+    // Generate questions for this domain
+    for (let i = 0; i < Math.min(questionsPerDomain, domainRiskAreas.length); i++) {
+      const riskArea = domainRiskAreas[i]
+      const relatedIncidents = findRelatedIncidents(riskArea.area, incidents)
+
+      // ✅ Only generate if we have evidence
+      if (relatedIncidents.length > 0) {
+        const question = await generateSingleRiskQuestion(
+          riskArea,
+          relatedIncidents,
+          request,
+          llmAnalysis,
+          domain as 'ai' | 'cyber' | 'cloud'
+        )
+
+        // ✅ Filter by risk threshold (70%+ by default)
+        if (question.finalWeight >= minWeight) {
+          questions.push(question)
+        }
+      }
     }
-    incidentsByType.get(type)!.push(incident)
-  })
 
-  // For each high-priority risk from LLM, generate a question
-  for (const priorityArea of llmAnalysis.recommendedPriorities.slice(0, 10)) {
-    const relatedIncidents = findRelatedIncidents(priorityArea.area, incidents)
-
-    const question = await generateSingleRiskQuestion(
-      priorityArea,
-      relatedIncidents,
-      request,
-      llmAnalysis
-    )
-
-    questions.push(question)
+    console.log(`Generated ${questions.filter(q => q.domain === domain).length} ${domain} questions`)
   }
 
-  // Ensure minimum coverage - add critical areas if missing
-  const criticalAreas = ['Access Control', 'Data Encryption', 'Monitoring & Logging']
-  for (const area of criticalAreas) {
-    if (!questions.find(q => q.label.toLowerCase().includes(area.toLowerCase()))) {
-      const relatedIncidents = findRelatedIncidents(area, incidents)
-      const question = await generateSingleRiskQuestion(
-        { area, priority: 85, reasoning: 'Critical baseline control' },
-        relatedIncidents,
-        request,
-        llmAnalysis
-      )
-      questions.push(question)
-    }
-  }
+  console.log(`\nTotal risk questions generated: ${questions.length}`)
+  console.log(`Distribution: ${selectedDomains.map(d => `${d}=${questions.filter(q => q.domain === d).length}`).join(', ')}`)
 
   return questions
+}
+
+// ✅ NEW: Get domain-specific risk areas
+function getDomainSpecificRiskAreas(
+  domain: string,
+  llmAnalysis: LLMAnalysis
+): Array<{ area: string; priority: number; reasoning: string }> {
+  const domainRiskMap: Record<string, string[]> = {
+    ai: [
+      'AI Model Security', 'Prompt Injection', 'Data Poisoning', 'Model Bias',
+      'AI Output Validation', 'Training Data Security', 'Model Inference Security',
+      'AI Explainability', 'AI Fairness', 'Model Drift Detection',
+      'AI Supply Chain', 'Model Versioning', 'AI Testing', 'AI Monitoring',
+      'LLM Security', 'RAG Security', 'Vector Database Security',
+      'AI Data Privacy', 'AI Compliance', 'AI Ethics',
+      'Model Robustness', 'Adversarial Attacks', 'Model Extraction',
+      'AI Governance', 'AI Risk Assessment'
+    ],
+    cyber: [
+      'Access Control', 'Authentication', 'Authorization', 'Data Encryption',
+      'Network Security', 'Firewall Configuration', 'Intrusion Detection',
+      'Vulnerability Management', 'Patch Management', 'Security Monitoring',
+      'Incident Response', 'Data Backup', 'Disaster Recovery',
+      'Security Awareness', 'Phishing Protection', 'Malware Protection',
+      'Data Loss Prevention', 'Endpoint Security', 'Mobile Security',
+      'API Security', 'Web Application Security', 'Database Security',
+      'Third-Party Risk', 'Supply Chain Security', 'Security Testing'
+    ],
+    cloud: [
+      'Cloud Infrastructure Security', 'Cloud Configuration', 'IAM Policies',
+      'Cloud Data Encryption', 'Cloud Backup', 'Cloud Monitoring',
+      'Container Security', 'Kubernetes Security', 'Serverless Security',
+      'Cloud Network Security', 'Cloud Compliance', 'Cloud Access Control',
+      'Cloud Key Management', 'Cloud Logging', 'Cloud Incident Response',
+      'Multi-Cloud Security', 'Cloud Migration Security', 'Cloud Cost Optimization',
+      'Cloud Performance', 'Cloud Availability', 'Cloud Disaster Recovery',
+      'Cloud SLA Management', 'Cloud Vendor Management', 'Cloud Security Posture',
+      'DevSecOps'
+    ]
+  }
+
+  const domainAreas = domainRiskMap[domain] || []
+
+  // Combine LLM priorities with domain-specific areas
+  const combinedAreas = [
+    ...llmAnalysis.recommendedPriorities.map(p => ({
+      area: p.area,
+      priority: p.priority,
+      reasoning: p.reasoning
+    })),
+    ...domainAreas.map(area => ({
+      area,
+      priority: 75, // Default priority for domain-specific areas
+      reasoning: `${domain.toUpperCase()}-specific risk area`
+    }))
+  ]
+
+  // Sort by priority and remove duplicates
+  const uniqueAreas = new Map<string, { area: string; priority: number; reasoning: string }>()
+  combinedAreas.forEach(item => {
+    const key = item.area.toLowerCase()
+    if (!uniqueAreas.has(key) || uniqueAreas.get(key)!.priority < item.priority) {
+      uniqueAreas.set(key, item)
+    }
+  })
+
+  return Array.from(uniqueAreas.values())
+    .sort((a, b) => b.priority - a.priority)
 }
 
 async function generateSingleRiskQuestion(
   priorityArea: { area: string; priority: number; reasoning: string },
   relatedIncidents: IncidentMatch[],
   request: QuestionGenerationRequest,
-  llmAnalysis: LLMAnalysis
+  llmAnalysis: LLMAnalysis,
+  domain?: 'ai' | 'cyber' | 'cloud'
 ): Promise<DynamicQuestion> {
   // Calculate weights
   const baseWeight = priorityArea.priority / 100 // LLM priority as weight
@@ -453,6 +556,7 @@ async function generateSingleRiskQuestion(
     relatedIncidentCount: relatedIncidents.length,
 
     category: categorizeDomain(priorityArea.area),
+    domain: domain || categorizeDomain(priorityArea.area), // ✅ Add domain for frontend filtering
     generatedFrom: 'hybrid',
     confidence: calculateConfidence(relatedIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
     aiGenerated: true,
@@ -609,6 +713,7 @@ async function generateSingleComplianceQuestion(
     relatedIncidentCount: relatedIncidents.length,
 
     category: 'compliance',
+    domain: 'compliance', // ✅ Add domain for compliance questions
     generatedFrom: 'hybrid',
     confidence: calculateConfidence(relatedIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
     aiGenerated: true,
