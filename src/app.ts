@@ -9,6 +9,9 @@ import { healthRoutes } from './routes/health.routes'
 import { embeddingsRoutes } from './routes/embeddings.routes'
 import { projectsRoutes } from './routes/projects.routes'
 import { riskRoutes } from './routes/risk.routes'
+import { assessmentsRoutes } from './routes/assessments.routes'
+import { projectsGatedRoutes } from './routes/projects-gated.routes'
+import { userRoutes } from './routes/user.routes'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
@@ -73,6 +76,9 @@ export async function build() {
   await fastify.register(embeddingsRoutes)
   await fastify.register(projectsRoutes)
   await fastify.register(riskRoutes)
+  await fastify.register(assessmentsRoutes)
+  await fastify.register(projectsGatedRoutes)
+  await fastify.register(userRoutes)
 
   // Error handler with AppError support
   fastify.setErrorHandler((error, request, reply) => {
