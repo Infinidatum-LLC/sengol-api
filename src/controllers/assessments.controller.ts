@@ -197,6 +197,9 @@ interface UpdateStep1Body {
   jurisdictions?: string[]
   industry?: string
   deployment?: string
+  systemCriticality?: string
+  dataTypes?: string[]
+  techStack?: string[]
 }
 
 export async function updateAssessmentStep1Controller(
@@ -205,7 +208,7 @@ export async function updateAssessmentStep1Controller(
 ) {
   try {
     const { id } = request.params
-    const { userId, systemDescription, selectedDomains, jurisdictions, industry, deployment } = request.body
+    const { userId, systemDescription, selectedDomains, jurisdictions, industry, deployment, systemCriticality, dataTypes, techStack } = request.body
 
     if (!userId || !systemDescription) {
       throw new ValidationError('userId and systemDescription are required')
@@ -224,13 +227,16 @@ export async function updateAssessmentStep1Controller(
       throw new AuthorizationError('You do not have access to this assessment')
     }
 
-    // Update assessment
+    // Update assessment with all Step 1 fields
     const updated = await prisma.riskAssessment.update({
       where: { id },
       data: {
         systemDescription,
         jurisdictions: jurisdictions || [],
         industry: industry || assessment.industry,
+        systemCriticality: systemCriticality || assessment.systemCriticality,
+        dataTypes: dataTypes || [],
+        techStack: techStack || [],
         ...(deployment && { deploymentEnv: deployment }),
       },
     })
