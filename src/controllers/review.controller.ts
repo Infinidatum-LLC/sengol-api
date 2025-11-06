@@ -1,6 +1,63 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { prisma } from '../lib/prisma'
 import { generateDynamicQuestions } from '../services/dynamic-question-generator'
+import { analyzeSystem } from '../services/system-analysis.service'
+import { ValidationError } from '../lib/errors'
+
+// ============================================================================
+// POST /api/review/analyze-system
+// ============================================================================
+
+interface AnalyzeSystemBody {
+  systemDescription: string
+}
+
+export async function analyzeSystemController(
+  request: FastifyRequest<{ Body: AnalyzeSystemBody }>,
+  reply: FastifyReply
+) {
+  try {
+    const { systemDescription } = request.body
+
+    if (!systemDescription || typeof systemDescription !== 'string' || systemDescription.trim().length === 0) {
+      throw new ValidationError('systemDescription is required and must be a non-empty string')
+    }
+
+    request.log.info({
+      descriptionLength: systemDescription.length
+    }, 'Analyzing system')
+
+    const suggestions = await analyzeSystem(systemDescription)
+
+    return reply.send({
+      success: true,
+      suggestions,
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Failed to analyze system')
+
+    if (error instanceof ValidationError) {
+      return reply.code(400).send({
+        success: false,
+        error: error.message,
+        code: error.code,
+        statusCode: 400,
+      })
+    }
+
+    return reply.code(500).send({
+      success: false,
+      error: 'Failed to analyze system',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+// ============================================================================
+// POST /api/review/:id/generate-questions
+// ============================================================================
 
 interface GenerateQuestionsParams {
   id: string

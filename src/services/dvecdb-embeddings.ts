@@ -226,6 +226,60 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 /**
+ * Generate multiple embeddings in batch (more efficient than individual calls)
+ * OpenAI supports up to 2048 texts per request
+ */
+export async function generateBatchEmbeddings(texts: string[]): Promise<number[][]> {
+  if (texts.length > 2048) {
+    throw new Error('Batch size cannot exceed 2048 texts (OpenAI limit)')
+  }
+
+  try {
+    const embeddings = await withRetry(
+      async () => {
+        return await withTimeout(
+          (async () => {
+            const response = await getOpenAIClient().embeddings.create({
+              model: EMBEDDING_MODEL,
+              input: texts,
+              encoding_format: 'float',
+            })
+
+            if (!response.data || response.data.length === 0) {
+              throw new LLMError('No embedding data returned from OpenAI')
+            }
+
+            return response.data.map(item => item.embedding)
+          })(),
+          config.openaiTimeout * 2, // Double timeout for batch operations
+          'openai-batch-embedding'
+        )
+      },
+      {
+        maxRetries: config.openaiMaxRetries,
+        initialDelay: 1000,
+        maxDelay: 10000,
+        onRetry: (error, attempt) => {
+          console.warn(`[BatchEmbedding] Retry attempt ${attempt}/${config.openaiMaxRetries}`, {
+            error: error.message,
+            batchSize: texts.length,
+          })
+        },
+      }
+    )
+
+    return embeddings
+  } catch (error) {
+    console.error('Failed to generate batch embeddings:', error)
+    throw new LLMError(
+      'Batch embedding generation failed: ' +
+        (error instanceof Error ? error.message : 'Unknown error'),
+      { batchSize: texts.length }
+    )
+  }
+}
+
+/**
  * Upsert a single embedding to d-vecDB
  */
 export async function upsertEmbedding(params: {

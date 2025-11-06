@@ -21,6 +21,7 @@ export const config = {
   // Auth
   jwtSecret: process.env.JWT_SECRET!,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
+  apiAuthToken: process.env.API_AUTH_TOKEN, // Optional: for API endpoint authentication
 
   // External services
   openaiApiKey: process.env.OPENAI_API_KEY!,
