@@ -157,6 +157,74 @@ export interface ScoringComponent {
 }
 
 // ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/**
+ * Remove duplicate questions based on ID and label similarity
+ * Filters out questions with >90% text similarity
+ */
+function deduplicateQuestions(questions: DynamicQuestion[]): DynamicQuestion[] {
+  const seenIds = new Set<string>()
+  const seenLabels = new Set<string>()
+  const deduplicated: DynamicQuestion[] = []
+
+  for (const question of questions) {
+    const id = question.id
+    const label = (question.label || question.text || question.question || '').toLowerCase().trim()
+
+    // Skip if ID already seen
+    if (seenIds.has(id)) {
+      console.log(`[DEDUPE] Skipping duplicate ID: ${id}`)
+      continue
+    }
+
+    // Skip if label already seen
+    if (seenLabels.has(label)) {
+      console.log(`[DEDUPE] Skipping duplicate label: ${label}`)
+      continue
+    }
+
+    // Check for high similarity with existing labels (>90%)
+    let isDuplicate = false
+    for (const existingLabel of seenLabels) {
+      const similarity = calculateStringSimilarity(label, existingLabel)
+      if (similarity > 0.9) {
+        console.log(`[DEDUPE] Skipping similar label (${(similarity * 100).toFixed(0)}% match): ${label}`)
+        isDuplicate = true
+        break
+      }
+    }
+
+    if (!isDuplicate) {
+      seenIds.add(id)
+      seenLabels.add(label)
+      deduplicated.push(question)
+    }
+  }
+
+  const removed = questions.length - deduplicated.length
+  if (removed > 0) {
+    console.log(`[DEDUPE] Removed ${removed} duplicate questions (${questions.length} → ${deduplicated.length})`)
+  }
+
+  return deduplicated
+}
+
+/**
+ * Calculate similarity between two strings (Jaccard similarity)
+ */
+function calculateStringSimilarity(str1: string, str2: string): number {
+  const words1 = new Set(str1.split(/\s+/))
+  const words2 = new Set(str2.split(/\s+/))
+
+  const intersection = new Set([...words1].filter(x => words2.has(x)))
+  const union = new Set([...words1, ...words2])
+
+  return intersection.size / union.size
+}
+
+// ============================================================================
 // MAIN GENERATION FUNCTION
 // ============================================================================
 
@@ -200,26 +268,31 @@ export async function generateDynamicQuestions(
   console.log('\n📋 Step 4: Generating compliance questions...')
   const complianceQuestions = await generateComplianceQuestions(request, similarIncidents, llmAnalysis)
 
+  // Step 4.5: Deduplicate questions
+  console.log('\n🔍 Step 4.5: Removing duplicate questions...')
+  const deduplicatedRiskQuestions = deduplicateQuestions(riskQuestions)
+  const deduplicatedComplianceQuestions = deduplicateQuestions(complianceQuestions)
+
   // Step 5: Create scoring formula
   console.log('\n🧮 Step 5: Creating explainable scoring formula...')
-  const scoringFormula = createScoringFormula(riskQuestions, complianceQuestions, incidentStats)
+  const scoringFormula = createScoringFormula(deduplicatedRiskQuestions, deduplicatedComplianceQuestions, incidentStats)
 
   const endTime = Date.now()
   const generationTimeMs = endTime - startTime
 
   console.log(`\n✅ Generation complete in ${generationTimeMs}ms`)
-  console.log(`Generated ${riskQuestions.length} risk questions + ${complianceQuestions.length} compliance questions`)
+  console.log(`Generated ${deduplicatedRiskQuestions.length} risk questions + ${deduplicatedComplianceQuestions.length} compliance questions`)
 
   // ✅ Calculate per-domain question counts
   const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
   const domainCounts = selectedDomains.reduce((acc, domain) => {
-    acc[`${domain}Questions`] = riskQuestions.filter(q => q.domain === domain).length
+    acc[`${domain}Questions`] = deduplicatedRiskQuestions.filter(q => q.domain === domain).length
     return acc
   }, {} as Record<string, number>)
 
   return {
-    riskQuestions,
-    complianceQuestions,
+    riskQuestions: deduplicatedRiskQuestions,
+    complianceQuestions: deduplicatedComplianceQuestions,
     scoringFormula,
     incidentSummary: {
       totalIncidentsAnalyzed: similarIncidents.length,
@@ -237,14 +310,14 @@ export async function generateDynamicQuestions(
         : 0,
       generationTimeMs,
       // ✅ Add metadata fields for frontend
-      totalRiskQuestions: riskQuestions.length,
-      totalComplianceQuestions: complianceQuestions.length,
+      totalRiskQuestions: deduplicatedRiskQuestions.length,
+      totalComplianceQuestions: deduplicatedComplianceQuestions.length,
       ...domainCounts, // aiQuestions, cyberQuestions, cloudQuestions
-      avgRiskWeight: riskQuestions.length > 0
-        ? riskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / riskQuestions.length
+      avgRiskWeight: deduplicatedRiskQuestions.length > 0
+        ? deduplicatedRiskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / deduplicatedRiskQuestions.length
         : 0,
-      avgComplianceWeight: complianceQuestions.length > 0
-        ? complianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / complianceQuestions.length
+      avgComplianceWeight: deduplicatedComplianceQuestions.length > 0
+        ? deduplicatedComplianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / deduplicatedComplianceQuestions.length
         : 0,
     },
   }
@@ -508,16 +581,44 @@ async function generateSingleRiskQuestion(
     recentExamples: relatedIncidents.slice(0, 5).map(incident => ({
       id: incident.incidentId || `inc_${Date.now()}`,
       title: incident.embeddingText?.substring(0, 100) || incident.incidentType || 'Incident',
-      organization: incident.organization || 'Organization',
+      // ✅ Try multiple field names for organization (frontend compatibility)
+      organization: (incident as any).organization
+        || (incident as any).company
+        || (incident as any).companyName
+        || (incident as any).title
+        || 'Organization',
       date: incident.incidentDate ? new Date(incident.incidentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       severity: avgSeverity,
-      incidentType: incident.incidentType || 'Unknown',
+      // ✅ Try multiple field names for incidentType (frontend compatibility)
+      incidentType: incident.incidentType
+        || (incident as any).type
+        || (incident as any).category
+        || (incident as any).riskCategory
+        || 'security_incident',
       category: incident.incidentType || 'security_incident',
       description: incident.embeddingText || 'Security incident',
-      estimatedCost: Number(incident.estimatedCost || 0),
-      cost: Number(incident.estimatedCost || 0),
-      similarity: incident.similarity,
-      relevanceScore: incident.similarity,
+      // ✅ Try multiple field names for cost (frontend compatibility)
+      estimatedCost: Number((incident as any).estimatedCost
+        || (incident as any).cost
+        || (incident as any).financialImpact
+        || (incident as any).impact
+        || 0),
+      cost: Number((incident as any).estimatedCost
+        || (incident as any).cost
+        || (incident as any).financialImpact
+        || (incident as any).impact
+        || 0),
+      // ✅ Try multiple field names for similarity (frontend compatibility)
+      similarity: incident.similarity
+        || (incident as any).relevanceScore
+        || (incident as any).score
+        || (incident as any).matchScore
+        || 0,
+      relevanceScore: incident.similarity
+        || (incident as any).relevanceScore
+        || (incident as any).score
+        || (incident as any).matchScore
+        || 0,
     })),
     statistics: {
       totalCost,
@@ -547,7 +648,7 @@ async function generateSingleRiskQuestion(
     evidenceWeight,
     industryWeight,
     finalWeight,
-    weight: finalWeight * 10, // 0-10 scale
+    weight: finalWeight, // ✅ 0-1 scale (normalized for frontend display as percentage)
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, priorityArea.reasoning),
     evidenceQuery: priorityArea.area,
@@ -665,16 +766,44 @@ async function generateSingleComplianceQuestion(
     recentExamples: relatedIncidents.slice(0, 5).map(incident => ({
       id: incident.incidentId || `inc_${Date.now()}`,
       title: incident.embeddingText?.substring(0, 100) || incident.incidentType || 'Compliance Incident',
-      organization: incident.organization || 'Organization',
+      // ✅ Try multiple field names for organization (frontend compatibility)
+      organization: (incident as any).organization
+        || (incident as any).company
+        || (incident as any).companyName
+        || (incident as any).title
+        || 'Organization',
       date: incident.incidentDate ? new Date(incident.incidentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       severity: avgSeverity,
-      incidentType: incident.incidentType || 'regulation_violation',
+      // ✅ Try multiple field names for incidentType (frontend compatibility)
+      incidentType: incident.incidentType
+        || (incident as any).type
+        || (incident as any).category
+        || (incident as any).riskCategory
+        || 'regulation_violation',
       category: incident.incidentType || 'compliance',
       description: incident.embeddingText || 'Compliance violation',
-      estimatedCost: Number(incident.estimatedCost || 0),
-      cost: Number(incident.estimatedCost || 0),
-      similarity: incident.similarity,
-      relevanceScore: incident.similarity,
+      // ✅ Try multiple field names for cost (frontend compatibility)
+      estimatedCost: Number((incident as any).estimatedCost
+        || (incident as any).cost
+        || (incident as any).financialImpact
+        || (incident as any).impact
+        || 0),
+      cost: Number((incident as any).estimatedCost
+        || (incident as any).cost
+        || (incident as any).financialImpact
+        || (incident as any).impact
+        || 0),
+      // ✅ Try multiple field names for similarity (frontend compatibility)
+      similarity: incident.similarity
+        || (incident as any).relevanceScore
+        || (incident as any).score
+        || (incident as any).matchScore
+        || 0,
+      relevanceScore: incident.similarity
+        || (incident as any).relevanceScore
+        || (incident as any).score
+        || (incident as any).matchScore
+        || 0,
     })),
     statistics: {
       totalCost,
@@ -704,7 +833,7 @@ async function generateSingleComplianceQuestion(
     evidenceWeight,
     industryWeight,
     finalWeight,
-    weight: finalWeight * 10, // 0-10 scale
+    weight: finalWeight, // ✅ 0-1 scale (normalized for frontend display as percentage)
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `Required by ${llmAnalysis.complianceRequirements.join(', ')}`),
     evidenceQuery: complianceArea,
