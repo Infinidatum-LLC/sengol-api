@@ -10,6 +10,10 @@ import {
   getAssessmentBenchmarkController,
   getAssessmentSimilarCasesController,
 } from '../controllers/assessments.controller'
+import {
+  generateQuestionsController,
+  saveQuestionsController,
+} from '../controllers/review.controller'
 
 export async function assessmentsRoutes(fastify: FastifyInstance) {
   // Assessment CRUD
@@ -20,6 +24,10 @@ export async function assessmentsRoutes(fastify: FastifyInstance) {
   fastify.put('/api/assessments/:id/step1', updateAssessmentStep1Controller)
   fastify.put('/api/assessments/:id/step2', updateAssessmentStep2Controller)
   fastify.put('/api/assessments/:id/step3', updateAssessmentStep3Controller)
+
+  // Question generation and saving
+  fastify.post('/api/assessments/:id/generate-questions', generateQuestionsController)
+  fastify.put('/api/assessments/:id/save-questions', saveQuestionsController)
 
   // Assessment submission
   fastify.post('/api/assessments/:id/submit', submitAssessmentController)

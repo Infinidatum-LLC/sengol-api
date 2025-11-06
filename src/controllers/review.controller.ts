@@ -139,6 +139,7 @@ export async function generateQuestionsController(
 interface SaveQuestionsBody {
   riskQuestions: any[]
   complianceQuestions: any[]
+  userId: string
 }
 
 export async function saveQuestionsController(
@@ -149,37 +150,79 @@ export async function saveQuestionsController(
   reply: FastifyReply
 ) {
   const { id } = request.params
-  const { riskQuestions = [], complianceQuestions = [] } = request.body
+  const { riskQuestions = [], complianceQuestions = [], userId } = request.body
 
   try {
+    // Verify userId is provided
+    if (!userId) {
+      return reply.code(400).send({
+        error: 'userId is required',
+        status: 400
+      })
+    }
+
+    // Get assessment
     const assessment = await prisma.riskAssessment.findUnique({
       where: { id }
     })
 
     if (!assessment) {
-      return reply.code(404).send({ error: 'Assessment not found' })
+      return reply.code(404).send({
+        error: 'Assessment not found',
+        status: 404
+      })
+    }
+
+    // CRITICAL: Verify ownership
+    if (assessment.userId !== userId) {
+      return reply.code(403).send({
+        error: 'Forbidden - You do not own this assessment',
+        status: 403
+      })
     }
 
     // Update assessment with generated questions
-    const existingNotes = (assessment.riskNotes as any) || {}
+    const existingRiskNotes = (assessment.riskNotes as any) || {}
+    const existingComplianceNotes = (assessment.complianceNotes as any) || {}
 
     await prisma.riskAssessment.update({
       where: { id },
       data: {
         riskNotes: {
-          ...existingNotes,
+          ...existingRiskNotes,
           generatedQuestions: riskQuestions,
-          complianceQuestions: complianceQuestions
-        }
+          savedAt: new Date().toISOString()
+        },
+        complianceNotes: {
+          ...existingComplianceNotes,
+          generatedQuestions: complianceQuestions,
+          savedAt: new Date().toISOString()
+        },
+        questionGeneratedAt: new Date(),
+        updatedAt: new Date()
       }
     })
 
-    return reply.send({ success: true })
+    request.log.info({
+      assessmentId: id,
+      riskCount: riskQuestions.length,
+      complianceCount: complianceQuestions.length
+    }, 'Questions saved successfully')
+
+    return reply.send({
+      success: true,
+      message: 'Questions saved successfully',
+      counts: {
+        risk: riskQuestions.length,
+        compliance: complianceQuestions.length
+      }
+    })
   } catch (error) {
-    console.error('[SAVE_QUESTIONS] Error:', error)
+    request.log.error({ err: error }, 'Failed to save questions')
     return reply.code(500).send({
       error: 'Failed to save questions',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : 'Unknown error',
+      status: 500
     })
   }
 }
