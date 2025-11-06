@@ -8,6 +8,11 @@ import {
 } from '../controllers/projects-gated.controller'
 
 export async function projectsGatedRoutes(fastify: FastifyInstance) {
+  // Spec-compliant routes (BACKEND_API_IMPLEMENTATION_CHECKLIST.md)
+  fastify.get('/api/projects', listProjectsController)
+  fastify.post('/api/projects', createProjectController)
+
+  // Legacy routes (for backward compatibility)
   fastify.get('/api/projects-list', listProjectsController)
   fastify.post('/api/projects-create', createProjectController)
   fastify.get('/api/projects-get/:id', getProjectController)

@@ -16,7 +16,8 @@
       "Bash(curl:*)",
       "Bash(vercel inspect:*)",
       "Bash(vercel ls:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(.env)"
     ],
     "deny": [],
     "ask": []
