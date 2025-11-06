@@ -95,14 +95,20 @@ export interface QuestionGenerationRequest {
   budgetRange?: string
   existingControls?: string[]
   techStack?: string[] // Technologies used (GPT-4, PostgreSQL, AWS, etc.)
-  dataTypes?: string[] // Data types processed (PII, Financial, etc.)
+  dataTypes?: string[] // Data types processed (PII, Financial, Health, etc.) - ENHANCED for multi-factor matching
+  dataSources?: string[] // Data sources (API, Database, File Upload, etc.) - NEW for multi-factor matching
   systemCriticality?: string // High, Medium, Low
+  deployment?: string // cloud, on-prem, hybrid
 
   // Question generation controls
   maxQuestions?: number // Total questions (default: 75)
   questionsPerDomain?: number // Questions per domain (default: 25)
   minWeight?: number // Minimum weight threshold (0-1 scale, default: 0.7 for 70%+)
   minRiskPotential?: number // Alias for minWeight
+
+  // Multi-factor relevance controls
+  minRelevanceScore?: number // Minimum combined relevance score (default: 0.5)
+  minIncidentCount?: number // Minimum incidents per question (default: 3)
 }
 
 export interface QuestionGenerationResult {
@@ -159,6 +165,192 @@ export interface ScoringComponent {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+/**
+ * Extract technologies from incident metadata or text
+ */
+function extractTechnologies(incident: IncidentMatch): string[] {
+  const techs: string[] = []
+
+  // Extract from embeddingText
+  if (incident.embeddingText) {
+    const text = incident.embeddingText.toLowerCase()
+    const techKeywords: Record<string, string[]> = {
+      'GPT-4': ['gpt-4', 'gpt4', 'openai gpt-4'],
+      'GPT-3': ['gpt-3', 'gpt3'],
+      'Claude': ['claude', 'anthropic'],
+      'BERT': ['bert'],
+      'LLM': ['llm', 'large language model'],
+      'AWS': ['aws', 'amazon web services'],
+      'Azure': ['azure', 'microsoft azure'],
+      'GCP': ['gcp', 'google cloud'],
+      'PostgreSQL': ['postgresql', 'postgres'],
+      'MongoDB': ['mongodb', 'mongo'],
+      'Redis': ['redis'],
+      'Docker': ['docker', 'container'],
+      'Kubernetes': ['kubernetes', 'k8s'],
+      'React': ['react'],
+      'Node.js': ['node.js', 'nodejs'],
+      'Python': ['python'],
+      'TensorFlow': ['tensorflow'],
+      'PyTorch': ['pytorch'],
+      'S3': ['s3', 'amazon s3'],
+      'Lambda': ['lambda', 'aws lambda'],
+      'API': ['api', 'rest api'],
+    }
+
+    for (const [tech, keywords] of Object.entries(techKeywords)) {
+      if (keywords.some(kw => text.includes(kw))) {
+        techs.push(tech)
+      }
+    }
+  }
+
+  return [...new Set(techs)]
+}
+
+/**
+ * Extract data types from incident metadata or text
+ */
+function extractDataTypes(incident: IncidentMatch): string[] {
+  const dataTypes: string[] = []
+
+  if (incident.embeddingText) {
+    const text = incident.embeddingText.toLowerCase()
+    const dataTypeKeywords: Record<string, string[]> = {
+      'PII': ['pii', 'personally identifiable', 'personal data'],
+      'PHI': ['phi', 'protected health', 'medical records'],
+      'Financial': ['financial', 'payment', 'credit card', 'bank account'],
+      'Health': ['health', 'medical', 'patient'],
+      'Credit': ['credit', 'credit card'],
+      'Biometric': ['biometric', 'fingerprint', 'face recognition'],
+      'Location': ['location', 'gps', 'geolocation'],
+      'Authentication': ['authentication', 'password', 'credentials'],
+    }
+
+    for (const [dataType, keywords] of Object.entries(dataTypeKeywords)) {
+      if (keywords.some(kw => text.includes(kw))) {
+        dataTypes.push(dataType)
+      }
+    }
+  }
+
+  return [...new Set(dataTypes)]
+}
+
+/**
+ * Extract data sources from incident metadata or text
+ */
+function extractDataSources(incident: IncidentMatch): string[] {
+  const sources: string[] = []
+
+  if (incident.embeddingText) {
+    const text = incident.embeddingText.toLowerCase()
+    const sourceKeywords: Record<string, string[]> = {
+      'API': ['api', 'rest', 'graphql', 'endpoint'],
+      'Database': ['database', 'sql', 'nosql'],
+      'File': ['file', 'upload', 'document'],
+      'Third-party': ['third-party', 'external service', 'integration'],
+      'Cloud Storage': ['cloud storage', 's3', 'blob'],
+      'Stream': ['streaming', 'real-time', 'kafka'],
+    }
+
+    for (const [source, keywords] of Object.entries(sourceKeywords)) {
+      if (keywords.some(kw => text.includes(kw))) {
+        sources.push(source)
+      }
+    }
+  }
+
+  return [...new Set(sources)]
+}
+
+/**
+ * Calculate technology match score (0-1)
+ */
+function calculateTechnologyMatch(incident: IncidentMatch, techStack: string[]): number {
+  if (!techStack || techStack.length === 0) return 0.5 // Neutral if no tech stack
+
+  const incidentTechs = extractTechnologies(incident)
+  if (incidentTechs.length === 0) return 0.5 // Neutral if unknown
+
+  const techStackLower = techStack.map(t => t.toLowerCase())
+  const incidentTechsLower = incidentTechs.map(t => t.toLowerCase())
+
+  const matches = incidentTechsLower.filter(tech =>
+    techStackLower.some(stackTech =>
+      stackTech.includes(tech) || tech.includes(stackTech)
+    )
+  )
+
+  return matches.length / Math.max(techStack.length, incidentTechs.length)
+}
+
+/**
+ * Calculate data type match score (0-1)
+ */
+function calculateDataTypeMatch(incident: IncidentMatch, dataTypes: string[]): number {
+  if (!dataTypes || dataTypes.length === 0) return 0.5 // Neutral if no data types
+
+  const incidentDataTypes = extractDataTypes(incident)
+  if (incidentDataTypes.length === 0) return 0.5 // Neutral if unknown
+
+  const dataTypesLower = dataTypes.map(t => t.toLowerCase())
+  const incidentDataTypesLower = incidentDataTypes.map(t => t.toLowerCase())
+
+  const matches = incidentDataTypesLower.filter(dt =>
+    dataTypesLower.some(sysDt =>
+      sysDt.includes(dt) || dt.includes(sysDt)
+    )
+  )
+
+  return matches.length / Math.max(dataTypes.length, incidentDataTypes.length)
+}
+
+/**
+ * Calculate data source match score (0-1)
+ */
+function calculateDataSourceMatch(incident: IncidentMatch, dataSources: string[]): number {
+  if (!dataSources || dataSources.length === 0) return 0.5 // Neutral if no data sources
+
+  const incidentSources = extractDataSources(incident)
+  if (incidentSources.length === 0) return 0.5 // Neutral if unknown
+
+  const sourcesLower = dataSources.map(s => s.toLowerCase())
+  const incidentSourcesLower = incidentSources.map(s => s.toLowerCase())
+
+  const matches = incidentSourcesLower.filter(src =>
+    sourcesLower.some(sysSrc =>
+      sysSrc.includes(src) || src.includes(sysSrc)
+    )
+  )
+
+  return matches.length / Math.max(dataSources.length, incidentSources.length)
+}
+
+/**
+ * Calculate combined multi-factor relevance score (0-1)
+ * Combines semantic similarity, technology match, data type match, and source match
+ */
+function calculateMultiFactorRelevance(
+  incident: IncidentMatch,
+  request: QuestionGenerationRequest
+): number {
+  const semanticScore = incident.similarity
+  const technologyScore = calculateTechnologyMatch(incident, request.techStack || [])
+  const dataTypeScore = calculateDataTypeMatch(incident, request.dataTypes || [])
+  const sourceScore = calculateDataSourceMatch(incident, request.dataSources || [])
+
+  // Weighted combination (semantic 40%, tech 30%, dataType 20%, source 10%)
+  const combinedRelevance = (
+    semanticScore * 0.4 +
+    technologyScore * 0.3 +
+    dataTypeScore * 0.2 +
+    sourceScore * 0.1
+  )
+
+  return combinedRelevance
+}
 
 /**
  * Remove duplicate questions based on ID and label similarity
@@ -434,7 +626,7 @@ async function generateRiskQuestions(
     for (let i = 0; i < Math.min(questionsPerDomain, domainRiskAreas.length); i++) {
       const riskArea = domainRiskAreas[i]
 
-      // ✅ generateSingleRiskQuestion now does question-specific search
+      // ✅ generateSingleRiskQuestion now does question-specific search with multi-factor relevance
       // No need to pre-filter incidents - each question searches for its own
       const question = await generateSingleRiskQuestion(
         riskArea,
@@ -444,11 +636,18 @@ async function generateRiskQuestions(
         domain as 'ai' | 'cyber' | 'cloud'
       )
 
-      // ✅ Filter by risk threshold (70%+ by default)
-      if (question.finalWeight >= minWeight) {
+      // ✅ Filter by risk threshold (70%+ by default) AND minimum incident count
+      const minIncidentCount = request.minIncidentCount || 3
+      const incidentCount = question.relatedIncidentCount || 0
+      if (question.finalWeight >= minWeight && incidentCount >= minIncidentCount) {
         questions.push(question)
       } else {
-        console.log(`[FILTER] Skipping "${riskArea.area}" - weight ${question.finalWeight.toFixed(2)} below threshold ${minWeight}`)
+        if (question.finalWeight < minWeight) {
+          console.log(`[FILTER] Skipping "${riskArea.area}" - weight ${question.finalWeight.toFixed(2)} below threshold ${minWeight}`)
+        }
+        if (incidentCount < minIncidentCount) {
+          console.log(`[FILTER] Skipping "${riskArea.area}" - only ${incidentCount} incidents (minimum: ${minIncidentCount})`)
+        }
       }
     }
 
@@ -536,18 +735,17 @@ async function generateSingleRiskQuestion(
   llmAnalysis: LLMAnalysis,
   domain?: 'ai' | 'cyber' | 'cloud'
 ): Promise<DynamicQuestion> {
-  // ✅ FIX: Search for question-specific incidents instead of using shared pool
-  // Generate embedding query based on the specific question context
+  // ✅ Search for question-specific incidents with enhanced context
   const questionSearchQuery = `${priorityArea.area} ${priorityArea.reasoning} ${request.systemDescription}`.substring(0, 500)
 
   console.log(`[QUESTION_SEARCH] Searching for incidents specific to "${priorityArea.area}"...`)
 
   // Perform question-specific vector search
-  const questionSpecificIncidents = await findSimilarIncidents(
+  let questionSpecificIncidents = await findSimilarIncidents(
     questionSearchQuery,
     {
-      limit: 20, // Get 20 incidents specific to this question
-      minSimilarity: 0.6,
+      limit: 30, // Get more incidents for better filtering
+      minSimilarity: 0.5, // Lower threshold to allow multi-factor filtering
       industry: request.industry,
       severity: ['medium', 'high', 'critical'],
     }
@@ -555,8 +753,34 @@ async function generateSingleRiskQuestion(
 
   console.log(`[QUESTION_SEARCH] Found ${questionSpecificIncidents.length} incidents for "${priorityArea.area}"`)
 
-  // Use question-specific incidents instead of shared pool
-  relatedIncidents = questionSpecificIncidents
+  // ✅ NEW: Calculate multi-factor relevance for each incident
+  const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
+    incident,
+    multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
+    technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
+    dataTypeScore: calculateDataTypeMatch(incident, request.dataTypes || []),
+    sourceScore: calculateDataSourceMatch(incident, request.dataSources || [])
+  }))
+
+  // ✅ NEW: Filter by minimum relevance threshold
+  const minRelevance = request.minRelevanceScore || 0.5
+  const filteredIncidents = incidentsWithRelevance
+    .filter(i => i.multiFactorRelevance >= minRelevance)
+    .sort((a, b) => b.multiFactorRelevance - a.multiFactorRelevance)
+    .slice(0, 20)
+
+  console.log(`[MULTI_FACTOR] Filtered to ${filteredIncidents.length} incidents (relevance >= ${minRelevance})`)
+  if (filteredIncidents.length > 0) {
+    console.log(`[MULTI_FACTOR] Top incident: ${filteredIncidents[0].multiFactorRelevance.toFixed(2)} relevance (tech: ${filteredIncidents[0].technologyScore.toFixed(2)}, data: ${filteredIncidents[0].dataTypeScore.toFixed(2)}, source: ${filteredIncidents[0].sourceScore.toFixed(2)})`)
+  }
+
+  // Use filtered incidents
+  relatedIncidents = filteredIncidents.map(i => i.incident)
+
+  // Calculate average multi-factor relevance
+  const avgMultiFactorRelevance = filteredIncidents.length > 0
+    ? filteredIncidents.reduce((sum, i) => sum + i.multiFactorRelevance, 0) / filteredIncidents.length
+    : 0
   // Calculate weights
   const baseWeight = priorityArea.priority / 100 // LLM priority as weight
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
@@ -653,16 +877,16 @@ async function generateSingleRiskQuestion(
     label: priorityArea.area,
     text: priorityArea.area,
     question: priorityArea.area,
-    description: `Evidence from ${relatedIncidents.length} incidents with average severity ${avgSeverity.toFixed(1)}/10`,
+    description: `Evidence from ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance) with average severity ${avgSeverity.toFixed(1)}/10`,
     priority: determinePriority(finalWeight),
 
-    importance: `${priorityArea.reasoning}. Historical data shows ${relatedIncidents.length} similar incidents with average cost of $${avgCost.toLocaleString()}.`,
-    reasoning: `${priorityArea.reasoning}. Evidence from ${relatedIncidents.length} incidents with average severity ${avgSeverity.toFixed(1)}/10`,
+    importance: `${priorityArea.reasoning}. Historical data shows ${relatedIncidents.length} similar incidents with average cost of $${avgCost.toLocaleString()}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
+    reasoning: `${priorityArea.reasoning}. Evidence from ${relatedIncidents.length} incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance (severity ${avgSeverity.toFixed(1)}/10)`,
     examples,
     mitigations: generateMitigations(priorityArea.area, relatedIncidents),
     regulations: extractRegulations(relatedIncidents, llmAnalysis),
 
-    // ✅ CRITICAL: Evidence object
+    // ✅ CRITICAL: Evidence object with multi-factor relevance
     evidence,
 
     baseWeight,
@@ -671,7 +895,7 @@ async function generateSingleRiskQuestion(
     finalWeight,
     weight: finalWeight, // ✅ 0-1 scale (normalized for frontend display as percentage)
 
-    weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, priorityArea.reasoning),
+    weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `${priorityArea.reasoning}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%`),
     evidenceQuery: priorityArea.area,
     relatedIncidents: relatedIncidents.slice(0, 10),
     similarIncidents: relatedIncidents.slice(0, 10),
@@ -736,25 +960,51 @@ async function generateSingleComplianceQuestion(
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion> {
-  // ✅ FIX: Search for question-specific compliance incidents
+  // ✅ Search for question-specific compliance incidents with enhanced context
   const complianceSearchQuery = `${complianceArea} compliance regulatory violation ${request.systemDescription}`.substring(0, 500)
 
   console.log(`[COMPLIANCE_SEARCH] Searching for compliance incidents specific to "${complianceArea}"...`)
 
   // Perform question-specific vector search for compliance incidents
-  const questionSpecificIncidents = await findSimilarIncidents(
+  let questionSpecificIncidents = await findSimilarIncidents(
     complianceSearchQuery,
     {
-      limit: 10, // Get 10 compliance incidents specific to this question
-      minSimilarity: 0.5, // Lower threshold for compliance (broader matching)
+      limit: 20, // Get more incidents for better filtering
+      minSimilarity: 0.4, // Lower threshold for compliance (broader matching)
       industry: request.industry,
     }
   )
 
   console.log(`[COMPLIANCE_SEARCH] Found ${questionSpecificIncidents.length} compliance incidents for "${complianceArea}"`)
 
-  // Use question-specific incidents instead of shared pool
-  relatedIncidents = questionSpecificIncidents
+  // ✅ NEW: Calculate multi-factor relevance for each compliance incident
+  const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
+    incident,
+    multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
+    technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
+    dataTypeScore: calculateDataTypeMatch(incident, request.dataTypes || []),
+    sourceScore: calculateDataSourceMatch(incident, request.dataSources || [])
+  }))
+
+  // ✅ NEW: Filter by minimum relevance threshold (lower for compliance)
+  const minRelevance = (request.minRelevanceScore || 0.5) * 0.8 // 80% of risk threshold for compliance
+  const filteredIncidents = incidentsWithRelevance
+    .filter(i => i.multiFactorRelevance >= minRelevance)
+    .sort((a, b) => b.multiFactorRelevance - a.multiFactorRelevance)
+    .slice(0, 10)
+
+  console.log(`[MULTI_FACTOR] Filtered to ${filteredIncidents.length} compliance incidents (relevance >= ${minRelevance})`)
+  if (filteredIncidents.length > 0) {
+    console.log(`[MULTI_FACTOR] Top compliance incident: ${filteredIncidents[0].multiFactorRelevance.toFixed(2)} relevance`)
+  }
+
+  // Use filtered incidents
+  relatedIncidents = filteredIncidents.map(i => i.incident)
+
+  // Calculate average multi-factor relevance
+  const avgMultiFactorRelevance = filteredIncidents.length > 0
+    ? filteredIncidents.reduce((sum, i) => sum + i.multiFactorRelevance, 0) / filteredIncidents.length
+    : 0
   // Calculate weights for compliance
   const baseWeight = llmAnalysis.complianceRequirements.includes(complianceArea) ? 0.9 : 0.7
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
@@ -849,11 +1099,11 @@ async function generateSingleComplianceQuestion(
     label: complianceArea,
     text: complianceArea,
     question: complianceArea,
-    description: `Based on ${relatedIncidents.length} similar incidents`,
+    description: `Based on ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance)`,
     priority: determinePriority(finalWeight),
 
-    importance: `Required for ${llmAnalysis.complianceRequirements.join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relatedIncidents.length} incidents.`,
-    reasoning: `Evidence from ${relatedIncidents.length} compliance incidents`,
+    importance: `Required for ${llmAnalysis.complianceRequirements.join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relatedIncidents.length} incidents. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
+    reasoning: `Evidence from ${relatedIncidents.length} compliance incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance`,
     examples,
     mitigations: generateComplianceMitigations(complianceArea),
     regulations: llmAnalysis.complianceRequirements,
