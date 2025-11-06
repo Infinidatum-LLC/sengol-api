@@ -423,14 +423,15 @@ function calculateStringSimilarity(str1: string, str2: string): number {
 export async function generateDynamicQuestions(
   request: QuestionGenerationRequest
 ): Promise<QuestionGenerationResult> {
-  const startTime = Date.now()
+  const overallStartTime = Date.now()
 
   console.log('\n🎯 Starting Dynamic Question Generation...')
   console.log('System: "' + request.systemDescription.substring(0, 100) + '..."')
   console.log('Domains:', request.selectedDomains || 'Not specified')
   console.log('Industry:', request.industry || 'Not specified')
 
-  // Step 1: Find similar incidents from d-vecDB (increased from 50 to 100 for better coverage)
+  // Step 1: Find similar incidents from d-vecDB
+  const step1Start = Date.now()
   console.log('\n📊 Step 1: Finding similar historical incidents from d-vecDB...')
   const similarIncidents = await findSimilarIncidents(
     request.systemDescription,
@@ -441,6 +442,8 @@ export async function generateDynamicQuestions(
       severity: ['medium', 'high', 'critical'],
     }
   )
+  const step1Time = ((Date.now() - step1Start) / 1000).toFixed(1)
+  console.log(`[TIMING] Step 1 (Vector Search): ${step1Time}s`)
 
   const incidentStats = calculateIncidentStatistics(similarIncidents)
 
@@ -449,16 +452,25 @@ export async function generateDynamicQuestions(
   console.log(`Top incident types: ${Array.from(new Set(similarIncidents.slice(0, 5).map(i => i.incidentType))).join(', ')}`)
 
   // Step 2: Analyze system description with LLM
+  const step2Start = Date.now()
   console.log('\n🤖 Step 2: Analyzing system description with LLM...')
   const llmAnalysis = await analyzeSystemWithLLM(request, similarIncidents)
+  const step2Time = ((Date.now() - step2Start) / 1000).toFixed(1)
+  console.log(`[TIMING] Step 2 (LLM System Analysis): ${step2Time}s`)
 
-  // Step 3: Generate risk questions (hybrid: LLM + evidence)
+  // Step 3: Generate risk questions (PARALLEL execution)
+  const step3Start = Date.now()
   console.log('\n⚠️  Step 3: Generating risk questions...')
   const riskQuestions = await generateRiskQuestions(request, similarIncidents, llmAnalysis)
+  const step3Time = ((Date.now() - step3Start) / 1000).toFixed(1)
+  console.log(`[TIMING] Step 3 (Risk Questions): ${step3Time}s`)
 
-  // Step 4: Generate compliance questions
+  // Step 4: Generate compliance questions (PARALLEL execution)
+  const step4Start = Date.now()
   console.log('\n📋 Step 4: Generating compliance questions...')
   const complianceQuestions = await generateComplianceQuestions(request, similarIncidents, llmAnalysis)
+  const step4Time = ((Date.now() - step4Start) / 1000).toFixed(1)
+  console.log(`[TIMING] Step 4 (Compliance Questions): ${step4Time}s`)
 
   // Step 4.5: Deduplicate questions
   console.log('\n🔍 Step 4.5: Removing duplicate questions...')
@@ -466,14 +478,31 @@ export async function generateDynamicQuestions(
   const deduplicatedComplianceQuestions = deduplicateQuestions(complianceQuestions)
 
   // Step 5: Create scoring formula
+  const step5Start = Date.now()
   console.log('\n🧮 Step 5: Creating explainable scoring formula...')
   const scoringFormula = createScoringFormula(deduplicatedRiskQuestions, deduplicatedComplianceQuestions, incidentStats)
+  const step5Time = ((Date.now() - step5Start) / 1000).toFixed(1)
+  console.log(`[TIMING] Step 5 (Scoring Formula): ${step5Time}s`)
 
-  const endTime = Date.now()
-  const generationTimeMs = endTime - startTime
+  const overallTime = ((Date.now() - overallStartTime) / 1000).toFixed(1)
+  const generationTimeMs = Date.now() - overallStartTime
 
-  console.log(`\n✅ Generation complete in ${generationTimeMs}ms`)
+  console.log(`\n✅ Generation complete in ${overallTime}s (${generationTimeMs}ms)`)
   console.log(`Generated ${deduplicatedRiskQuestions.length} risk questions + ${deduplicatedComplianceQuestions.length} compliance questions`)
+
+  console.log(`\n📊 Performance Breakdown:`)
+  console.log(`  • Vector Search: ${step1Time}s`)
+  console.log(`  • LLM System Analysis: ${step2Time}s`)
+  console.log(`  • Risk Questions (PARALLEL): ${step3Time}s`)
+  console.log(`  • Compliance Questions (PARALLEL): ${step4Time}s`)
+  console.log(`  • Scoring Formula: ${step5Time}s`)
+  console.log(`  • Total: ${overallTime}s`)
+
+  if (parseFloat(overallTime) > 60) {
+    console.warn(`⚠️  WARNING: Generation took ${overallTime}s (> 60s target)`)
+  } else {
+    console.log(`✅ Performance target met (< 60s)`)
+  }
 
   // ✅ Calculate per-domain question counts
   const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
@@ -615,43 +644,76 @@ async function generateRiskQuestions(
   console.log(`Generating ${questionsPerDomain} questions per domain for: ${selectedDomains.join(', ')}`)
   console.log(`Minimum risk threshold: ${(minWeight * 100).toFixed(0)}%`)
 
-  // ✅ Generate questions for each selected domain
+  // ✅ OPTIMIZATION: Generate all questions in parallel to avoid timeout
+  const startTime = Date.now()
+  console.log(`\n⚡ Generating questions in PARALLEL for all domains to optimize performance...`)
+
+  // Collect all risk areas from all domains
+  const allTasks: Array<{
+    riskArea: { area: string; priority: number; reasoning: string }
+    domain: 'ai' | 'cyber' | 'cloud'
+  }> = []
+
   for (const domain of selectedDomains) {
-    console.log(`\n🔍 Generating questions for ${domain.toUpperCase()} domain...`)
-
-    // Get domain-specific risk areas based on LLM analysis and domain
     const domainRiskAreas = getDomainSpecificRiskAreas(domain, llmAnalysis)
+    const areasToGenerate = domainRiskAreas.slice(0, Math.min(questionsPerDomain, domainRiskAreas.length))
 
-    // Generate questions for this domain
-    for (let i = 0; i < Math.min(questionsPerDomain, domainRiskAreas.length); i++) {
-      const riskArea = domainRiskAreas[i]
-
-      // ✅ generateSingleRiskQuestion now does question-specific search with multi-factor relevance
-      // No need to pre-filter incidents - each question searches for its own
-      const question = await generateSingleRiskQuestion(
+    for (const riskArea of areasToGenerate) {
+      allTasks.push({
         riskArea,
-        [], // Empty array - question will do its own vector search
-        request,
-        llmAnalysis,
-        domain as 'ai' | 'cyber' | 'cloud'
-      )
+        domain: domain as 'ai' | 'cyber' | 'cloud'
+      })
+    }
+  }
 
-      // ✅ Filter by risk threshold (70%+ by default) AND minimum incident count
-      const minIncidentCount = request.minIncidentCount || 3
-      const incidentCount = question.relatedIncidentCount || 0
-      if (question.finalWeight >= minWeight && incidentCount >= minIncidentCount) {
-        questions.push(question)
-      } else {
-        if (question.finalWeight < minWeight) {
-          console.log(`[FILTER] Skipping "${riskArea.area}" - weight ${question.finalWeight.toFixed(2)} below threshold ${minWeight}`)
-        }
-        if (incidentCount < minIncidentCount) {
-          console.log(`[FILTER] Skipping "${riskArea.area}" - only ${incidentCount} incidents (minimum: ${minIncidentCount})`)
-        }
+  console.log(`[PARALLEL] Queued ${allTasks.length} questions for parallel generation`)
+
+  // ✅ Generate ALL questions in parallel using Promise.all
+  const generatedQuestions = await Promise.all(
+    allTasks.map(async ({ riskArea, domain }) => {
+      try {
+        const question = await generateSingleRiskQuestion(
+          riskArea,
+          [], // Empty array - question will do its own vector search
+          request,
+          llmAnalysis,
+          domain
+        )
+        return question
+      } catch (error) {
+        console.error(`[PARALLEL] Failed to generate question for "${riskArea.area}":`, error)
+        return null
+      }
+    })
+  )
+
+  const generationTime = ((Date.now() - startTime) / 1000).toFixed(1)
+  console.log(`[PARALLEL] ✅ Generated ${generatedQuestions.length} questions in ${generationTime}s (parallel execution)`)
+
+  // Filter out failed questions and apply thresholds
+  const minIncidentCount = request.minIncidentCount || 3
+
+  for (const question of generatedQuestions) {
+    if (!question) continue // Skip failed generations
+
+    const incidentCount = question.relatedIncidentCount || 0
+
+    if (question.finalWeight >= minWeight && incidentCount >= minIncidentCount) {
+      questions.push(question)
+    } else {
+      if (question.finalWeight < minWeight) {
+        console.log(`[FILTER] Skipping "${question.label}" - weight ${question.finalWeight.toFixed(2)} below threshold ${minWeight}`)
+      }
+      if (incidentCount < minIncidentCount) {
+        console.log(`[FILTER] Skipping "${question.label}" - only ${incidentCount} incidents (minimum: ${minIncidentCount})`)
       }
     }
+  }
 
-    console.log(`Generated ${questions.filter(q => q.domain === domain).length} ${domain} questions`)
+  // Log distribution by domain
+  for (const domain of selectedDomains) {
+    const domainCount = questions.filter(q => q.domain === domain).length
+    console.log(`[PARALLEL] Generated ${domainCount} ${domain.toUpperCase()} questions`)
   }
 
   console.log(`\nTotal risk questions generated: ${questions.length}`)
@@ -1002,36 +1064,47 @@ async function generateComplianceQuestions(
   incidents: IncidentMatch[],
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion[]> {
-  const questions: DynamicQuestion[] = []
+  const startTime = Date.now()
+  console.log(`\n⚡ Generating compliance questions in PARALLEL...`)
 
-  // Generate questions based on identified compliance requirements
-  for (const regulation of llmAnalysis.complianceRequirements) {
-    // ✅ generateSingleComplianceQuestion now does question-specific search
-    // No need to pre-filter incidents - each question searches for its own
-    const question = await generateSingleComplianceQuestion(
-      regulation,
-      [], // Empty array - question will do its own vector search
-      request,
-      llmAnalysis
-    )
-
-    questions.push(question)
-  }
+  // Collect all compliance areas to generate
+  const complianceAreas = new Set<string>([
+    ...llmAnalysis.complianceRequirements,
+  ])
 
   // Ensure minimum compliance coverage
   const criticalCompliance = ['Data Inventory', 'Consent Management', 'Security Measures', 'Breach Response']
   for (const area of criticalCompliance) {
-    if (!questions.find(q => q.label.toLowerCase().includes(area.toLowerCase()))) {
-      // ✅ generateSingleComplianceQuestion now does question-specific search
-      const question = await generateSingleComplianceQuestion(
-        area,
-        [], // Empty array - question will do its own vector search
-        request,
-        llmAnalysis
-      )
-      questions.push(question)
+    if (![...complianceAreas].find(existing => existing.toLowerCase().includes(area.toLowerCase()))) {
+      complianceAreas.add(area)
     }
   }
+
+  console.log(`[PARALLEL] Queued ${complianceAreas.size} compliance questions for parallel generation`)
+
+  // ✅ Generate ALL compliance questions in parallel using Promise.all
+  const generatedQuestions = await Promise.all(
+    Array.from(complianceAreas).map(async (complianceArea) => {
+      try {
+        const question = await generateSingleComplianceQuestion(
+          complianceArea,
+          [], // Empty array - question will do its own vector search
+          request,
+          llmAnalysis
+        )
+        return question
+      } catch (error) {
+        console.error(`[PARALLEL] Failed to generate compliance question for "${complianceArea}":`, error)
+        return null
+      }
+    })
+  )
+
+  const generationTime = ((Date.now() - startTime) / 1000).toFixed(1)
+  console.log(`[PARALLEL] ✅ Generated ${generatedQuestions.length} compliance questions in ${generationTime}s (parallel execution)`)
+
+  // Filter out failed generations
+  const questions = generatedQuestions.filter((q): q is DynamicQuestion => q !== null)
 
   return questions
 }
