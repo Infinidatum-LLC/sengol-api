@@ -3,9 +3,14 @@
  *
  * Handles feature gating, limit enforcement, and tier management
  * Based on: docs/PRICING_AND_GATING_SPECIFICATION.md
+ *
+ * Now with database resilience:
+ * - Cached user tier and admin status lookups
+ * - Retry logic for transient failures
+ * - Circuit breaker for database operations
  */
 
-import { prisma } from '../lib/prisma'
+import { resilientPrisma } from '../lib/prisma-resilient'
 import {
   PricingTier,
   FeatureGateKey,
@@ -25,34 +30,11 @@ import {
 // ============================================================================
 
 /**
- * Get user's current pricing tier
+ * Get user's current pricing tier (with caching and resilience)
  */
 export async function getUserTier(userId: string): Promise<PricingTier> {
   try {
-    // Fetch user's active subscription
-    const subscription = await prisma.toolSubscription.findFirst({
-      where: {
-        userId,
-        status: 'active',
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    })
-
-    // If no active subscription, user is on free tier
-    if (!subscription || !subscription.planId) {
-      return 'free'
-    }
-
-    // Validate plan ID
-    const planId = subscription.planId.toLowerCase()
-    if (!['free', 'consultant', 'professional', 'enterprise'].includes(planId)) {
-      console.warn(`Invalid plan ID: ${subscription.planId}, defaulting to free`)
-      return 'free'
-    }
-
-    return planId as PricingTier
+    return (await resilientPrisma.getUserTier(userId)) as PricingTier
   } catch (error) {
     console.error('Error getting user tier:', error)
     return 'free' // Default to free on error
@@ -60,16 +42,11 @@ export async function getUserTier(userId: string): Promise<PricingTier> {
 }
 
 /**
- * Check if user is an admin (admins bypass all limits)
+ * Check if user is an admin (admins bypass all limits) (with caching and resilience)
  */
 export async function isUserAdmin(userId: string): Promise<boolean> {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { role: true },
-    })
-
-    return user?.role === 'admin'
+    return await resilientPrisma.isUserAdmin(userId)
   } catch (error) {
     console.error('Error checking admin status:', error)
     return false
@@ -124,32 +101,27 @@ export async function checkFeatureAccess(
 // ============================================================================
 
 /**
- * Count assessments created this month
+ * Count assessments created this month (with optional caching and resilience)
  */
-export async function countAssessmentsThisMonth(userId: string): Promise<number> {
-  const startOfMonth = new Date()
-  startOfMonth.setDate(1)
-  startOfMonth.setHours(0, 0, 0, 0)
-
-  const count = await prisma.riskAssessment.count({
-    where: {
-      userId,
-      createdAt: { gte: startOfMonth },
-    },
-  })
-
-  return count
+export async function countAssessmentsThisMonth(userId: string, useCache: boolean = true): Promise<number> {
+  try {
+    return await resilientPrisma.countAssessmentsThisMonth(userId, useCache)
+  } catch (error) {
+    console.error('Error counting assessments:', error)
+    throw error // Re-throw to let caller handle
+  }
 }
 
 /**
- * Count user's projects
+ * Count user's projects (with optional caching and resilience)
  */
-export async function countUserProjects(userId: string): Promise<number> {
-  const count = await prisma.project.count({
-    where: { userId },
-  })
-
-  return count
+export async function countUserProjects(userId: string, useCache: boolean = true): Promise<number> {
+  try {
+    return await resilientPrisma.countUserProjects(userId, useCache)
+  } catch (error) {
+    console.error('Error counting projects:', error)
+    throw error // Re-throw to let caller handle
+  }
 }
 
 /**

@@ -1,7 +1,10 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { prisma } from '../lib/prisma'
+import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError, NotFoundError, AuthorizationError } from '../lib/errors'
 import { checkProjectLimit } from '../services/feature-gates.service'
+
+// Get raw Prisma client for operations (wrapped with resilient patterns)
+const prisma = resilientPrisma.getRawClient()
 
 // ============================================================================
 // GET /api/projects-list - List user's projects
@@ -96,14 +99,23 @@ export async function createProjectController(
       })
     }
 
-    // Create project
-    const project = await prisma.project.create({
-      data: {
-        userId,
-        name,
-        description: description || null,
+    // Create project (with retry)
+    const project = await resilientPrisma.executeQuery(
+      async () => {
+        return await prisma.project.create({
+          data: {
+            userId,
+            name,
+            description: description || null,
+          },
+        })
       },
-    })
+      {
+        operationName: 'createProject',
+        maxRetries: 2,
+        timeout: 8000,
+      }
+    )
 
     request.log.info({ projectId: project.id }, 'Project created')
 

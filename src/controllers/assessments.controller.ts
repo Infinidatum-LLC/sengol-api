@@ -1,8 +1,11 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { prisma } from '../lib/prisma'
+import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError, NotFoundError, AuthorizationError } from '../lib/errors'
 import { checkAssessmentLimit, getUserTier } from '../services/feature-gates.service'
 import { findSimilarIncidents, calculateIncidentStatistics } from '../services/incident-search'
+
+// Get raw Prisma client for operations (wrapped with resilient patterns)
+const prisma = resilientPrisma.getRawClient()
 
 // ============================================================================
 // POST /api/assessments - Create new assessment
@@ -37,10 +40,19 @@ export async function createAssessmentController(
       })
     }
 
-    // Verify project exists and belongs to user
-    const project = await prisma.project.findUnique({
-      where: { id: projectId },
-    })
+    // Verify project exists and belongs to user (with retry)
+    const project = await resilientPrisma.executeQuery(
+      async () => {
+        return await prisma.project.findUnique({
+          where: { id: projectId },
+        })
+      },
+      {
+        operationName: 'findProject',
+        maxRetries: 2,
+        timeout: 5000,
+      }
+    )
 
     if (!project) {
       throw new NotFoundError('Project not found')
@@ -50,22 +62,31 @@ export async function createAssessmentController(
       throw new AuthorizationError('You do not have access to this project')
     }
 
-    // Create assessment with required fields
-    const assessment = await prisma.riskAssessment.create({
-      data: {
-        name,
-        userId,
-        projectId,
-        analysisStatus: 'draft',
-        industry: '',
-        companySize: 'small',
-        businessImpact: {},
-        budgetRange: '0-10k',
-        timeline: '1-3 months',
-        teamSize: 1,
-        overallRiskScore: 0,
+    // Create assessment with required fields (with retry)
+    const assessment = await resilientPrisma.executeQuery(
+      async () => {
+        return await prisma.riskAssessment.create({
+          data: {
+            name,
+            userId,
+            projectId,
+            analysisStatus: 'draft',
+            industry: '',
+            companySize: 'small',
+            businessImpact: {},
+            budgetRange: '0-10k',
+            timeline: '1-3 months',
+            teamSize: 1,
+            overallRiskScore: 0,
+          },
+        })
       },
-    })
+      {
+        operationName: 'createAssessment',
+        maxRetries: 2,
+        timeout: 8000,
+      }
+    )
 
     request.log.info({ assessmentId: assessment.id }, 'Assessment created')
 

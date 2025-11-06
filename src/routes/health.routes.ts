@@ -1,9 +1,12 @@
 import { FastifyInstance } from 'fastify'
-import { prisma } from '../lib/prisma'
+import { resilientPrisma, userTierCache as dbUserTierCache, userAdminCache as dbUserAdminCache, subscriptionCache as dbSubscriptionCache } from '../lib/prisma-resilient'
 import { resilientDvecdbClient } from '../lib/dvecdb-resilient'
 import { resilientOpenAIClient } from '../lib/openai-resilient'
 import { vectorSearchCache, llmResponseCache } from '../lib/cache'
 import { config } from '../config/env'
+
+// Get raw Prisma client for direct queries
+const prisma = resilientPrisma.getRawClient()
 
 export async function healthRoutes(fastify: FastifyInstance) {
   // Basic health check - fast response
@@ -33,18 +36,24 @@ export async function healthRoutes(fastify: FastifyInstance) {
       circuitBreakers: {},
     }
 
-    // Check database
+    // Check database with circuit breaker status
     const dbStart = Date.now()
     try {
-      await Promise.race([
-        prisma.$queryRaw`SELECT 1`,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 5000)
-        ),
-      ])
+      const isHealthy = await resilientPrisma.healthCheck()
+      const dbHealth = resilientPrisma.getHealthStatus()
+
       health.checks.database = {
-        status: 'ok',
+        status: isHealthy ? 'ok' : 'degraded',
         responseTime: Date.now() - dbStart,
+        healthy: dbHealth.healthy,
+        lastCheck: dbHealth.lastCheck,
+        circuitBreaker: dbHealth.circuitBreaker,
+        connections: dbHealth.connections,
+        cache: dbHealth.cache,
+      }
+
+      if (!isHealthy) {
+        health.status = 'degraded'
       }
     } catch (error) {
       health.checks.database = {
@@ -87,14 +96,20 @@ export async function healthRoutes(fastify: FastifyInstance) {
       stats: resilientOpenAIClient.getStats(),
     }
 
-    // Cache statistics
+    // Cache statistics (including database caches)
     health.cache = {
       vectorSearch: vectorSearchCache.getStats(),
       llmResponse: llmResponseCache.getStats(),
+      database: {
+        userTier: dbUserTierCache.getStats(),
+        userAdmin: dbUserAdminCache.getStats(),
+        subscription: dbSubscriptionCache.getStats(),
+      },
     }
 
     // Circuit breaker states
     health.circuitBreakers = {
+      database: resilientPrisma.getStats(),
       dvecdb: resilientDvecdbClient.getStats(),
     }
 
@@ -109,16 +124,17 @@ export async function healthRoutes(fastify: FastifyInstance) {
   fastify.get('/health/ready', async (request, reply) => {
     try {
       // Check critical dependencies only
-      await Promise.race([
-        prisma.$queryRaw`SELECT 1`,
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 3000)
-        ),
-      ])
+      const dbHealthy = await resilientPrisma.healthCheck()
+      const dvecdbHealthy = await resilientDvecdbClient.healthCheck()
 
-      const isHealthy = await resilientDvecdbClient.healthCheck()
+      if (!dbHealthy) {
+        return reply.code(503).send({
+          ready: false,
+          reason: 'Database is not healthy',
+        })
+      }
 
-      if (!isHealthy) {
+      if (!dvecdbHealthy) {
         return reply.code(503).send({
           ready: false,
           reason: 'd-vecDB is not healthy',
@@ -149,12 +165,18 @@ export async function healthRoutes(fastify: FastifyInstance) {
     return reply.send({
       vectorSearch: vectorSearchCache.getStats(),
       llmResponse: llmResponseCache.getStats(),
+      database: {
+        userTier: dbUserTierCache.getStats(),
+        userAdmin: dbUserAdminCache.getStats(),
+        subscription: dbSubscriptionCache.getStats(),
+      },
     })
   })
 
   // Circuit breaker status endpoint
   fastify.get('/health/circuit-breakers', async (request, reply) => {
     return reply.send({
+      database: resilientPrisma.getStats(),
       dvecdb: resilientDvecdbClient.getStats(),
     })
   })
