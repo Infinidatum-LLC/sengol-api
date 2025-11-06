@@ -21,9 +21,36 @@ const openai = new OpenAI({
 // TYPES & INTERFACES
 // ============================================================================
 
+export interface IncidentEvidence {
+  incidentCount: number
+  avgSeverity: number
+  relevanceScore: number
+  recentExamples: Array<{
+    id: string
+    title: string
+    organization: string
+    date: string
+    severity: number
+    incidentType: string
+    category: string
+    description: string
+    estimatedCost: number
+    cost: number
+    similarity: number
+    relevanceScore: number
+  }>
+  statistics?: {
+    totalCost: number
+    avgCost: number
+    affectedSystems: number
+  }
+}
+
 export interface DynamicQuestion {
   id: string
   label: string
+  text?: string // Alias for label
+  question?: string // Alias for label
   description: string
   priority: 'low' | 'medium' | 'high' | 'critical'
 
@@ -33,21 +60,29 @@ export interface DynamicQuestion {
   mitigations: string[]
   regulations: string[]
 
+  // ✅ CRITICAL: Evidence object with incident metadata
+  evidence: IncidentEvidence
+
   // Weightage and scoring
   baseWeight: number // 0-1 (LLM-determined importance)
   evidenceWeight: number // 0-1 (based on incident frequency/severity)
   industryWeight: number // 0-1 (industry-specific relevance)
   finalWeight: number // Calculated composite weight
+  weight?: number // Alias for finalWeight (0-10 scale)
 
   // Explainability
   weightageExplanation: string // Why this weight?
+  reasoning?: string // Alias for importance
   evidenceQuery: string
   relatedIncidents: IncidentMatch[]
+  similarIncidents?: IncidentMatch[] // Alias for relatedIncidents
 
   // Metadata
   category: 'ai' | 'cyber' | 'cloud' | 'compliance'
   generatedFrom: 'llm' | 'evidence' | 'hybrid'
-  confidence: number // 0-1 (how confident we are in this question)
+  confidence: number | string // 0-1 (how confident we are in this question) or 'high'/'medium'/'low'
+  aiGenerated?: boolean
+  relatedIncidentCount?: number
 }
 
 export interface QuestionGenerationRequest {
@@ -345,29 +380,82 @@ async function generateSingleRiskQuestion(
         .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
     : 0
 
+  // Calculate average severity from incidents
+  const avgSeverity = relatedIncidents.length > 0
+    ? relatedIncidents
+        .filter(i => i.severity)
+        .reduce((sum, i) => {
+          const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
+          return sum + (severityMap[i.severity!.toLowerCase()] || 5)
+        }, 0) / relatedIncidents.filter(i => i.severity).length
+    : 5
+
+  // Calculate total cost
+  const totalCost = relatedIncidents
+    .filter(i => i.estimatedCost)
+    .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0)
+
+  // ✅ Create evidence object with incident metadata
+  const evidence: IncidentEvidence = {
+    incidentCount: relatedIncidents.length,
+    avgSeverity: avgSeverity || 5,
+    relevanceScore: relatedIncidents.length > 0
+      ? relatedIncidents.reduce((sum, i) => sum + i.similarity, 0) / relatedIncidents.length
+      : 0,
+    recentExamples: relatedIncidents.slice(0, 5).map(incident => ({
+      id: incident.incidentId || `inc_${Date.now()}`,
+      title: incident.embeddingText?.substring(0, 100) || incident.incidentType || 'Incident',
+      organization: incident.organization || 'Organization',
+      date: incident.incidentDate ? new Date(incident.incidentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      severity: avgSeverity,
+      incidentType: incident.incidentType || 'Unknown',
+      category: incident.incidentType || 'security_incident',
+      description: incident.embeddingText || 'Security incident',
+      estimatedCost: Number(incident.estimatedCost || 0),
+      cost: Number(incident.estimatedCost || 0),
+      similarity: incident.similarity,
+      relevanceScore: incident.similarity,
+    })),
+    statistics: {
+      totalCost,
+      avgCost,
+      affectedSystems: relatedIncidents.length,
+    }
+  }
+
   const question: DynamicQuestion = {
     id: `dynamic_${priorityArea.area.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
     label: priorityArea.area,
-    description: `Risk assessment for ${priorityArea.area.toLowerCase()} based on ${relatedIncidents.length} similar incidents`,
+    text: priorityArea.area,
+    question: priorityArea.area,
+    description: `Evidence from ${relatedIncidents.length} incidents with average severity ${avgSeverity.toFixed(1)}/10`,
     priority: determinePriority(finalWeight),
 
     importance: `${priorityArea.reasoning}. Historical data shows ${relatedIncidents.length} similar incidents with average cost of $${avgCost.toLocaleString()}.`,
+    reasoning: `${priorityArea.reasoning}. Evidence from ${relatedIncidents.length} incidents with average severity ${avgSeverity.toFixed(1)}/10`,
     examples,
     mitigations: generateMitigations(priorityArea.area, relatedIncidents),
     regulations: extractRegulations(relatedIncidents, llmAnalysis),
+
+    // ✅ CRITICAL: Evidence object
+    evidence,
 
     baseWeight,
     evidenceWeight,
     industryWeight,
     finalWeight,
+    weight: finalWeight * 10, // 0-10 scale
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, priorityArea.reasoning),
     evidenceQuery: priorityArea.area,
     relatedIncidents: relatedIncidents.slice(0, 10),
+    similarIncidents: relatedIncidents.slice(0, 10),
+    relatedIncidentCount: relatedIncidents.length,
 
     category: categorizeDomain(priorityArea.area),
     generatedFrom: 'hybrid',
-    confidence: calculateConfidence(relatedIncidents, baseWeight),
+    confidence: calculateConfidence(relatedIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
+    aiGenerated: true,
   }
 
   return question
@@ -448,29 +536,82 @@ async function generateSingleComplianceQuestion(
         .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
     : 0
 
+  // Calculate average severity from compliance incidents
+  const avgSeverity = relatedIncidents.length > 0
+    ? relatedIncidents
+        .filter(i => i.severity)
+        .reduce((sum, i) => {
+          const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
+          return sum + (severityMap[i.severity!.toLowerCase()] || 5)
+        }, 0) / relatedIncidents.filter(i => i.severity).length
+    : 5
+
+  // Calculate total cost
+  const totalCost = relatedIncidents
+    .filter(i => i.estimatedCost)
+    .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0)
+
+  // ✅ Create evidence object for compliance questions
+  const evidence: IncidentEvidence = {
+    incidentCount: relatedIncidents.length,
+    avgSeverity: avgSeverity || 5,
+    relevanceScore: relatedIncidents.length > 0
+      ? relatedIncidents.reduce((sum, i) => sum + i.similarity, 0) / relatedIncidents.length
+      : 0,
+    recentExamples: relatedIncidents.slice(0, 5).map(incident => ({
+      id: incident.incidentId || `inc_${Date.now()}`,
+      title: incident.embeddingText?.substring(0, 100) || incident.incidentType || 'Compliance Incident',
+      organization: incident.organization || 'Organization',
+      date: incident.incidentDate ? new Date(incident.incidentDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      severity: avgSeverity,
+      incidentType: incident.incidentType || 'regulation_violation',
+      category: incident.incidentType || 'compliance',
+      description: incident.embeddingText || 'Compliance violation',
+      estimatedCost: Number(incident.estimatedCost || 0),
+      cost: Number(incident.estimatedCost || 0),
+      similarity: incident.similarity,
+      relevanceScore: incident.similarity,
+    })),
+    statistics: {
+      totalCost,
+      avgCost: avgFine,
+      affectedSystems: relatedIncidents.length,
+    }
+  }
+
   const question: DynamicQuestion = {
     id: `compliance_${complianceArea.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`,
     label: complianceArea,
-    description: `Compliance assessment for ${complianceArea.toLowerCase()}`,
+    text: complianceArea,
+    question: complianceArea,
+    description: `Based on ${relatedIncidents.length} similar incidents`,
     priority: determinePriority(finalWeight),
 
     importance: `Required for ${llmAnalysis.complianceRequirements.join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relatedIncidents.length} incidents.`,
+    reasoning: `Evidence from ${relatedIncidents.length} compliance incidents`,
     examples,
     mitigations: generateComplianceMitigations(complianceArea),
     regulations: llmAnalysis.complianceRequirements,
+
+    // ✅ CRITICAL: Evidence object
+    evidence,
 
     baseWeight,
     evidenceWeight,
     industryWeight,
     finalWeight,
+    weight: finalWeight * 10, // 0-10 scale
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `Required by ${llmAnalysis.complianceRequirements.join(', ')}`),
     evidenceQuery: complianceArea,
     relatedIncidents: relatedIncidents.slice(0, 5),
+    similarIncidents: relatedIncidents.slice(0, 5),
+    relatedIncidentCount: relatedIncidents.length,
 
     category: 'compliance',
     generatedFrom: 'hybrid',
-    confidence: calculateConfidence(relatedIncidents, baseWeight),
+    confidence: calculateConfidence(relatedIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
+    aiGenerated: true,
   }
 
   return question
