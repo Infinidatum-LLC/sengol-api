@@ -109,6 +109,9 @@ export interface QuestionGenerationRequest {
   // Multi-factor relevance controls
   minRelevanceScore?: number // Minimum combined relevance score (default: 0.5)
   minIncidentCount?: number // Minimum incidents per question (default: 3)
+
+  // Question intensity filtering (frontend alignment)
+  questionIntensity?: 'high' | 'medium' | 'low' // Controls question filtering (default: 'high')
 }
 
 export interface QuestionGenerationResult {
@@ -416,6 +419,64 @@ function calculateStringSimilarity(str1: string, str2: string): number {
   return intersection.size / union.size
 }
 
+/**
+ * Apply question intensity filtering
+ *
+ * Filters questions based on weight and priority thresholds according to frontend rules:
+ * - high: minWeight 0.0, all priorities, max 12 questions
+ * - medium: minWeight 0.4, critical/high/medium, max 9 questions
+ * - low: minWeight 0.6, critical/high only, max 6 questions
+ */
+function applyIntensityFiltering(
+  questions: DynamicQuestion[],
+  intensity: 'high' | 'medium' | 'low' = 'high'
+): DynamicQuestion[] {
+  const rules = {
+    high: {
+      minWeight: 0.0,
+      priorities: ['critical', 'high', 'medium', 'low'] as const,
+      maxQuestions: 12
+    },
+    medium: {
+      minWeight: 0.4,
+      priorities: ['critical', 'high', 'medium'] as const,
+      maxQuestions: 9
+    },
+    low: {
+      minWeight: 0.6,
+      priorities: ['critical', 'high'] as const,
+      maxQuestions: 6
+    },
+  }
+
+  const rule = rules[intensity]
+
+  console.log(`[Intensity] Applying ${intensity.toUpperCase()} filter: minWeight=${rule.minWeight}, priorities=${rule.priorities.join(',')}, max=${rule.maxQuestions}`)
+
+  // Filter by weight and priority
+  let filtered = questions.filter(q => {
+    const meetsWeight = q.finalWeight >= rule.minWeight
+    const meetsPriority = (rule.priorities as readonly string[]).includes(q.priority)
+    return meetsWeight && meetsPriority
+  })
+
+  // Sort by weight descending (highest priority first)
+  filtered = filtered.sort((a, b) => b.finalWeight - a.finalWeight)
+
+  // Limit to max questions
+  const beforeLimit = filtered.length
+  filtered = filtered.slice(0, rule.maxQuestions)
+
+  console.log(`[Intensity] ${intensity.toUpperCase()}: Filtered ${questions.length} → ${beforeLimit} (after rules) → ${filtered.length} (after limit)`)
+
+  // Warn if we have fewer than minimum expected
+  if (filtered.length < 3) {
+    console.warn(`[Intensity] WARNING: Only ${filtered.length} questions after ${intensity} filtering. Consider using higher intensity or adjusting thresholds.`)
+  }
+
+  return filtered
+}
+
 // ============================================================================
 // MAIN GENERATION FUNCTION
 // ============================================================================
@@ -477,6 +538,19 @@ export async function generateDynamicQuestions(
   const deduplicatedRiskQuestions = deduplicateQuestions(riskQuestions)
   const deduplicatedComplianceQuestions = deduplicateQuestions(complianceQuestions)
 
+  // Step 4.6: Apply intensity filtering (if specified)
+  let finalRiskQuestions = deduplicatedRiskQuestions
+  let finalComplianceQuestions = deduplicatedComplianceQuestions
+
+  if (request.questionIntensity) {
+    console.log(`\n🎚️  Step 4.6: Applying question intensity filtering: ${request.questionIntensity.toUpperCase()}`)
+    finalRiskQuestions = applyIntensityFiltering(deduplicatedRiskQuestions, request.questionIntensity)
+    finalComplianceQuestions = applyIntensityFiltering(deduplicatedComplianceQuestions, request.questionIntensity)
+    console.log(`[Intensity] Final counts: ${finalRiskQuestions.length} risk + ${finalComplianceQuestions.length} compliance = ${finalRiskQuestions.length + finalComplianceQuestions.length} total`)
+  } else {
+    console.log(`\n🎚️  Step 4.6: No intensity filtering applied (using all ${finalRiskQuestions.length + finalComplianceQuestions.length} questions)`)
+  }
+
   // Step 5: Create scoring formula
   const step5Start = Date.now()
   console.log('\n🧮 Step 5: Creating explainable scoring formula...')
@@ -488,7 +562,10 @@ export async function generateDynamicQuestions(
   const generationTimeMs = Date.now() - overallStartTime
 
   console.log(`\n✅ Generation complete in ${overallTime}s (${generationTimeMs}ms)`)
-  console.log(`Generated ${deduplicatedRiskQuestions.length} risk questions + ${deduplicatedComplianceQuestions.length} compliance questions`)
+  console.log(`Generated ${finalRiskQuestions.length} risk questions + ${finalComplianceQuestions.length} compliance questions (total: ${finalRiskQuestions.length + finalComplianceQuestions.length})`)
+  if (request.questionIntensity) {
+    console.log(`   (Filtered from ${deduplicatedRiskQuestions.length} + ${deduplicatedComplianceQuestions.length} = ${deduplicatedRiskQuestions.length + deduplicatedComplianceQuestions.length} using ${request.questionIntensity} intensity)`)
+  }
 
   console.log(`\n📊 Performance Breakdown:`)
   console.log(`  • Vector Search: ${step1Time}s`)
@@ -504,16 +581,16 @@ export async function generateDynamicQuestions(
     console.log(`✅ Performance target met (< 60s)`)
   }
 
-  // ✅ Calculate per-domain question counts
+  // ✅ Calculate per-domain question counts (using FINAL filtered questions)
   const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
   const domainCounts = selectedDomains.reduce((acc, domain) => {
-    acc[`${domain}Questions`] = deduplicatedRiskQuestions.filter(q => q.domain === domain).length
+    acc[`${domain}Questions`] = finalRiskQuestions.filter(q => q.domain === domain).length
     return acc
   }, {} as Record<string, number>)
 
   return {
-    riskQuestions: deduplicatedRiskQuestions,
-    complianceQuestions: deduplicatedComplianceQuestions,
+    riskQuestions: finalRiskQuestions,
+    complianceQuestions: finalComplianceQuestions,
     scoringFormula,
     incidentSummary: {
       totalIncidentsAnalyzed: similarIncidents.length,
@@ -530,15 +607,15 @@ export async function generateDynamicQuestions(
         ? similarIncidents.reduce((sum, i) => sum + i.similarity, 0) / similarIncidents.length
         : 0,
       generationTimeMs,
-      // ✅ Add metadata fields for frontend
-      totalRiskQuestions: deduplicatedRiskQuestions.length,
-      totalComplianceQuestions: deduplicatedComplianceQuestions.length,
+      // ✅ Add metadata fields for frontend (using FINAL filtered questions)
+      totalRiskQuestions: finalRiskQuestions.length,
+      totalComplianceQuestions: finalComplianceQuestions.length,
       ...domainCounts, // aiQuestions, cyberQuestions, cloudQuestions
-      avgRiskWeight: deduplicatedRiskQuestions.length > 0
-        ? deduplicatedRiskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / deduplicatedRiskQuestions.length
+      avgRiskWeight: finalRiskQuestions.length > 0
+        ? finalRiskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / finalRiskQuestions.length
         : 0,
-      avgComplianceWeight: deduplicatedComplianceQuestions.length > 0
-        ? deduplicatedComplianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / deduplicatedComplianceQuestions.length
+      avgComplianceWeight: finalComplianceQuestions.length > 0
+        ? finalComplianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / finalComplianceQuestions.length
         : 0,
     },
   }

@@ -273,8 +273,14 @@ export async function updateAssessmentStep1Controller(
 
 interface UpdateStep2Body {
   userId: string
-  riskResponses: Record<string, any>
-  riskScore?: number
+  // Accept both old and new field names for backward compatibility
+  riskResponses?: Record<string, any> // Deprecated: use riskQuestionResponses
+  riskQuestionResponses?: Record<string, any>
+  selectedDomains?: string[]
+  userRiskScores?: Record<string, number>
+  riskNotes?: Record<string, string>
+  additionalRiskElements?: any[]
+  riskScore?: number // Deprecated: calculated server-side
 }
 
 export async function updateAssessmentStep2Controller(
@@ -283,15 +289,35 @@ export async function updateAssessmentStep2Controller(
 ) {
   try {
     const { id } = request.params
-    const { userId, riskResponses, riskScore } = request.body
+    const {
+      userId,
+      riskResponses,
+      riskQuestionResponses,
+      selectedDomains,
+      userRiskScores,
+      riskNotes,
+      additionalRiskElements,
+      riskScore,
+    } = request.body
 
-    if (!userId || !riskResponses) {
-      throw new ValidationError('userId and riskResponses are required')
+    // Support both old and new field names
+    const responses = riskQuestionResponses || riskResponses
+
+    if (!userId || !responses) {
+      throw new ValidationError('userId and riskQuestionResponses are required')
     }
 
     // Verify ownership
     const assessment = await prisma.riskAssessment.findUnique({
       where: { id },
+      select: {
+        id: true,
+        userId: true,
+        systemDescription: true,
+        industry: true,
+        jurisdictions: true,
+        riskQuestionResponses: true,
+      },
     })
 
     if (!assessment) {
@@ -302,18 +328,54 @@ export async function updateAssessmentStep2Controller(
       throw new AuthorizationError('You do not have access to this assessment')
     }
 
+    // Calculate risk score from responses using score calculator
+    const { calculateRiskScoreFromResponses, cleanResponses } = await import('../services/score-calculator')
+    const cleanedResponses = cleanResponses(responses)
+    const calculatedRiskScore = calculateRiskScoreFromResponses(cleanedResponses)
+
+    // Prepare update data (merge with existing, preserve Step 1)
+    const updateData: any = {
+      riskQuestionResponses: responses,
+      aiRiskScore: calculatedRiskScore || riskScore || null,
+    }
+
+    // Note: selectedDomains is not stored in DB, it's a frontend state variable
+    // We'll pass it through in the response if provided
+
     // Update assessment with risk responses
     const updated = await prisma.riskAssessment.update({
       where: { id },
-      data: {
-        riskQuestionResponses: riskResponses,
-        aiRiskScore: riskScore || null,
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        userId: true,
+        systemDescription: true,
+        industry: true,
+        jurisdictions: true,
+        riskQuestionResponses: true,
+        complianceDetails: true,
+        aiRiskScore: true,
+        cyberRiskScore: true,
+        cloudRiskScore: true,
+        complianceScore: true,
+        sengolScore: true,
+        overallRiskScore: true,
       },
     })
 
+    // Normalize response for frontend (pass through selectedDomains if provided)
+    const normalizedData = {
+      ...updated,
+      riskQuestionResponses: updated.riskQuestionResponses || {},
+      complianceQuestionResponses: updated.complianceDetails || {},
+      selectedDomains: selectedDomains || [], // Pass through from request
+      jurisdictions: updated.jurisdictions || [],
+    }
+
     return reply.send({
       success: true,
-      data: updated,
+      data: normalizedData,
     })
   } catch (error) {
     request.log.error({ err: error }, 'Failed to update step 2')
@@ -343,8 +405,12 @@ export async function updateAssessmentStep2Controller(
 
 interface UpdateStep3Body {
   userId: string
-  complianceResponses: Record<string, any>
-  complianceScore?: number
+  // Accept both old and new field names for backward compatibility
+  complianceResponses?: Record<string, any> // Deprecated: use complianceQuestionResponses
+  complianceQuestionResponses?: Record<string, any>
+  jurisdictions?: string[]
+  selectedDomains?: string[] // May be re-sent from Step 2 recovery
+  complianceScore?: number // Deprecated: calculated server-side
 }
 
 export async function updateAssessmentStep3Controller(
@@ -353,15 +419,35 @@ export async function updateAssessmentStep3Controller(
 ) {
   try {
     const { id } = request.params
-    const { userId, complianceResponses, complianceScore } = request.body
+    const {
+      userId,
+      complianceResponses,
+      complianceQuestionResponses,
+      jurisdictions,
+      selectedDomains,
+      complianceScore,
+    } = request.body
 
-    if (!userId || !complianceResponses) {
-      throw new ValidationError('userId and complianceResponses are required')
+    // Support both old and new field names
+    const responses = complianceQuestionResponses || complianceResponses
+
+    if (!userId || !responses) {
+      throw new ValidationError('userId and complianceQuestionResponses are required')
     }
 
-    // Verify ownership
+    // Verify ownership and get existing data
     const assessment = await prisma.riskAssessment.findUnique({
       where: { id },
+      select: {
+        id: true,
+        userId: true,
+        systemDescription: true,
+        industry: true,
+        jurisdictions: true,
+        riskQuestionResponses: true,
+        complianceDetails: true,
+        aiRiskScore: true,
+      },
     })
 
     if (!assessment) {
@@ -372,18 +458,70 @@ export async function updateAssessmentStep3Controller(
       throw new AuthorizationError('You do not have access to this assessment')
     }
 
+    // Calculate compliance score from responses using score calculator
+    const { calculateComplianceScoreFromResponses, calculateSengolScore, calculateLetterGrade, cleanResponses } = await import('../services/score-calculator')
+    const cleanedResponses = cleanResponses(responses)
+    const calculatedComplianceScore = calculateComplianceScoreFromResponses(cleanedResponses)
+
+    // Calculate Sengol Score if we have risk score
+    const riskScore = assessment.aiRiskScore || 0
+    const finalComplianceScore = calculatedComplianceScore || complianceScore || 0
+    const sengolScore = (riskScore > 0 || finalComplianceScore > 0)
+      ? calculateSengolScore(riskScore, finalComplianceScore)
+      : 0
+    const letterGrade = sengolScore > 0 ? calculateLetterGrade(sengolScore) : null
+
+    // Prepare update data (merge with existing, preserve Step 1 and Step 2)
+    const updateData: any = {
+      complianceDetails: responses,
+      complianceScore: finalComplianceScore || null,
+      sengolScore: sengolScore || null,
+      overallRiskScore: sengolScore || null, // Alias for compatibility
+    }
+
+    // Update jurisdictions if provided
+    if (jurisdictions && jurisdictions.length > 0) {
+      updateData.jurisdictions = jurisdictions
+    }
+
+    // Note: selectedDomains is not stored in DB, it's a frontend state variable
+    // We'll pass it through in the response if provided
+
     // Update assessment with compliance responses
     const updated = await prisma.riskAssessment.update({
       where: { id },
-      data: {
-        complianceDetails: complianceResponses,
-        complianceScore: complianceScore || null,
+      data: updateData,
+      select: {
+        id: true,
+        name: true,
+        userId: true,
+        systemDescription: true,
+        industry: true,
+        jurisdictions: true,
+        riskQuestionResponses: true,
+        complianceDetails: true,
+        aiRiskScore: true,
+        cyberRiskScore: true,
+        cloudRiskScore: true,
+        complianceScore: true,
+        sengolScore: true,
+        overallRiskScore: true,
       },
     })
 
+    // Normalize response for frontend (pass through selectedDomains if provided)
+    const normalizedData = {
+      ...updated,
+      letterGrade: letterGrade,
+      riskQuestionResponses: updated.riskQuestionResponses || {},
+      complianceQuestionResponses: updated.complianceDetails || {},
+      selectedDomains: selectedDomains || [], // Pass through from request
+      jurisdictions: updated.jurisdictions || [],
+    }
+
     return reply.send({
       success: true,
-      data: updated,
+      data: normalizedData,
     })
   } catch (error) {
     request.log.error({ err: error }, 'Failed to update step 3')

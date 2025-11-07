@@ -70,6 +70,7 @@ interface GenerateQuestionsBody {
   industry: string
   selectedTech: string[]
   customTech: string[]
+  questionIntensity?: 'high' | 'medium' | 'low' // Optional intensity filter
 }
 
 export async function generateQuestionsController(
@@ -86,7 +87,8 @@ export async function generateQuestionsController(
     jurisdictions,
     industry,
     selectedTech,
-    customTech
+    customTech,
+    questionIntensity
   } = request.body
 
   try {
@@ -107,6 +109,9 @@ export async function generateQuestionsController(
     console.log(`[GENERATE_QUESTIONS] Assessment: ${id}`)
     console.log(`[GENERATE_QUESTIONS] System: ${systemDescription.substring(0, 100)}...`)
     console.log(`[GENERATE_QUESTIONS] Domains: ${selectedDomains.join(', ')}`)
+    if (questionIntensity) {
+      console.log(`[GENERATE_QUESTIONS] Intensity: ${questionIntensity}`)
+    }
 
     // Generate questions
     const result = await generateDynamicQuestions({
@@ -114,7 +119,8 @@ export async function generateQuestionsController(
       selectedDomains,
       jurisdictions,
       industry,
-      techStack: [...(selectedTech || []), ...(customTech || [])]
+      techStack: [...(selectedTech || []), ...(customTech || [])],
+      questionIntensity: questionIntensity || 'high' // Default to high if not specified
     })
 
     return reply.send({
