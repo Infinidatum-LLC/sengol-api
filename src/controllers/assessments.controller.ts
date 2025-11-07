@@ -504,6 +504,7 @@ export async function getAssessmentScoresController(
         cloudRiskScore: true,
         complianceScore: true,
         sengolScore: true,
+        overallRiskScore: true,
         userId: true,
       },
     })
@@ -516,14 +517,21 @@ export async function getAssessmentScoresController(
       throw new AuthorizationError('You do not have access to this assessment')
     }
 
+    // If sengolScore is null but overallRiskScore exists, use it
+    const sengolScore = assessment.sengolScore ?? (
+      assessment.overallRiskScore ? Math.round(Number(assessment.overallRiskScore)) : null
+    )
+
+    // Provide default values if scores are null to prevent frontend errors
     return reply.send({
       success: true,
       data: {
-        aiRiskScore: assessment.aiRiskScore,
-        cyberRiskScore: assessment.cyberRiskScore,
-        cloudRiskScore: assessment.cloudRiskScore,
-        complianceScore: assessment.complianceScore,
-        sengolScore: assessment.sengolScore,
+        aiRiskScore: assessment.aiRiskScore ?? null,
+        cyberRiskScore: assessment.cyberRiskScore ?? null,
+        cloudRiskScore: assessment.cloudRiskScore ?? null,
+        complianceScore: assessment.complianceScore ?? null,
+        sengolScore: sengolScore,
+        overallRiskScore: assessment.overallRiskScore ? Number(assessment.overallRiskScore) : null,
       },
     })
   } catch (error) {
@@ -566,6 +574,15 @@ export async function getAssessmentBenchmarkController(
 
     const assessment = await prisma.riskAssessment.findUnique({
       where: { id },
+      select: {
+        id: true,
+        userId: true,
+        overallRiskScore: true,
+        sengolScore: true,
+        industry: true,
+        systemDescription: true,
+        name: true,
+      },
     })
 
     if (!assessment) {
@@ -576,33 +593,42 @@ export async function getAssessmentBenchmarkController(
       throw new AuthorizationError('You do not have access to this assessment')
     }
 
-    if (!assessment.systemDescription || !assessment.industry) {
-      throw new ValidationError('Assessment must have system description and industry')
+    // Use sengolScore if available, otherwise use overallRiskScore
+    // Convert Float to integer for consistency with frontend
+    const userScore = assessment.sengolScore
+      ? Number(assessment.sengolScore)
+      : assessment.overallRiskScore
+      ? Math.round(Number(assessment.overallRiskScore))
+      : 0
+
+    if (userScore === 0) {
+      // No score available yet
+      return reply.send({
+        userScore: 0,
+        benchmark: null,
+        comparison: null,
+        isFallback: false,
+        fallbackMessage: null,
+        message: 'Assessment score not yet calculated. Please complete and submit the assessment.',
+      })
     }
 
-    // Find similar incidents for benchmarking
-    const incidents = await findSimilarIncidents(assessment.systemDescription, {
-      limit: 100,
-      minSimilarity: 0.6,
-      industry: assessment.industry,
+    // Get industry and system description (required for benchmarking)
+    const industry = assessment.industry || 'Technology'
+    const systemDescription = assessment.systemDescription || assessment.name || 'AI System'
+    // Infer AI system type from name or description (simplified for now)
+    const aiSystemType = assessment.name || 'AI System'
+
+    // Get benchmark data using the new service
+    const { getBenchmarkData } = await import('../services/benchmark.service')
+    const benchmarkData = await getBenchmarkData({
+      userScore,
+      industry,
+      systemDescription,
+      aiSystemType,
     })
 
-    const stats = calculateIncidentStatistics(incidents)
-
-    return reply.send({
-      success: true,
-      data: {
-        industry: assessment.industry,
-        incidentCount: stats.totalIncidents,
-        avgCost: stats.avgCost,
-        medianCost: stats.medianCost,
-        mfaAdoptionRate: stats.mfaAdoptionRate,
-        backupAdoptionRate: stats.backupAdoptionRate,
-        irPlanAdoptionRate: stats.irPlanAdoptionRate,
-        severityBreakdown: stats.severityBreakdown,
-        topIndustries: stats.topIndustries,
-      },
-    })
+    return reply.send(benchmarkData)
   } catch (error) {
     request.log.error({ err: error }, 'Failed to get benchmark')
 
@@ -615,12 +641,9 @@ export async function getAssessmentBenchmarkController(
       })
     }
 
-    return reply.code(500).send({
-      success: false,
-      error: 'Failed to get benchmark',
+    return reply.code(503).send({
+      error: 'Benchmark service unavailable',
       details: error instanceof Error ? error.message : 'Unknown error',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
     })
   }
 }
