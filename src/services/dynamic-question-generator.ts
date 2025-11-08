@@ -931,14 +931,11 @@ async function generateSingleRiskQuestion(
   // ✅ OPTIMIZATION: Skip per-question vector search if incidents are provided
   // This eliminates 36+ vector searches and speeds up generation by 40-60%
 
-  // Filter incidents by relevance to this specific risk area
-  const areaKeywords = priorityArea.area.toLowerCase().split(' ')
-  const relevantIncidents = relatedIncidents.filter(incident => {
-    const text = (incident.embeddingText || '').toLowerCase()
-    return areaKeywords.some(keyword => text.includes(keyword))
-  }).slice(0, 20) // Take top 20 most relevant
+  // Use all preloaded incidents (already semantically relevant from initial search)
+  // The initial vector search already found the most relevant incidents
+  const relevantIncidents = relatedIncidents.slice(0, 20) // Take top 20
 
-  console.log(`[OPTIMIZED] Using ${relevantIncidents.length}/${relatedIncidents.length} preloaded incidents for "${priorityArea.area}"`)
+  console.log(`[OPTIMIZED] Using ${relevantIncidents.length} preloaded incidents for "${priorityArea.area}"`)
 
   // ✅ Calculate multi-factor relevance for filtered incidents
   const incidentsWithRelevance = relevantIncidents.map(incident => ({
@@ -1237,17 +1234,10 @@ async function generateSingleComplianceQuestion(
   // ✅ OPTIMIZATION: Skip per-question vector search if incidents are provided
   // This eliminates 10+ vector searches for compliance questions
 
-  // Filter incidents by relevance to compliance area
-  const areaKeywords = complianceArea.toLowerCase().split(' ')
-  const relevantIncidents = relatedIncidents.filter(incident => {
-    const text = (incident.embeddingText || '').toLowerCase()
-    return areaKeywords.some(keyword => text.includes(keyword)) ||
-           text.includes('compliance') ||
-           text.includes('regulation') ||
-           text.includes('violation')
-  }).slice(0, 15) // Take top 15 most relevant
+  // Use all preloaded incidents (already semantically relevant from initial search)
+  const relevantIncidents = relatedIncidents.slice(0, 15) // Take top 15
 
-  console.log(`[OPTIMIZED] Using ${relevantIncidents.length}/${relatedIncidents.length} preloaded incidents for compliance: "${complianceArea}"`)
+  console.log(`[OPTIMIZED] Using ${relevantIncidents.length} preloaded incidents for compliance: "${complianceArea}"`)
 
   // ✅ Calculate multi-factor relevance for filtered incidents
   const incidentsWithRelevance = relevantIncidents.map(incident => ({
