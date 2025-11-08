@@ -516,25 +516,31 @@ export async function generateDynamicQuestions(
 ): Promise<QuestionGenerationResult> {
   const overallStartTime = Date.now()
 
-  console.log('\n🎯 Starting Dynamic Question Generation...')
-  console.log('System: "' + request.systemDescription.substring(0, 100) + '..."')
-  console.log('Domains:', request.selectedDomains || 'Not specified')
-  console.log('Industry:', request.industry || 'Not specified')
+  try {
+    console.log('\n🎯 Starting Dynamic Question Generation...')
+    console.log('System: "' + request.systemDescription.substring(0, 100) + '..."')
+    console.log('Domains:', request.selectedDomains || 'Not specified')
+    console.log('Industry:', request.industry || 'Not specified')
 
-  // ✅ OPTIMIZATION: Check cache for existing results (80-99% speedup for repeat requests)
-  const cacheKey = generateQuestionCacheKey(request)
-  const cachedResult = await getFromCache<QuestionGenerationResult>(cacheKey)
+    // ✅ OPTIMIZATION: Check cache for existing results (80-99% speedup for repeat requests)
+    const cacheKey = generateQuestionCacheKey(request)
+    const cachedResult = await getFromCache<QuestionGenerationResult>(cacheKey)
 
-  if (cachedResult) {
-    const cacheLatency = Date.now() - overallStartTime
-    console.log(`\n🚀 [CACHE HIT] Returning cached questions in ${cacheLatency}ms (99% faster!)`)
-    console.log(`   Risk: ${cachedResult.riskQuestions.length}, Compliance: ${cachedResult.complianceQuestions.length}`)
-    // Update timestamp to reflect cache hit
-    cachedResult.generationMetadata.timestamp = new Date()
-    return cachedResult
-  }
+    if (cachedResult) {
+      const cacheLatency = Date.now() - overallStartTime
+      console.log(`\n🚀 [CACHE HIT] Returning cached questions in ${cacheLatency}ms (99% faster!)`)
+      console.log(`   Risk: ${cachedResult.riskQuestions.length}, Compliance: ${cachedResult.complianceQuestions.length}`)
+      // Update timestamp to reflect cache hit (safely handle potential undefined)
+      if (cachedResult.generationMetadata) {
+        cachedResult.generationMetadata = {
+          ...cachedResult.generationMetadata,
+          timestamp: new Date()
+        }
+      }
+      return cachedResult
+    }
 
-  console.log(`[CACHE MISS] Generating fresh questions...`)
+    console.log(`[CACHE MISS] Generating fresh questions...`)
 
   // Step 1: Find similar incidents from d-vecDB
   const step1Start = Date.now()
@@ -666,12 +672,29 @@ export async function generateDynamicQuestions(
     },
   }
 
-  // ✅ OPTIMIZATION: Cache the result for future requests (10 minute TTL)
-  // This makes repeat requests 99% faster (<500ms vs 6-12s)
-  await setInCache(cacheKey, result, 600) // 10 minute cache
-  console.log(`\n💾 [CACHE STORED] Questions cached for 10 minutes (key: ${cacheKey.substring(0, 30)}...)`)
+    // ✅ OPTIMIZATION: Cache the result for future requests (10 minute TTL)
+    // This makes repeat requests 99% faster (<500ms vs 6-12s)
+    await setInCache(cacheKey, result, 600) // 10 minute cache
+    console.log(`\n💾 [CACHE STORED] Questions cached for 10 minutes (key: ${cacheKey.substring(0, 30)}...)`)
 
-  return result
+    return result
+  } catch (error) {
+    console.error('❌ [CRITICAL ERROR] Question generation failed:', error)
+
+    // Log detailed error information
+    if (error instanceof Error) {
+      console.error('Error name:', error.name)
+      console.error('Error message:', error.message)
+      console.error('Error stack:', error.stack)
+    }
+
+    // Rethrow with more context
+    throw new Error(
+      `Failed to generate dynamic questions: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
+      `This could be due to d-vecDB connection issues, OpenAI API failures, or data processing errors. ` +
+      `Check the logs for more details.`
+    )
+  }
 }
 
 // ============================================================================
