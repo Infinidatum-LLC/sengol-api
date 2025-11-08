@@ -18,7 +18,8 @@
       "Bash(vercel ls:*)",
       "Bash(cat:*)",
       "Bash(.env)",
-      "Bash(nc:*)"
+      "Bash(nc:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []
