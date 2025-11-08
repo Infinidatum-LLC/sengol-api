@@ -50,7 +50,7 @@ export interface IncidentMatch {
   hadMfa?: boolean | null
   hadBackups?: boolean | null
   hadIrPlan?: boolean | null
-  estimatedCost?: bigint | null
+  estimatedCost?: number | null
   downtimeHours?: number | null
   recordsAffected?: number | null
   similarity: number
@@ -284,7 +284,7 @@ async function performVectorSearch(
       hadMfa: result.metadata.hadMfa ?? null,
       hadBackups: result.metadata.hadBackups ?? null,
       hadIrPlan: result.metadata.hadIrPlan ?? null,
-      estimatedCost: result.metadata.estimatedCost ? BigInt(Math.round(result.metadata.estimatedCost)) : null,
+      estimatedCost: result.metadata.estimatedCost ? Math.round(result.metadata.estimatedCost) : null,
       downtimeHours: result.metadata.downtimeHours ?? null,
       recordsAffected: result.metadata.recordsAffected ?? null,
       similarity: result.score,
