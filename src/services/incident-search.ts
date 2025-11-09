@@ -32,8 +32,10 @@ import {
   CACHE_TTL,
 } from '../lib/redis-cache'
 import { requestDeduplicator } from '../lib/request-deduplicator'
+import { getGoogleAuth } from '../lib/google-auth'
 
-// Cloud Storage setup
+// Cloud Storage setup - initialize auth first
+getGoogleAuth() // Ensures credentials are properly configured
 const storage = new Storage({
   projectId: process.env.GOOGLE_CLOUD_PROJECT?.trim(),
 })
