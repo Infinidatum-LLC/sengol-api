@@ -187,9 +187,26 @@ export async function generateEmbedding(text: string): Promise<number[]> {
     }
 
     const prediction = predictions[0]
-    const embedding = (prediction as any).structValue?.fields?.embeddings?.listValue?.values?.[0]?.structValue?.fields?.values?.listValue?.values?.map((v: any) => v.numberValue)
 
-    if (!embedding || !Array.isArray(embedding)) {
+    // Try different possible response formats
+    let embedding: number[] | undefined
+
+    // Format 1: Direct embeddings array
+    if ((prediction as any).embeddings?.values) {
+      embedding = (prediction as any).embeddings.values
+    }
+    // Format 2: In structValue
+    else if ((prediction as any).structValue?.fields?.embeddings?.listValue?.values) {
+      const values = (prediction as any).structValue.fields.embeddings.listValue.values
+      embedding = values.map((v: any) => v.numberValue || v)
+    }
+    // Format 3: Direct array
+    else if (Array.isArray(prediction)) {
+      embedding = prediction
+    }
+
+    if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
+      console.error('[Vertex AI] Raw prediction response:', JSON.stringify(prediction, null, 2))
       throw new Error('Invalid embedding format from Vertex AI')
     }
 
