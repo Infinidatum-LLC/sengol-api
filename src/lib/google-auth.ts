@@ -25,6 +25,22 @@ function initializeCredentials() {
     return
   }
 
+  // Check if GOOGLE_APPLICATION_CREDENTIALS points to an existing file
+  const existingCredsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS
+  if (existingCredsPath) {
+    try {
+      // Check if file actually exists (might be from local .env accidentally)
+      if (!fs.existsSync(existingCredsPath)) {
+        console.log(`[Google Auth] GOOGLE_APPLICATION_CREDENTIALS set to non-existent file: ${existingCredsPath}`)
+        console.log('[Google Auth] Clearing invalid path and using base64 credentials')
+        delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+      }
+    } catch (error) {
+      console.error('[Google Auth] Error checking credentials file:', error)
+      delete process.env.GOOGLE_APPLICATION_CREDENTIALS
+    }
+  }
+
   const credentialsBase64 = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON
   if (credentialsBase64 && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
     try {
