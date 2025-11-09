@@ -1298,7 +1298,7 @@ async function generateSingleComplianceQuestion(
 
   const complianceEvidenceSummary = `
 Compliance Area: ${complianceArea}
-Regulatory Requirements: ${llmAnalysis.complianceRequirements.join(', ')}
+Regulatory Requirements: ${(llmAnalysis.complianceRequirements || []).join(', ')}
 
 System Context:
 - Description: ${request.systemDescription.substring(0, 300)}
