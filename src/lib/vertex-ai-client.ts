@@ -198,7 +198,7 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       throw new Error(`Vertex AI API error (${response.status}): ${errorText}`)
     }
 
-    const data = await response.json()
+    const data = await response.json() as any
 
     // Extract embedding from response
     if (!data.predictions || data.predictions.length === 0) {
