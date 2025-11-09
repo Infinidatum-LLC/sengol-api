@@ -108,7 +108,7 @@ export async function generateQuestionsController(
 
     console.log(`[GENERATE_QUESTIONS] Assessment: ${id}`)
     console.log(`[GENERATE_QUESTIONS] System: ${systemDescription.substring(0, 100)}...`)
-    console.log(`[GENERATE_QUESTIONS] Domains: ${selectedDomains.join(', ')}`)
+    console.log(`[GENERATE_QUESTIONS] Domains: ${(selectedDomains || []).join(', ')}`)
     if (questionIntensity) {
       console.log(`[GENERATE_QUESTIONS] Intensity: ${questionIntensity}`)
     }
