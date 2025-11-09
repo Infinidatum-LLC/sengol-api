@@ -13,8 +13,7 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { resilientOpenAIClient } from '../lib/openai-resilient'
-import { resilientDvecdbClient } from '../lib/dvecdb-resilient'
+import { generateEmbedding as generateVertexEmbedding, searchSimilar as searchVertexAI, healthCheck as vertexHealthCheck } from '../lib/vertex-ai-client'
 import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError, VectorDBError, LLMError } from '../lib/errors'
 import { vectorSearchCache, generateCacheKey } from '../lib/cache'
@@ -90,22 +89,19 @@ export async function vectorSearchController(
 
     request.log.info('Vector search cache MISS')
 
-    // Step 1: Generate embedding with OpenAI
+    // Step 1: Generate embedding with Vertex AI
     const embeddingStart = Date.now()
     let queryVector: number[]
 
     try {
-      queryVector = await resilientOpenAIClient.generateEmbedding(query, {
-        model: 'text-embedding-3-small',
-        useCache: true,
-      })
+      queryVector = await generateVertexEmbedding(query)
       embeddingTime = Date.now() - embeddingStart
-      request.log.info({ embeddingTime }, 'Embedding generated')
+      request.log.info({ embeddingTime }, 'Vertex AI embedding generated')
     } catch (error) {
       embeddingTime = Date.now() - embeddingStart
-      request.log.error({ err: error, embeddingTime }, 'Embedding generation failed')
+      request.log.error({ err: error, embeddingTime }, 'Vertex AI embedding generation failed')
       throw new LLMError(
-        `Failed to generate embedding: ${(error as Error).message}`,
+        `Failed to generate Vertex AI embedding: ${(error as Error).message}`,
         {
           query: query.substring(0, 100),
           embeddingTime,
@@ -113,25 +109,24 @@ export async function vectorSearchController(
       )
     }
 
-    // Step 2: Search d-VecDB for similar vectors
+    // Step 2: Search Vertex AI for similar vectors
+    // TODO: Migrate this to use Vertex AI for research papers/news/regulations
+    // For now, using searchSimilar (placeholder - returns empty array)
     const dvecdbStart = Date.now()
-    let dvecdbResults: any[]
+    let dvecdbResults: any[] = []
 
     try {
-      dvecdbResults = await resilientDvecdbClient.searchByVector(
+      const vertexResults = await searchVertexAI(
         queryVector,
-        type ? { type } : undefined, // Filter by type if specified
-        Math.min(limit, 50),
-        {
-          timeout: 30000,
-          maxRetries: 3,
-        }
+        type ? { incidentType: type } : undefined,
+        Math.min(limit, 50)
       )
+      dvecdbResults = vertexResults
       dvecdbTime = Date.now() - dvecdbStart
-      request.log.info({ dvecdbTime, resultCount: dvecdbResults.length }, 'd-VecDB search complete')
+      request.log.info({ dvecdbTime, resultCount: dvecdbResults.length }, 'Vertex AI search complete')
     } catch (error) {
       dvecdbTime = Date.now() - dvecdbStart
-      request.log.error({ err: error, dvecdbTime }, 'd-VecDB search failed')
+      request.log.error({ err: error, dvecdbTime }, 'Vertex AI search failed')
       throw new VectorDBError(
         `Vector database search failed: ${(error as Error).message}`,
         {
@@ -333,11 +328,11 @@ export async function vectorSearchHealthController(
     latency.openai_ms = Date.now() - openaiStart
   }
 
-  // Check d-VecDB
+  // Check Vertex AI
   const dvecdbStart = Date.now()
   try {
-    const isHealthy = await resilientDvecdbClient.healthCheck()
-    checks.dvecdb = isHealthy ? 'up' : 'down'
+    const healthStatus = await vertexHealthCheck()
+    checks.dvecdb = healthStatus.configured && healthStatus.vertexAIReachable ? 'up' : 'down'
     latency.dvecdb_ms = Date.now() - dvecdbStart
   } catch (error) {
     checks.dvecdb = 'down'

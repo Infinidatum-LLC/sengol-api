@@ -8,3 +8,9 @@ coverage/
 .vscode/
 .idea/
 .vercel
+# Google Cloud credentials
+sengolvertexapi-*.json
+sengol-api-key.json
+*-sa-key.json
+*.env.bak
+/tmp/credentials-base64.txt

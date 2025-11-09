@@ -1,9 +1,9 @@
 import { FastifyInstance } from 'fastify'
 import { resilientPrisma, userTierCache as dbUserTierCache, userAdminCache as dbUserAdminCache, subscriptionCache as dbSubscriptionCache } from '../lib/prisma-resilient'
-import { resilientDvecdbClient } from '../lib/dvecdb-resilient'
-import { resilientOpenAIClient } from '../lib/openai-resilient'
+import { resilientGeminiClient } from '../lib/gemini-resilient'
 import { vectorSearchCache, llmResponseCache } from '../lib/cache'
 import { config } from '../config/env'
+import { healthCheck as vertexAIHealthCheck, getStorageStats } from '../lib/vertex-ai-client'
 
 // Week 2 Optimization imports
 import { getLocalCacheMetrics, getLocalCacheMemoryUsage } from '../lib/local-cache'
@@ -34,8 +34,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
       version: config.apiVersion,
       checks: {
         database: { status: 'unknown', responseTime: 0 },
-        dvecdb: { status: 'unknown', responseTime: 0 },
-        openai: { status: 'unknown' },
+        vertexai: { status: 'unknown', responseTime: 0 },
+        gemini: { status: 'unknown' },
       },
       cache: {},
       circuitBreakers: {},
@@ -69,36 +69,37 @@ export async function healthRoutes(fastify: FastifyInstance) {
       health.status = 'degraded'
     }
 
-    // Check d-vecDB with circuit breaker status
-    const dvecdbStart = Date.now()
+    // Check Vertex AI and Cloud Storage
+    const vertexStart = Date.now()
     try {
-      const isHealthy = await resilientDvecdbClient.healthCheck()
-      const dvecdbHealth = resilientDvecdbClient.getHealthStatus()
+      const vertexHealth = await vertexAIHealthCheck()
 
-      health.checks.dvecdb = {
-        status: isHealthy ? 'ok' : 'degraded',
-        responseTime: Date.now() - dvecdbStart,
-        healthy: dvecdbHealth.healthy,
-        lastCheck: dvecdbHealth.lastCheck,
-        circuitBreaker: dvecdbHealth.circuitBreaker,
+      health.checks.vertexai = {
+        status: vertexHealth.configured && vertexHealth.vertexAIReachable && vertexHealth.storageReachable ? 'ok' : 'degraded',
+        responseTime: Date.now() - vertexStart,
+        configured: vertexHealth.configured,
+        vertexAIReachable: vertexHealth.vertexAIReachable,
+        storageReachable: vertexHealth.storageReachable,
+        bucketExists: vertexHealth.bucketExists,
+        error: vertexHealth.error,
       }
 
-      if (!isHealthy) {
+      if (!vertexHealth.configured || !vertexHealth.vertexAIReachable || !vertexHealth.storageReachable) {
         health.status = 'degraded'
       }
     } catch (error) {
-      health.checks.dvecdb = {
+      health.checks.vertexai = {
         status: 'error',
         error: (error as Error).message,
-        responseTime: Date.now() - dvecdbStart,
+        responseTime: Date.now() - vertexStart,
       }
       health.status = 'degraded'
     }
 
-    // OpenAI stats (no actual check to avoid API costs)
-    health.checks.openai = {
+    // Gemini stats (no actual check to avoid API costs)
+    health.checks.gemini = {
       status: 'ok',
-      stats: resilientOpenAIClient.getStats(),
+      stats: resilientGeminiClient.getStats(),
     }
 
     // Cache statistics (including database caches)
@@ -115,7 +116,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     // Circuit breaker states
     health.circuitBreakers = {
       database: resilientPrisma.getStats(),
-      dvecdb: resilientDvecdbClient.getStats(),
+      // Vertex AI doesn't use circuit breaker (managed by Google Cloud)
     }
 
     // Overall response time
@@ -130,7 +131,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     try {
       // Check critical dependencies only
       const dbHealthy = await resilientPrisma.healthCheck()
-      const dvecdbHealthy = await resilientDvecdbClient.healthCheck()
+      const vertexHealth = await vertexAIHealthCheck()
 
       if (!dbHealthy) {
         return reply.code(503).send({
@@ -139,10 +140,11 @@ export async function healthRoutes(fastify: FastifyInstance) {
         })
       }
 
-      if (!dvecdbHealthy) {
+      if (!vertexHealth.configured || !vertexHealth.vertexAIReachable) {
         return reply.code(503).send({
           ready: false,
-          reason: 'd-vecDB is not healthy',
+          reason: 'Vertex AI is not healthy',
+          details: vertexHealth.error,
         })
       }
 
@@ -182,7 +184,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
   fastify.get('/health/circuit-breakers', async (request, reply) => {
     return reply.send({
       database: resilientPrisma.getStats(),
-      dvecdb: resilientDvecdbClient.getStats(),
+      vertexai: {
+        note: 'Vertex AI is a managed service by Google Cloud and does not require circuit breakers',
+      },
     })
   })
 
@@ -217,11 +221,11 @@ export async function healthRoutes(fastify: FastifyInstance) {
 
       // Overall Performance
       performance: {
-        cacheHierarchy: '3-tier (Local → Redis → d-vecDB)',
+        cacheHierarchy: '3-tier (Local → Redis → Vertex AI)',
         expectedLatency: {
           l1Hit: '1-5ms',
           l2Hit: '20-50ms',
-          l3Miss: '100-5000ms',
+          l3Miss: '100-3000ms', // Vertex AI is faster than d-vecDB VPS
         },
       },
     })

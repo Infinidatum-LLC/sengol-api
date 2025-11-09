@@ -1,7 +1,6 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { ValidationError } from '../lib/errors'
-import { generateEmbedding, generateBatchEmbeddings } from '../services/dvecdb-embeddings'
-import { searchByText } from '../services/dvecdb-embeddings'
+import { generateEmbedding, generateBatchEmbeddings, searchByText } from '../lib/vertex-ai-client'
 
 // ============================================================================
 // POST /api/embeddings/generate
@@ -29,7 +28,7 @@ export async function generateEmbeddingController(
     return reply.send({
       success: true,
       embedding,
-      model: 'text-embedding-3-small',
+      model: 'text-embedding-004',
       dimension: embedding.length,
     })
   } catch (error) {
@@ -182,7 +181,7 @@ export async function batchGenerateEmbeddingsController(
     return reply.send({
       success: true,
       embeddings,
-      model: 'text-embedding-3-small',
+      model: 'text-embedding-004',
       dimension: embeddings[0]?.length || 1536,
       count: embeddings.length,
     })

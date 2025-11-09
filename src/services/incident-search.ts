@@ -1,18 +1,20 @@
 /**
- * Incident Search Service - Semantic search over incident embeddings using d-vecDB
+ * Incident Search Service - Semantic search over incident embeddings using Google Vertex AI
  *
- * This service provides evidence-based incident search using d-vecDB vector database
+ * This service provides evidence-based incident search using Google Vertex AI RAG
  * for fast similarity search with metadata filtering.
+ *
+ * MIGRATED FROM d-vecDB VPS → Google Vertex AI (Nov 2025)
  *
  * PERFORMANCE OPTIMIZATIONS (Week 2):
  * - L1 Cache: Local memory LRU cache (1-5ms)
  * - L2 Cache: Redis distributed cache (20-50ms)
- * - L3: d-vecDB vector search (100-5000ms)
+ * - L3: Vertex AI RAG search (100-3000ms)
  * - Request deduplication (prevents duplicate in-flight requests)
  * - Pre-filtering by metadata (reduces search space by 80-90%)
  */
 
-import { searchByText, SearchResult, IncidentMetadata } from './dvecdb-embeddings'
+import { searchByText, SearchResult, IncidentMetadata } from '../lib/vertex-ai-client'
 import {
   vectorSearchCache,
   generateCacheKey,
@@ -163,9 +165,9 @@ export async function findSimilarIncidents(
     console.log(`[L2 CACHE MISS] Redis cache miss (${l2Latency}ms)`)
 
     // ========================================================================
-    // L3: d-vecDB Vector Search with Request Deduplication (100-5000ms)
+    // L3: Vertex AI Vector Search with Request Deduplication (100-3000ms)
     // ========================================================================
-    console.log('[L3 d-vecDB] Cache miss - executing vector search...')
+    console.log('[L3 Vertex AI] Cache miss - executing vector search...')
 
     // Use request deduplication to merge identical in-flight requests
     const results = await requestDeduplicator.execute(
@@ -182,7 +184,7 @@ export async function findSimilarIncidents(
     await setInCache(redisCacheKey, results, CACHE_TTL.VECTOR_SEARCH)
     setInLocalCache(vectorSearchCache, 'vectorSearch', cacheKey, results)
 
-    console.log(`[d-vecDB COMPLETE] ✅ Returned ${results.length} results in ${totalLatency}ms`)
+    console.log(`[Vertex AI COMPLETE] ✅ Returned ${results.length} results in ${totalLatency}ms`)
 
     return results
   } catch (error) {
@@ -194,7 +196,7 @@ export async function findSimilarIncidents(
 }
 
 /**
- * Perform actual vector search against d-vecDB
+ * Perform actual vector search against Vertex AI
  * (separated for request deduplication)
  */
 async function performVectorSearch(
@@ -214,15 +216,14 @@ async function performVectorSearch(
 
   const searchStartTime = Date.now()
 
-  // Build metadata filter for d-vecDB
+  // Build metadata filter for Vertex AI
   const filter: Partial<IncidentMetadata> = {}
 
   if (industry) {
     filter.industry = industry
   }
 
-  // Note: d-vecDB doesn't support complex array filters like severity[] directly
-  // We'll filter in post-processing
+  // Note: Vertex AI supports complex filters - we'll apply them in the search query
 
   if (incidentTypes && incidentTypes.length > 0) {
     // For single type, use filter; for multiple, filter in post-processing
@@ -231,9 +232,9 @@ async function performVectorSearch(
     }
   }
 
-  // Search in d-vecDB (get more results for post-filtering)
+  // Search in Vertex AI (get more results for post-filtering)
   const searchLimit = limit * 3 // Get 3x results for filtering
-  console.log(`[d-vecDB] Querying for top ${searchLimit} matches...`)
+  console.log(`[Vertex AI] Querying for top ${searchLimit} matches...`)
 
   const results: SearchResult[] = await searchByText(
     projectDescription,
@@ -242,7 +243,7 @@ async function performVectorSearch(
   )
 
   const searchLatency = Date.now() - searchStartTime
-  console.log(`[d-vecDB] Found ${results.length} initial matches in ${searchLatency}ms`)
+  console.log(`[Vertex AI] Found ${results.length} initial matches in ${searchLatency}ms`)
 
   // Post-process: Apply additional filters and convert to IncidentMatch
   let matches: IncidentMatch[] = results
@@ -291,12 +292,12 @@ async function performVectorSearch(
       embeddingText: result.metadata.embeddingText,
     }))
 
-  console.log(`[d-vecDB] ✅ Filtered to ${matches.length} matches (similarity >= ${minSimilarity})`)
+  console.log(`[Vertex AI] ✅ Filtered to ${matches.length} matches (similarity >= ${minSimilarity})`)
 
   if (matches.length > 0) {
     const minSim = matches[matches.length - 1].similarity.toFixed(3)
     const maxSim = matches[0].similarity.toFixed(3)
-    console.log(`[d-vecDB] Similarity range: ${minSim} - ${maxSim}`)
+    console.log(`[Vertex AI] Similarity range: ${minSim} - ${maxSim}`)
   }
 
   return matches

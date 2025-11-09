@@ -3,21 +3,17 @@
  *
  * Generates context-aware risk and compliance questions based on:
  * 1. System description analysis via LLM
- * 2. Similar historical incidents from d-vecDB (78,767+ incidents)
+ * 2. Similar historical incidents from Vertex AI RAG (78,767+ incidents)
  * 3. Industry-specific patterns and regulatory requirements
  *
  * This replaces static questionnaires with intelligent, evidence-based assessments
  * that provide real differentiation value to clients.
  */
 
-import OpenAI from 'openai'
+import { gemini } from '../lib/gemini-client'
 import { findSimilarIncidents, calculateIncidentStatistics, type IncidentMatch } from './incident-search'
 import { getFromCache, setInCache, CACHE_TTL } from '../lib/redis-cache'
 import crypto from 'crypto'
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -58,7 +54,7 @@ export interface DynamicQuestion {
 
   // Evidence-based context
   importance: string
-  examples: string[] // Real incidents from d-vecDB
+  examples: string[] // Real incidents from Vertex AI RAG
   mitigations: string[]
   regulations: string[]
 
@@ -542,9 +538,9 @@ export async function generateDynamicQuestions(
 
     console.log(`[CACHE MISS] Generating fresh questions...`)
 
-  // Step 1: Find similar incidents from d-vecDB
+  // Step 1: Find similar incidents from Vertex AI
   const step1Start = Date.now()
-  console.log('\n📊 Step 1: Finding similar historical incidents from d-vecDB...')
+  console.log('\n📊 Step 1: Finding similar historical incidents from Vertex AI...')
   const similarIncidents = await findSimilarIncidents(
     request.systemDescription,
     {
@@ -653,7 +649,7 @@ export async function generateDynamicQuestions(
     },
     generationMetadata: {
       timestamp: new Date(),
-      llmModel: 'gpt-4o',
+      llmModel: 'gemini-2.0-flash-exp',
       incidentSearchCount: similarIncidents.length,
       avgSimilarityScore: similarIncidents.length > 0
         ? similarIncidents.reduce((sum, i) => sum + i.similarity, 0) / similarIncidents.length
@@ -691,7 +687,7 @@ export async function generateDynamicQuestions(
     // Rethrow with more context
     throw new Error(
       `Failed to generate dynamic questions: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
-      `This could be due to d-vecDB connection issues, OpenAI API failures, or data processing errors. ` +
+      `This could be due to Vertex AI connection issues, OpenAI API failures, or data processing errors. ` +
       `Check the logs for more details.`
     )
   }
@@ -756,10 +752,9 @@ Return JSON:
 }`
 
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const response = await gemini.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
+      responseFormat: { type: 'json_object' },
       temperature: 0.3,
     })
 
@@ -1027,8 +1022,7 @@ ${relatedIncidents.slice(0, 3).map((ex, i) =>
   let questionText = priorityArea.area // Fallback
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const completion = await gemini.chat.completions.create({
       messages: [
         {
           role: 'system',
@@ -1055,7 +1049,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
         }
       ],
       temperature: 0.7,
-      max_tokens: 250
+      maxTokens: 250
     })
 
     questionText = completion.choices[0].message.content?.trim() || questionText
@@ -1329,8 +1323,7 @@ ${relatedIncidents.slice(0, 3).map((ex, i) =>
   let complianceQuestionText = complianceArea // Fallback
 
   try {
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+    const completion = await gemini.chat.completions.create({
       messages: [
         {
           role: 'system',
@@ -1357,7 +1350,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
         }
       ],
       temperature: 0.7,
-      max_tokens: 250
+      maxTokens: 250
     })
 
     complianceQuestionText = completion.choices[0].message.content?.trim() || complianceQuestionText
@@ -1532,7 +1525,7 @@ Where:
 
 Question Weights determined by:
 - Base Weight (50%): LLM-analyzed importance based on system description
-- Evidence Weight (30%): Incident frequency and severity from d-vecDB
+- Evidence Weight (30%): Incident frequency and severity from Vertex AI RAG
 - Industry Weight (20%): Industry-specific relevance
 
 Question Answers:
@@ -1624,8 +1617,8 @@ SENGOL SCORE: ${finalScore.toFixed(0)}/100
 // ============================================================================
 
 function findRelatedIncidents(area: string, incidents: IncidentMatch[]): IncidentMatch[] {
-  // Since incidents are already filtered by semantic similarity from d-vecDB vector search,
-  // we don't need additional keyword filtering. The short content_preview fields in d-vecDB
+  // Since incidents are already filtered by semantic similarity from Vertex AI vector search,
+  // we don't need additional keyword filtering. The short content_preview fields from Vertex AI
   // (e.g., "vulnerability CSRF...", "privacy_breach failure...") don't contain full keywords
   // like "access control" or "data encryption", causing false negatives.
   //

@@ -6,7 +6,7 @@
  */
 
 import { findSimilarIncidents, calculateIncidentStatistics, IncidentMatch } from './incident-search'
-import { resilientOpenAIClient } from '../lib/openai-resilient'
+import { resilientGeminiClient } from '../lib/gemini-resilient'
 
 // ============================================================================
 // RISK WEIGHT CALCULATION
@@ -252,10 +252,9 @@ Provide a JSON response with:
 
 Be specific, data-driven, and actionable. Use numbers from the incident data.`
 
-    const analysis = await resilientOpenAIClient.chatCompletion(
+    const analysis = await resilientGeminiClient.chatCompletion(
       [{ role: 'user', content: prompt }],
       {
-        model: 'gpt-4o',
         temperature: 0.5,
         maxTokens: 500,
         responseFormat: { type: 'json_object' },

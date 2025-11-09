@@ -5,7 +5,7 @@
  * data types, and industry classification
  */
 
-import { resilientOpenAIClient } from '../lib/openai-resilient'
+import { resilientGeminiClient } from '../lib/gemini-resilient'
 
 interface SystemAnalysisResult {
   techStack: {
@@ -83,10 +83,9 @@ Return ONLY valid JSON in this exact format:
 }`
 
   try {
-    const response = await resilientOpenAIClient.chatCompletion(
+    const response = await resilientGeminiClient.chatCompletion(
       [{ role: 'user', content: prompt }],
       {
-        model: 'gpt-4o-mini',
         temperature: 0.5,
         maxTokens: 800,
         responseFormat: { type: 'json_object' },

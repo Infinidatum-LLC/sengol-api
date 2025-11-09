@@ -6,7 +6,7 @@
  */
 
 import { findSimilarIncidents, calculateIncidentStatistics } from './incident-search'
-import { resilientOpenAIClient } from '../lib/openai-resilient'
+import { resilientGeminiClient } from '../lib/gemini-resilient'
 
 /**
  * Generate a quick 30-word assessment of risk or compliance
@@ -77,10 +77,9 @@ Format: "Compliance gaps: [requirement 1] ([count]K incidents), [requirement 2] 
 
 Keep it factual, specific, and exactly 30 words.`
 
-    const assessment = await resilientOpenAIClient.chatCompletion(
+    const assessment = await resilientGeminiClient.chatCompletion(
       [{ role: 'user', content: prompt }],
       {
-        model: 'gpt-4o-mini',
         temperature: 0.3,
         maxTokens: 100,
       }
