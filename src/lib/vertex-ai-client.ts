@@ -19,6 +19,118 @@ let vertexAI: VertexAI | null = null
 let storageClient: Storage | null = null
 let predictionClient: PredictionServiceClient | null = null
 
+// In-memory embedding cache (pre-loaded on server startup)
+interface CachedIncident {
+  id: string
+  text: string
+  embedding: number[]
+  metadata: IncidentMetadata
+}
+
+let embeddingCache: CachedIncident[] | null = null
+let cacheLoadingPromise: Promise<void> | null = null
+let cacheLoadStartTime: number | null = null
+
+/**
+ * Load all embeddings into memory cache
+ * This eliminates the 70s GCS download delay on every search
+ */
+async function loadEmbeddingCache(): Promise<void> {
+  if (embeddingCache !== null) {
+    console.log(`[Cache] Embeddings already cached (${embeddingCache.length} incidents)`)
+    return
+  }
+
+  const loadStart = Date.now()
+  console.log('[Cache] Loading embeddings into memory...')
+
+  try {
+    const storage = getStorageClient()
+    const bucketName = getBucketName()
+    const bucket = storage.bucket(bucketName)
+
+    // List all embedding files
+    const [files] = await bucket.getFiles({ prefix: 'incidents/embeddings/' })
+
+    if (files.length === 0) {
+      console.warn('[Cache] No embedding files found in GCS')
+      embeddingCache = []
+      return
+    }
+
+    console.log(`[Cache] Found ${files.length} embedding files, downloading...`)
+
+    const allIncidents: CachedIncident[] = []
+
+    for (const file of files) {
+      try {
+        const [content] = await file.download()
+        const lines = content.toString().split('\n')
+
+        for (const line of lines) {
+          if (!line.trim()) continue
+
+          const incident = JSON.parse(line)
+          allIncidents.push({
+            id: incident.id,
+            text: incident.text || incident.metadata?.embeddingText || '',
+            embedding: incident.embedding,
+            metadata: incident.metadata as IncidentMetadata,
+          })
+        }
+      } catch (err) {
+        console.error(`[Cache] Error loading file ${file.name}:`, err)
+        continue
+      }
+    }
+
+    //  Set cache BEFORE any calculations to ensure it's available even if metrics fail
+    embeddingCache = allIncidents
+    const loadTime = Date.now() - loadStart
+
+    try {
+      // Estimate memory usage without stringifying (which can fail for large datasets)
+      const estimatedSize = embeddingCache.length * 768 * 4 // ~768 dims * 4 bytes per float
+      const estimatedMB = (estimatedSize / 1024 / 1024).toFixed(2)
+
+      console.log(`[Cache] ✅ Loaded ${embeddingCache.length} incidents into memory in ${loadTime}ms`)
+      console.log(`[Cache] Estimated memory usage: ~${estimatedMB} MB`)
+    } catch (metricsError) {
+      console.log(`[Cache] ✅ Loaded ${embeddingCache.length} incidents into memory in ${loadTime}ms`)
+      console.warn(`[Cache] Could not calculate memory metrics:`, metricsError)
+    }
+  } catch (error) {
+    console.error('[Cache] Failed to load embedding cache:', error)
+    embeddingCache = [] // Set empty cache to prevent retry loops
+    throw error
+  }
+}
+
+/**
+ * Ensure embedding cache is loaded (lazy initialization with singleton pattern)
+ */
+async function ensureCacheLoaded(): Promise<void> {
+  // If cache is already loaded, return immediately
+  if (embeddingCache !== null) {
+    return
+  }
+
+  // If cache is currently loading, wait for it
+  if (cacheLoadingPromise !== null) {
+    console.log('[Cache] Waiting for ongoing cache load...')
+    await cacheLoadingPromise
+    return
+  }
+
+  // Start loading cache
+  cacheLoadingPromise = loadEmbeddingCache()
+  try {
+    await cacheLoadingPromise
+  } finally {
+    cacheLoadingPromise = null
+  }
+}
+
 /**
  * Get or create Vertex AI client with lazy initialization
  */
@@ -275,58 +387,49 @@ export async function searchByText(
     console.log(`[Vertex AI] Searching for: "${queryText.substring(0, 100)}..."`)
     console.log(`[Vertex AI] Filters:`, filter)
 
-    // Step 1: Generate query embedding
-    const queryEmbedding = await generateEmbedding(queryText)
+    const searchStart = Date.now()
 
-    // Step 2: Read processed incidents from Cloud Storage
-    const storage = getStorageClient()
-    const bucketName = getBucketName()
-    const bucket = storage.bucket(bucketName)
+    // Step 1: Ensure embedding cache is loaded
+    await ensureCacheLoaded()
 
-    // List all processed incident files
-    const [files] = await bucket.getFiles({ prefix: 'incidents/embeddings/' })
-
-    if (files.length === 0) {
-      console.warn('[Vertex AI] ⚠️ No processed incidents found in Cloud Storage')
+    if (!embeddingCache || embeddingCache.length === 0) {
+      console.warn('[Vertex AI] ⚠️ No incidents in cache')
       console.warn('[Vertex AI] ⚠️ Run crawler and embedding pipeline to populate data')
       return []
     }
 
-    console.log(`[Vertex AI] Found ${files.length} embedding files`)
+    const cacheLoadTime = Date.now() - searchStart
+    console.log(`[Vertex AI] Cache ready: ${embeddingCache.length} incidents (${cacheLoadTime}ms)`)
 
-    // Step 3: Read and parse incidents
+    // Step 2: Generate query embedding
+    const embeddingStart = Date.now()
+    const queryEmbedding = await generateEmbedding(queryText)
+    const embeddingTime = Date.now() - embeddingStart
+    console.log(`[Vertex AI] Embedding generated (${embeddingTime}ms)`)
+
+    // Step 3: Calculate similarities for all cached incidents
+    const similarityStart = Date.now()
     const allIncidents: Array<{
-      incident: any
+      incident: CachedIncident
       similarity: number
     }> = []
 
-    for (const file of files) {
-      try {
-        const [content] = await file.download()
-        const lines = content.toString().split('\n')
-
-        for (const line of lines) {
-          if (!line.trim()) continue
-
-          const incident = JSON.parse(line)
-
-          // Apply filters
-          if (filter) {
-            if (filter.industry && incident.metadata?.industry !== filter.industry) continue
-            if (filter.severity && incident.metadata?.severity !== filter.severity) continue
-            if (filter.incidentType && incident.metadata?.incidentType !== filter.incidentType) continue
-          }
-
-          // Calculate cosine similarity
-          const similarity = cosineSimilarity(queryEmbedding, incident.embedding)
-
-          allIncidents.push({ incident, similarity })
-        }
-      } catch (err) {
-        console.error(`[Vertex AI] Error processing file ${file.name}:`, err)
-        continue
+    for (const incident of embeddingCache) {
+      // Apply filters
+      if (filter) {
+        if (filter.industry && incident.metadata?.industry !== filter.industry) continue
+        if (filter.severity && incident.metadata?.severity !== filter.severity) continue
+        if (filter.incidentType && incident.metadata?.incidentType !== filter.incidentType) continue
       }
+
+      // Calculate cosine similarity
+      const similarity = cosineSimilarity(queryEmbedding, incident.embedding)
+
+      allIncidents.push({ incident, similarity })
     }
+
+    const similarityTime = Date.now() - similarityStart
+    console.log(`[Vertex AI] Similarity calculated for ${allIncidents.length} incidents (${similarityTime}ms)`)
 
     // Step 4: Sort by similarity and take top K
     allIncidents.sort((a, b) => b.similarity - a.similarity)
@@ -340,10 +443,12 @@ export async function searchByText(
       metadata: incident.metadata as IncidentMetadata,
     }))
 
-    console.log(`[Vertex AI] Found ${results.length} matching incidents (top ${topK})`)
+    const totalTime = Date.now() - searchStart
+    console.log(`[Vertex AI] ✅ Found ${results.length} matching incidents (top ${topK}) in ${totalTime}ms`)
     if (results.length > 0) {
       console.log(`[Vertex AI] Similarity range: ${results[results.length - 1].score.toFixed(3)} - ${results[0].score.toFixed(3)}`)
     }
+    console.log(`[Performance] Cache: ${cacheLoadTime}ms | Embedding: ${embeddingTime}ms | Similarity: ${similarityTime}ms | Total: ${totalTime}ms`)
 
     return results
   } catch (error) {
