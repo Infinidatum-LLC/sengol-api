@@ -202,3 +202,10 @@ export const gemini = {
  * Export for backward compatibility
  */
 export default gemini
+
+/**
+ * Export Gemini model client for direct usage
+ */
+export function getGeminiClient(): GenerativeModel {
+  return getGeminiModel()
+}

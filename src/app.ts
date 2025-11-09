@@ -17,6 +17,7 @@ import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
 import { prisma } from './lib/prisma'
+import { scheduleDailySync } from './services/incremental-sync.service'
 
 export async function build() {
   const fastify = Fastify({
@@ -168,6 +169,13 @@ async function start() {
     console.log(`🚀 Sengol API running at http://localhost:${config.port}`)
     console.log(`📊 Health check: http://localhost:${config.port}/health`)
     console.log(`🔍 Detailed health: http://localhost:${config.port}/health/detailed`)
+
+    // Start incremental sync for crawler data
+    console.log(`🔄 Starting incremental data sync...`)
+    const syncInterval = scheduleDailySync()
+
+    // Store sync interval for cleanup on shutdown
+    ;(fastify as any).syncInterval = syncInterval
   } catch (err) {
     console.error('Error starting server:', err)
     process.exit(1)
@@ -179,6 +187,12 @@ async function start() {
 
     if (fastify) {
       try {
+        // Clear sync interval
+        if ((fastify as any).syncInterval) {
+          clearInterval((fastify as any).syncInterval)
+          console.log('Stopped incremental sync')
+        }
+
         // Set timeout for graceful shutdown
         const shutdownTimer = setTimeout(() => {
           console.error('Forced shutdown after timeout')

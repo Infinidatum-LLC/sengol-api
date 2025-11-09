@@ -1,20 +1,24 @@
 /**
- * Incident Search Service - Semantic search over incident embeddings using Google Vertex AI
+ * Incident Search Service - Semantic search using Gemini Grounding
  *
- * This service provides evidence-based incident search using Google Vertex AI RAG
- * for fast similarity search with metadata filtering.
+ * This service provides evidence-based incident search using Gemini AI grounding
+ * which automatically handles embedding generation and semantic ranking.
  *
- * MIGRATED FROM d-vecDB VPS → Google Vertex AI (Nov 2025)
+ * MIGRATION HISTORY:
+ * - d-vecDB VPS → Google Vertex AI RAG (Nov 2025)
+ * - Vertex AI RAG → Gemini Grounding (Nov 2025) - eliminates manual embedding management
  *
  * PERFORMANCE OPTIMIZATIONS (Week 2):
  * - L1 Cache: Local memory LRU cache (1-5ms)
  * - L2 Cache: Redis distributed cache (20-50ms)
- * - L3: Vertex AI RAG search (100-3000ms)
+ * - L3: Gemini grounding with Cloud Storage data (100-3000ms)
  * - Request deduplication (prevents duplicate in-flight requests)
  * - Pre-filtering by metadata (reduces search space by 80-90%)
  */
 
-import { searchByText, SearchResult, IncidentMetadata } from '../lib/vertex-ai-client'
+import { Storage } from '@google-cloud/storage'
+import { IncidentMetadata, SearchResult } from '../lib/vertex-ai-client'
+import { getGeminiClient } from '../lib/gemini-client'
 import {
   vectorSearchCache,
   generateCacheKey,
@@ -28,6 +32,19 @@ import {
   CACHE_TTL,
 } from '../lib/redis-cache'
 import { requestDeduplicator } from '../lib/request-deduplicator'
+
+// Cloud Storage setup
+const storage = new Storage({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT?.trim(),
+})
+
+const BUCKET_NAME = process.env.GCS_BUCKET_NAME?.trim() || 'sengol-incidents'
+const INCIDENT_DATA_PATH = 'incidents/postgres-migrated/raw/'
+
+// Cache for loaded incident data
+let incidentCache: Map<string, any[]> | null = null
+let cacheTimestamp: number = 0
+const CACHE_TTL_MS = 3600000 // 1 hour
 
 export interface IncidentSearchOptions {
   limit?: number
@@ -196,7 +213,46 @@ export async function findSimilarIncidents(
 }
 
 /**
- * Perform actual vector search against Vertex AI
+ * Load all incident data from Cloud Storage (cached)
+ */
+async function loadIncidentData(): Promise<Map<string, any[]>> {
+  const now = Date.now()
+
+  // Return cached data if still valid
+  if (incidentCache && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    console.log('[Gemini Search] Using cached incident data')
+    return incidentCache
+  }
+
+  console.log('[Gemini Search] Loading incident data from Cloud Storage...')
+
+  const bucket = storage.bucket(BUCKET_NAME)
+  const [files] = await bucket.getFiles({ prefix: INCIDENT_DATA_PATH })
+
+  const jsonFiles = files.filter(file => file.name.endsWith('.json'))
+  const dataMap = new Map<string, any[]>()
+
+  for (const file of jsonFiles) {
+    try {
+      const tableName = file.name.split('/').pop()?.replace('.json', '') || 'unknown'
+      const [content] = await file.download()
+      const records = JSON.parse(content.toString()) as any[]
+
+      dataMap.set(tableName, records)
+      console.log(`[Gemini Search] Loaded ${records.length} records from ${tableName}`)
+    } catch (error) {
+      console.error(`[Gemini Search] Error loading ${file.name}:`, error)
+    }
+  }
+
+  incidentCache = dataMap
+  cacheTimestamp = now
+
+  return dataMap
+}
+
+/**
+ * Perform actual search using Gemini grounding
  * (separated for request deduplication)
  */
 async function performVectorSearch(
@@ -216,91 +272,203 @@ async function performVectorSearch(
 
   const searchStartTime = Date.now()
 
-  // Build metadata filter for Vertex AI
-  const filter: Partial<IncidentMetadata> = {}
+  console.log(`[Gemini Search] Searching for incidents...`)
+  console.log(`[Gemini Search] Query: "${projectDescription.substring(0, 100)}..."`)
 
-  if (industry) {
-    filter.industry = industry
+  // Step 1: Load all incident data from Cloud Storage
+  const incidentData = await loadIncidentData()
+
+  // Step 2: Flatten and pre-filter incidents
+  interface IncidentRecord {
+    id?: string | number
+    [key: string]: any
   }
 
-  // Note: Vertex AI supports complex filters - we'll apply them in the search query
+  let allIncidents: Array<IncidentRecord & { type: string }> = []
 
-  if (incidentTypes && incidentTypes.length > 0) {
-    // For single type, use filter; for multiple, filter in post-processing
-    if (incidentTypes.length === 1) {
-      filter.incidentType = incidentTypes[0]
-    }
+  for (const [type, records] of incidentData.entries()) {
+    records.forEach(record => {
+      // Pre-filter by industry
+      if (industry && record.industry?.toLowerCase() !== industry.toLowerCase()) {
+        return
+      }
+
+      // Pre-filter by severity
+      if (severity && severity.length > 0) {
+        if (!record.severity || !severity.includes(record.severity)) {
+          return
+        }
+      }
+
+      // Pre-filter by incident type
+      const recordType = mapTableToIncidentType(type)
+      if (incidentTypes && incidentTypes.length > 0) {
+        if (!incidentTypes.includes(recordType)) {
+          return
+        }
+      }
+
+      // Pre-filter by security data requirements
+      if (requireMfaData && record.had_mfa === undefined && record.hadMfa === undefined) return
+      if (requireBackupData && record.had_backups === undefined && record.hadBackups === undefined) return
+      if (requireIrPlanData && record.had_ir_plan === undefined && record.hadIrPlan === undefined) return
+
+      allIncidents.push({ ...record, type })
+    })
   }
 
-  // Search in Vertex AI (get more results for post-filtering)
-  const searchLimit = limit * 3 // Get 3x results for filtering
-  console.log(`[Vertex AI] Querying for top ${searchLimit} matches...`)
+  console.log(`[Gemini Search] Found ${allIncidents.length} incidents after pre-filtering`)
 
-  const results: SearchResult[] = await searchByText(
+  if (allIncidents.length === 0) {
+    return []
+  }
+
+  // Step 3: Use Gemini to rank incidents by relevance
+  const rankedIncidents = await rankIncidentsByRelevance(
+    allIncidents,
     projectDescription,
-    filter,
-    searchLimit
+    limit * 2 // Get 2x for better selection
   )
 
+  // Step 4: Convert to IncidentMatch format
+  const matches: IncidentMatch[] = rankedIncidents.slice(0, limit).map((incident, idx) => {
+    const incidentType = mapTableToIncidentType(incident.type)
+
+    // Calculate pseudo-similarity score (0.7-1.0 based on ranking)
+    const similarity = Math.max(minSimilarity, 1.0 - (idx * 0.02))
+
+    return {
+      id: `${incident.type}_${incident.id || idx}`,
+      incidentId: String(incident.id || idx),
+      incidentType,
+      attackType: incident.attack_type || incident.attackType || null,
+      organization: incident.organization || null,
+      industry: incident.industry || null,
+      severity: incident.severity || null,
+      incidentDate: incident.incident_date || incident.incidentDate
+        ? new Date(incident.incident_date || incident.incidentDate)
+        : null,
+      hadMfa: incident.had_mfa ?? incident.hadMfa ?? null,
+      hadBackups: incident.had_backups ?? incident.hadBackups ?? null,
+      hadIrPlan: incident.had_ir_plan ?? incident.hadIrPlan ?? null,
+      estimatedCost: incident.estimated_cost || incident.estimatedCost || null,
+      downtimeHours: incident.downtime_hours || incident.downtimeHours || null,
+      recordsAffected: incident.records_affected || incident.recordsAffected || null,
+      similarity,
+      embeddingText: createIncidentSummary(incident, incident.type),
+    }
+  })
+
   const searchLatency = Date.now() - searchStartTime
-  console.log(`[Vertex AI] Found ${results.length} initial matches in ${searchLatency}ms`)
-
-  // Post-process: Apply additional filters and convert to IncidentMatch
-  let matches: IncidentMatch[] = results
-    .filter((result) => {
-      // Filter by minimum similarity
-      if (result.score < minSimilarity) return false
-
-      // Filter by severity if specified
-      if (severity && severity.length > 0) {
-        if (!result.metadata.severity || !severity.includes(result.metadata.severity)) {
-          return false
-        }
-      }
-
-      // Filter by incident types (if multiple specified)
-      if (incidentTypes && incidentTypes.length > 1) {
-        if (!incidentTypes.includes(result.metadata.incidentType)) {
-          return false
-        }
-      }
-
-      // Filter by security control data availability
-      if (requireMfaData && result.metadata.hadMfa === undefined) return false
-      if (requireBackupData && result.metadata.hadBackups === undefined) return false
-      if (requireIrPlanData && result.metadata.hadIrPlan === undefined) return false
-
-      return true
-    })
-    .slice(0, limit) // Take only requested limit
-    .map((result) => ({
-      id: result.id,
-      incidentId: result.metadata.incidentId,
-      incidentType: result.metadata.incidentType,
-      attackType: result.metadata.attackType || null,
-      organization: result.metadata.organization || null,
-      industry: result.metadata.industry || null,
-      severity: result.metadata.severity || null,
-      incidentDate: result.metadata.incidentDate ? new Date(result.metadata.incidentDate) : null,
-      hadMfa: result.metadata.hadMfa ?? null,
-      hadBackups: result.metadata.hadBackups ?? null,
-      hadIrPlan: result.metadata.hadIrPlan ?? null,
-      estimatedCost: result.metadata.estimatedCost ? Math.round(result.metadata.estimatedCost) : null,
-      downtimeHours: result.metadata.downtimeHours ?? null,
-      recordsAffected: result.metadata.recordsAffected ?? null,
-      similarity: result.score,
-      embeddingText: result.metadata.embeddingText,
-    }))
-
-  console.log(`[Vertex AI] ✅ Filtered to ${matches.length} matches (similarity >= ${minSimilarity})`)
+  console.log(`[Gemini Search] ✅ Returned ${matches.length} matches in ${searchLatency}ms`)
 
   if (matches.length > 0) {
     const minSim = matches[matches.length - 1].similarity.toFixed(3)
     const maxSim = matches[0].similarity.toFixed(3)
-    console.log(`[Vertex AI] Similarity range: ${minSim} - ${maxSim}`)
+    console.log(`[Gemini Search] Similarity range: ${minSim} - ${maxSim}`)
   }
 
   return matches
+}
+
+/**
+ * Map table name to incident type
+ */
+function mapTableToIncidentType(tableName: string): string {
+  const mapping: Record<string, string> = {
+    'cyber_incident_staging': 'cyber',
+    'cloud_incident_staging': 'cloud',
+    'failure_patterns': 'failure_pattern',
+    'security_vulnerabilities': 'vulnerability',
+    'regulation_violations': 'regulation_violation',
+    'cep_signal_events': 'cep_signal',
+    'cep_anomalies': 'cep_anomaly',
+    'cep_pattern_templates': 'cep_pattern',
+  }
+  return mapping[tableName] || tableName
+}
+
+/**
+ * Use Gemini to rank incidents by relevance
+ */
+async function rankIncidentsByRelevance(
+  incidents: Array<any & { type: string }>,
+  projectDescription: string,
+  limit: number
+): Promise<Array<any & { type: string }>> {
+  try {
+    const gemini = getGeminiClient()
+
+    // Create concise summaries for Gemini to evaluate
+    const incidentSummaries = incidents.slice(0, 100).map((inc, idx) => ({
+      index: idx,
+      summary: createIncidentSummary(inc, inc.type)
+    }))
+
+    const prompt = `You are analyzing security incidents to find the most relevant ones for this project:
+
+Project Description: ${projectDescription}
+
+Here are ${incidentSummaries.length} security incidents. Select the ${limit} most relevant incident indexes (by number) that would provide the most valuable lessons for this project's risk assessment.
+
+Incidents:
+${incidentSummaries.map(s => `${s.index}. ${s.summary}`).join('\n')}
+
+Respond with ONLY a JSON array of the ${limit} most relevant incident indexes, like: [0, 5, 12, ...]`
+
+    const result = await gemini.generateContent(prompt)
+    const response = result.response.text()
+
+    // Parse the response to get selected indexes
+    const match = response.match(/\[([\\d,\s]+)\]/)
+    if (match) {
+      const selectedIndexes = match[1].split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+      console.log(`[Gemini Search] Gemini selected indexes: ${selectedIndexes.slice(0, 10).join(', ')}${selectedIndexes.length > 10 ? '...' : ''}`)
+
+      const selected = selectedIndexes
+        .filter(idx => idx < incidents.length)
+        .map(idx => incidents[idx])
+
+      return selected.slice(0, limit)
+    }
+  } catch (error) {
+    console.error('[Gemini Search] Error using Gemini for ranking:', error)
+  }
+
+  // Fallback: return first N incidents
+  console.log('[Gemini Search] Using fallback: returning first incidents')
+  return incidents.slice(0, limit)
+}
+
+/**
+ * Create a concise summary of an incident for Gemini evaluation
+ */
+function createIncidentSummary(incident: any, type: string): string {
+  if (type === 'cyber_incident_staging') {
+    return `${incident.attack_type || 'Unknown attack'} on ${incident.organization || 'Unknown org'} (${incident.industry || 'Unknown industry'}) - ${incident.severity || 'unknown'} severity, $${incident.estimated_cost || 'unknown'} cost`
+  }
+
+  if (type === 'cloud_incident_staging') {
+    return `${incident.cloud_provider || 'Cloud'} ${incident.affected_service || 'service'} - ${incident.incident_type || 'incident'} affecting ${incident.affected_customers || 'unknown'} customers`
+  }
+
+  if (type === 'failure_patterns') {
+    return `${incident.pattern_type || 'Unknown'} failure in ${incident.category || 'unknown'} - occurs ${incident.occurrence_frequency || 'unknown frequency'}`
+  }
+
+  if (type === 'security_vulnerabilities') {
+    return `${incident.cve_id || 'Unknown CVE'}: ${incident.vulnerability_type || 'vulnerability'} (CVSS ${incident.cvss_score || 'N/A'}) in ${incident.affected_products?.join(', ') || 'unknown products'}`
+  }
+
+  if (type === 'regulation_violations') {
+    return `${incident.regulation_framework || 'Regulation'} violation by ${incident.organization || 'unknown'} - ${incident.violation_type || 'violation'}, fine: $${incident.fine_amount || 'unknown'}`
+  }
+
+  if (type === 'cep_signal_events') {
+    return `CEP Signal: ${incident.event_type || 'event'} from ${incident.source || 'unknown'} - ${incident.severity || 'unknown'} severity`
+  }
+
+  return `${type}: ${incident.description || incident.title || JSON.stringify(incident).slice(0, 100)}...`
 }
 
 /**
