@@ -314,19 +314,10 @@ export async function vectorSearchHealthController(
     postgres_ms: 0,
   }
 
-  // Check OpenAI
-  const openaiStart = Date.now()
-  try {
-    await resilientOpenAIClient.generateEmbedding('test', {
-      model: 'text-embedding-3-small',
-      useCache: true,
-    })
-    checks.openai = 'up'
-    latency.openai_ms = Date.now() - openaiStart
-  } catch (error) {
-    checks.openai = 'down'
-    latency.openai_ms = Date.now() - openaiStart
-  }
+  // Vertex AI check (already done above)
+  // OpenAI has been replaced by Gemini + Vertex AI
+  checks.openai = 'migrated_to_vertex'
+  latency.openai_ms = 0
 
   // Check Vertex AI
   const dvecdbStart = Date.now()
