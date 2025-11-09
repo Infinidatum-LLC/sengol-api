@@ -816,25 +816,49 @@ async function generateRiskQuestions(
 
   console.log(`[PARALLEL] Queued ${allTasks.length} questions for parallel generation`)
 
-  // ✅ Generate ALL questions in parallel using Promise.all
-  // ✅ OPTIMIZATION: Pass preloaded incidents to avoid per-question vector searches
-  const generatedQuestions = await Promise.all(
-    allTasks.map(async ({ riskArea, domain }) => {
-      try {
-        const question = await generateSingleRiskQuestion(
-          riskArea,
-          incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of empty array
-          request,
-          llmAnalysis,
-          domain
-        )
-        return question
-      } catch (error) {
-        console.error(`[PARALLEL] Failed to generate question for "${riskArea.area}":`, error)
-        return null
-      }
-    })
-  )
+  // ✅ RATE LIMITING: Batch requests to avoid quota exhaustion
+  // Gemini free tier: ~15 requests/minute for experimental model
+  const BATCH_SIZE = 5 // Process 5 questions at a time
+  const DELAY_BETWEEN_BATCHES_MS = 12000 // 12 seconds between batches (5 req/min pace)
+
+  const generatedQuestions: (DynamicQuestion | null)[] = []
+
+  console.log(`[RATE_LIMIT] Processing ${allTasks.length} questions in batches of ${BATCH_SIZE} with ${DELAY_BETWEEN_BATCHES_MS}ms delay`)
+
+  for (let i = 0; i < allTasks.length; i += BATCH_SIZE) {
+    const batch = allTasks.slice(i, i + BATCH_SIZE)
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1
+    const totalBatches = Math.ceil(allTasks.length / BATCH_SIZE)
+
+    console.log(`[BATCH ${batchNumber}/${totalBatches}] Processing ${batch.length} questions...`)
+
+    // Process batch in parallel
+    const batchResults = await Promise.all(
+      batch.map(async ({ riskArea, domain }) => {
+        try {
+          const question = await generateSingleRiskQuestion(
+            riskArea,
+            incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of empty array
+            request,
+            llmAnalysis,
+            domain
+          )
+          return question
+        } catch (error) {
+          console.error(`[PARALLEL] Failed to generate question for "${riskArea.area}":`, error)
+          return null
+        }
+      })
+    )
+
+    generatedQuestions.push(...batchResults)
+
+    // Add delay between batches (except for the last batch)
+    if (i + BATCH_SIZE < allTasks.length) {
+      console.log(`[RATE_LIMIT] Waiting ${DELAY_BETWEEN_BATCHES_MS}ms before next batch to avoid quota limits...`)
+      await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES_MS))
+    }
+  }
 
   const generationTime = ((Date.now() - startTime) / 1000).toFixed(1)
   console.log(`[PARALLEL] ✅ Generated ${generatedQuestions.length} questions in ${generationTime}s (parallel execution)`)
