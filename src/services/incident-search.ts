@@ -417,17 +417,17 @@ ${incidentSummaries.map(s => `${s.index}. ${s.summary}`).join('\n')}
 Respond with ONLY a JSON array of the ${limit} most relevant incident indexes, like: [0, 5, 12, ...]`
 
     const result = await gemini.generateContent(prompt)
-    const response = result.response.text()
+    const response = result.response.candidates?.[0]?.content?.parts?.[0]?.text || ''
 
     // Parse the response to get selected indexes
     const match = response.match(/\[([\\d,\s]+)\]/)
     if (match) {
-      const selectedIndexes = match[1].split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n))
+      const selectedIndexes = match[1].split(',').map((s: string) => parseInt(s.trim())).filter((n: number) => !isNaN(n))
       console.log(`[Gemini Search] Gemini selected indexes: ${selectedIndexes.slice(0, 10).join(', ')}${selectedIndexes.length > 10 ? '...' : ''}`)
 
       const selected = selectedIndexes
-        .filter(idx => idx < incidents.length)
-        .map(idx => incidents[idx])
+        .filter((idx: number) => idx < incidents.length)
+        .map((idx: number) => incidents[idx])
 
       return selected.slice(0, limit)
     }

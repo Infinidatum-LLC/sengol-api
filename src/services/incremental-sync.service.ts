@@ -7,7 +7,6 @@
 
 import { PrismaClient } from '@prisma/client'
 import { Storage } from '@google-cloud/storage'
-import { clearIncidentCache } from './incident-search.service'
 
 const prisma = new PrismaClient()
 const storage = new Storage({
@@ -140,7 +139,7 @@ export async function runIncrementalSync(): Promise<{
     if (since) {
       return prisma.cloud_incident_staging.findMany({
         where: {
-          created_at: {
+          crawled_at: {
             gt: since
           }
         }
@@ -168,7 +167,7 @@ export async function runIncrementalSync(): Promise<{
     if (since) {
       return prisma.security_vulnerabilities.findMany({
         where: {
-          published_date: {
+          published_at: {
             gt: since
           }
         }
@@ -196,7 +195,7 @@ export async function runIncrementalSync(): Promise<{
     if (since) {
       return prisma.cep_signal_events.findMany({
         where: {
-          timestamp: {
+          created_at: {
             gt: since
           }
         }
@@ -237,10 +236,9 @@ export async function runIncrementalSync(): Promise<{
   const totalNew = results.reduce((sum, r) => sum + r.newRecords, 0)
   const totalSynced = results.filter(r => r.synced).length
 
-  // Clear the incident cache to force reload of new data
+  // Note: Incident cache in incident-search.ts will auto-refresh after 1 hour TTL
   if (totalNew > 0) {
-    console.log('\n[IncrementalSync] Clearing incident cache to load new data...')
-    clearIncidentCache()
+    console.log('\n[IncrementalSync] New data synced. Cache will refresh automatically.')
   }
 
   console.log('\n📊 Sync Summary:')

@@ -68,7 +68,21 @@
       "Bash(/Users/durai/google-cloud-sdk/bin/gcloud iam service-accounts list:*)",
       "Bash(/Users/durai/google-cloud-sdk/bin/gcloud iam service-accounts keys create:*)",
       "Bash(vercel whoami:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(jq:*)",
+      "Bash(tee:*)",
+      "Bash(export GOOGLE_APPLICATION_CREDENTIALS=/Users/durai/sengol-sa-key.json)",
+      "Bash(/Users/durai/google-cloud-sdk/bin/gsutil -m cp:*)",
+      "Bash(gsutil ls:*)",
+      "Bash(awk:*)",
+      "Bash(export PATH=/Users/durai/google-cloud-sdk/bin:$PATH)",
+      "Bash(timeout 60 gcloud compute scp:*)",
+      "Bash(/Users/durai/google-cloud-sdk/bin/gsutil cp:*)",
+      "Bash(/Users/durai/google-cloud-sdk/bin/gsutil ls:*)",
+      "Bash(pip3 install:*)",
+      "Bash(gcloud alpha discovery-engine data-stores create:*)",
+      "Bash(gcloud components install:*)",
+      "Bash(npx tsc:*)"
     ],
     "deny": [],
     "ask": []
