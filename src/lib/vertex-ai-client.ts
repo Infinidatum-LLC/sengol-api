@@ -24,8 +24,8 @@ let predictionClient: PredictionServiceClient | null = null
  */
 function getVertexAI(): VertexAI {
   if (!vertexAI) {
-    const project = process.env.GOOGLE_CLOUD_PROJECT
-    const location = process.env.VERTEX_AI_LOCATION || 'us-central1'
+    const project = process.env.GOOGLE_CLOUD_PROJECT?.trim()
+    const location = (process.env.VERTEX_AI_LOCATION || 'us-central1').trim()
 
     if (!project) {
       throw new Error(
@@ -52,7 +52,7 @@ function getVertexAI(): VertexAI {
  */
 function getStorageClient(): Storage {
   if (!storageClient) {
-    const project = process.env.GOOGLE_CLOUD_PROJECT
+    const project = process.env.GOOGLE_CLOUD_PROJECT?.trim()
 
     if (!project) {
       throw new Error('GOOGLE_CLOUD_PROJECT environment variable is not set')
@@ -76,7 +76,7 @@ function getStorageClient(): Storage {
  */
 function getPredictionClient(): PredictionServiceClient {
   if (!predictionClient) {
-    const location = process.env.VERTEX_AI_LOCATION || 'us-central1'
+    const location = (process.env.VERTEX_AI_LOCATION || 'us-central1').trim()
 
     console.log(`[Prediction Service] Initializing client: location=${location}`)
 
@@ -156,8 +156,8 @@ export interface SearchResult {
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const client = getPredictionClient()
-    const project = process.env.GOOGLE_CLOUD_PROJECT
-    const location = process.env.VERTEX_AI_LOCATION || 'us-central1'
+    const project = process.env.GOOGLE_CLOUD_PROJECT?.trim()
+    const location = (process.env.VERTEX_AI_LOCATION || 'us-central1').trim()
 
     if (!project) {
       throw new Error('GOOGLE_CLOUD_PROJECT not set')
