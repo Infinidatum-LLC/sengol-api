@@ -155,7 +155,6 @@ export interface SearchResult {
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    const client = getPredictionClient()
     const project = process.env.GOOGLE_CLOUD_PROJECT?.trim()
     const location = (process.env.VERTEX_AI_LOCATION || 'us-central1').trim()
 
@@ -163,50 +162,53 @@ export async function generateEmbedding(text: string): Promise<number[]> {
       throw new Error('GOOGLE_CLOUD_PROJECT not set')
     }
 
-    // Vertex AI text-embedding-004 endpoint
-    const endpoint = `projects/${project}/locations/${location}/publishers/google/models/text-embedding-004`
+    // Initialize credentials
+    getGoogleAuth()
 
-    // Make prediction request
-    const [response] = await client.predict({
-      endpoint,
-      instances: [
-        {
-          structValue: {
-            fields: {
-              content: { stringValue: text },
-            },
-          },
-        },
-      ],
+    // Use Vertex AI REST API for text-embedding-004
+    // This matches the Python implementation using TextEmbeddingModel
+    const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${project}/locations/${location}/publishers/google/models/text-embedding-004:predict`
+
+    // Get access token from gcloud auth
+    const { GoogleAuth } = await import('google-auth-library')
+    const auth = new GoogleAuth({
+      scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+    })
+    const client = await auth.getClient()
+    const accessToken = await client.getAccessToken()
+
+    if (!accessToken.token) {
+      throw new Error('Failed to get access token')
+    }
+
+    // Make REST API request
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        instances: [{ content: text }],
+      }),
     })
 
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Vertex AI API error (${response.status}): ${errorText}`)
+    }
+
+    const data = await response.json()
+
     // Extract embedding from response
-    const predictions = response.predictions
-    if (!predictions || predictions.length === 0) {
-      throw new Error('No embedding data returned from Vertex AI')
+    if (!data.predictions || data.predictions.length === 0) {
+      throw new Error('No predictions in response')
     }
 
-    const prediction = predictions[0]
-
-    // Try different possible response formats
-    let embedding: number[] | undefined
-
-    // Format 1: Direct embeddings array
-    if ((prediction as any).embeddings?.values) {
-      embedding = (prediction as any).embeddings.values
-    }
-    // Format 2: In structValue
-    else if ((prediction as any).structValue?.fields?.embeddings?.listValue?.values) {
-      const values = (prediction as any).structValue.fields.embeddings.listValue.values
-      embedding = values.map((v: any) => v.numberValue || v)
-    }
-    // Format 3: Direct array
-    else if (Array.isArray(prediction)) {
-      embedding = prediction
-    }
+    const embedding = data.predictions[0].embeddings?.values
 
     if (!embedding || !Array.isArray(embedding) || embedding.length === 0) {
-      console.error('[Vertex AI] Raw prediction response:', JSON.stringify(prediction, null, 2))
+      console.error('[Vertex AI] Raw response:', JSON.stringify(data, null, 2))
       throw new Error('Invalid embedding format from Vertex AI')
     }
 
