@@ -787,10 +787,12 @@ async function generateRiskQuestions(
   const questions: DynamicQuestion[] = []
   const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
   const questionsPerDomain = request.questionsPerDomain || 12 // ✅ OPTIMIZED: Default 12 per domain (was 25)
-  const minWeight = request.minRiskPotential || request.minWeight || 0.7 // ✅ Default 70% risk threshold
+  // ✅ FIX: Lower default threshold to 0.3 (30%) to allow more questions through
+  // Intensity filtering will handle final selection based on user's choice (high/medium/low)
+  const minWeight = request.minRiskPotential || request.minWeight || 0.3 // ✅ Default 30% risk threshold (was 0.7)
 
   console.log(`Generating ${questionsPerDomain} questions per domain for: ${selectedDomains.join(', ')}`)
-  console.log(`Minimum risk threshold: ${(minWeight * 100).toFixed(0)}%`)
+  console.log(`Minimum risk threshold (pre-filter): ${(minWeight * 100).toFixed(0)}% (intensity filtering will apply additional rules)`)
 
   // ✅ OPTIMIZATION: Generate all questions in parallel to avoid timeout
   const startTime = Date.now()
@@ -864,24 +866,46 @@ async function generateRiskQuestions(
   console.log(`[PARALLEL] ✅ Generated ${generatedQuestions.length} questions in ${generationTime}s (parallel execution)`)
 
   // Filter out failed questions and apply thresholds
-  const minIncidentCount = request.minIncidentCount || 3
+  // ✅ FIX: Lower from 3 to 1 to allow more questions (intensity filtering handles final selection)
+  const minIncidentCount = request.minIncidentCount || 1
+
+  console.log(`\n🔍 [PRE-FILTER] Applying initial filter: minWeight=${minWeight}, minIncidentCount=${minIncidentCount}`)
+  let filteredByWeight = 0
+  let filteredByIncidents = 0
+  let nullQuestions = 0
 
   for (const question of generatedQuestions) {
-    if (!question) continue // Skip failed generations
+    if (!question) {
+      nullQuestions++
+      continue // Skip failed generations
+    }
 
     const incidentCount = question.relatedIncidentCount || 0
+    const meetsWeightThreshold = question.finalWeight >= minWeight
+    const meetsIncidentThreshold = incidentCount >= minIncidentCount
 
-    if (question.finalWeight >= minWeight && incidentCount >= minIncidentCount) {
+    if (meetsWeightThreshold && meetsIncidentThreshold) {
       questions.push(question)
+      console.log(`[PRE-FILTER] ✅ "${question.label.substring(0, 60)}" - weight: ${question.finalWeight.toFixed(2)}, incidents: ${incidentCount}`)
     } else {
-      if (question.finalWeight < minWeight) {
-        console.log(`[FILTER] Skipping "${question.label}" - weight ${question.finalWeight.toFixed(2)} below threshold ${minWeight}`)
+      if (!meetsWeightThreshold) {
+        filteredByWeight++
+        console.log(`[PRE-FILTER] ❌ "${question.label.substring(0, 60)}" - weight ${question.finalWeight.toFixed(2)} < ${minWeight}`)
       }
-      if (incidentCount < minIncidentCount) {
-        console.log(`[FILTER] Skipping "${question.label}" - only ${incidentCount} incidents (minimum: ${minIncidentCount})`)
+      if (!meetsIncidentThreshold) {
+        filteredByIncidents++
+        console.log(`[PRE-FILTER] ❌ "${question.label.substring(0, 60)}" - incidents ${incidentCount} < ${minIncidentCount}`)
       }
     }
   }
+
+  console.log(`\n📊 [PRE-FILTER] Summary:`)
+  console.log(`   Total generated: ${generatedQuestions.length}`)
+  console.log(`   Failed (null): ${nullQuestions}`)
+  console.log(`   Filtered by weight: ${filteredByWeight}`)
+  console.log(`   Filtered by incidents: ${filteredByIncidents}`)
+  console.log(`   Passed to intensity filter: ${questions.length}`)
+  console.log(`   Success rate: ${((questions.length / Math.max(1, generatedQuestions.length - nullQuestions)) * 100).toFixed(0)}%`)
 
   // Log distribution by domain
   for (const domain of selectedDomains) {
@@ -1088,10 +1112,28 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
 
   // ✅ Validate question text
   if (questionText.length < 20 || questionText === priorityArea.area) {
-    console.warn(`[VALIDATION] Invalid question text, using fallback for ${priorityArea.area}`)
+    console.warn(`[VALIDATION] Invalid question text (length: ${questionText.length}), using enhanced fallback for ${priorityArea.area}`)
+
+    // Generate meaningful fallback question with context
     const tech = (request.techStack || [])[0] || 'your system'
-    const data = (request.dataTypes || [])[0] || 'data'
-    questionText = `How do you address ${priorityArea.area.toLowerCase()} risks in your ${request.deployment || 'system'} using ${tech} with ${data}?`
+    const data = (request.dataTypes || [])[0] || 'sensitive data'
+    const deployment = request.deployment || 'system'
+    const incidentContext = relatedIncidents.length > 0
+      ? ` (${relatedIncidents.length} similar incidents found with avg cost $${(avgCost / 1000).toFixed(0)}K)`
+      : ''
+
+    // Create context-aware question based on domain
+    if (domain === 'ai') {
+      questionText = `How does your ${deployment} using ${tech} mitigate ${priorityArea.area.toLowerCase()} risks when processing ${data}${incidentContext}?`
+    } else if (domain === 'cyber') {
+      questionText = `What security controls are in place to address ${priorityArea.area.toLowerCase()} threats to your ${deployment} handling ${data}${incidentContext}?`
+    } else if (domain === 'cloud') {
+      questionText = `How do you ensure ${priorityArea.area.toLowerCase()} compliance in your ${deployment} infrastructure managing ${data}${incidentContext}?`
+    } else {
+      questionText = `How do you address ${priorityArea.area.toLowerCase()} risks in your ${deployment} using ${tech} with ${data}${incidentContext}?`
+    }
+
+    console.log(`[VALIDATION] Generated fallback: ${questionText.substring(0, 80)}...`)
   }
 
   // Calculate weights
