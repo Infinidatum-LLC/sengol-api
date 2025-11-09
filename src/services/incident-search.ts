@@ -17,7 +17,7 @@
  */
 
 import { Storage } from '@google-cloud/storage'
-import { IncidentMetadata, SearchResult } from '../lib/vertex-ai-client'
+import { IncidentMetadata, SearchResult, searchByText } from '../lib/vertex-ai-client'
 import { getGeminiClient } from '../lib/gemini-client'
 import {
   vectorSearchCache,
@@ -325,12 +325,58 @@ async function performVectorSearch(
     return []
   }
 
-  // Step 3: Use Gemini to rank incidents by relevance
-  const rankedIncidents = await rankIncidentsByRelevance(
-    allIncidents,
-    projectDescription,
-    limit * 2 // Get 2x for better selection
-  )
+  // Step 3: Try vector search first, fallback to Gemini ranking
+  let rankedIncidents: Array<any & { type: string }>
+
+  try {
+    console.log('[Vector Search] Attempting fast vector search...')
+    const vectorSearchStart = Date.now()
+
+    const vectorResults = await searchByText(
+      projectDescription,
+      {
+        industry: options.industry,
+        severity: options.severity?.[0],
+        incidentType: options.incidentTypes?.[0]
+      },
+      limit * 2 // Get 2x for better selection
+    )
+
+    const vectorSearchTime = Date.now() - vectorSearchStart
+    console.log(`[Performance] Vector search completed in ${vectorSearchTime}ms`)
+
+    if (vectorResults.length > 0) {
+      console.log(`[Vector Search] ✅ Found ${vectorResults.length} results (similarity: ${vectorResults[vectorResults.length - 1].score.toFixed(3)} - ${vectorResults[0].score.toFixed(3)})`)
+
+      // Convert SearchResult to incident format
+      rankedIncidents = vectorResults.map(result => ({
+        ...result.metadata,
+        type: result.metadata.incidentType || 'unknown',
+        // Map metadata fields to expected incident fields
+        id: result.id,
+        attack_type: result.metadata.attackType,
+        organization: result.metadata.organization,
+        industry: result.metadata.industry,
+        severity: result.metadata.severity,
+        incident_date: result.metadata.incidentDate,
+        had_mfa: result.metadata.hadMfa,
+        had_backups: result.metadata.hadBackups,
+        had_ir_plan: result.metadata.hadIrPlan,
+        estimated_cost: result.metadata.estimatedCost,
+        downtime_hours: result.metadata.downtimeHours,
+        records_affected: result.metadata.recordsAffected
+      }))
+    } else {
+      throw new Error('No vector search results, falling back to Gemini')
+    }
+  } catch (vectorError) {
+    console.warn('[Vector Search] Vector search failed, falling back to Gemini ranking:', vectorError)
+    console.log('[Gemini Fallback] Using Gemini-based ranking...')
+    const geminiStart = Date.now()
+    rankedIncidents = await rankIncidentsByRelevance(allIncidents, projectDescription, limit * 2)
+    const geminiTime = Date.now() - geminiStart
+    console.log(`[Performance] Gemini ranking completed in ${geminiTime}ms`)
+  }
 
   // Step 4: Convert to IncidentMatch format
   const matches: IncidentMatch[] = rankedIncidents.slice(0, limit).map((incident, idx) => {
