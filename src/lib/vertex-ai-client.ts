@@ -11,11 +11,13 @@
 
 import { VertexAI } from '@google-cloud/vertexai'
 import { Storage } from '@google-cloud/storage'
+import { PredictionServiceClient } from '@google-cloud/aiplatform'
 import { getGoogleAuth } from './google-auth'
 
 // Lazy initialization
 let vertexAI: VertexAI | null = null
 let storageClient: Storage | null = null
+let predictionClient: PredictionServiceClient | null = null
 
 /**
  * Get or create Vertex AI client with lazy initialization
@@ -33,6 +35,9 @@ function getVertexAI(): VertexAI {
     }
 
     console.log(`[Vertex AI] Initializing client: project=${project}, location=${location}`)
+
+    // Initialize credentials (writes temp file if needed)
+    getGoogleAuth()
 
     vertexAI = new VertexAI({
       project,
@@ -64,6 +69,25 @@ function getStorageClient(): Storage {
     })
   }
   return storageClient
+}
+
+/**
+ * Get or create Prediction Service client for embeddings
+ */
+function getPredictionClient(): PredictionServiceClient {
+  if (!predictionClient) {
+    const location = process.env.VERTEX_AI_LOCATION || 'us-central1'
+
+    console.log(`[Prediction Service] Initializing client: location=${location}`)
+
+    // Initialize credentials (writes temp file if needed)
+    getGoogleAuth()
+
+    predictionClient = new PredictionServiceClient({
+      apiEndpoint: `${location}-aiplatform.googleapis.com`,
+    })
+  }
+  return predictionClient
 }
 
 /**
@@ -131,25 +155,39 @@ export interface SearchResult {
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    const vertexai = getVertexAI()
+    const client = getPredictionClient()
+    const project = process.env.GOOGLE_CLOUD_PROJECT
+    const location = process.env.VERTEX_AI_LOCATION || 'us-central1'
 
-    // Use text-embeddings-004 model (latest Vertex AI embedding model)
-    const model = vertexai.preview.getGenerativeModel({
-      model: 'text-embedding-004',
-    })
+    if (!project) {
+      throw new Error('GOOGLE_CLOUD_PROJECT not set')
+    }
 
-    const result = await model.generateContent({
-      contents: [{ role: 'user', parts: [{ text }] }],
+    // Vertex AI text-embedding-004 endpoint
+    const endpoint = `projects/${project}/locations/${location}/publishers/google/models/text-embedding-004`
+
+    // Make prediction request
+    const [response] = await client.predict({
+      endpoint,
+      instances: [
+        {
+          structValue: {
+            fields: {
+              content: { stringValue: text },
+            },
+          },
+        },
+      ],
     })
 
     // Extract embedding from response
-    const response = result.response
-    if (!response.candidates || response.candidates.length === 0) {
+    const predictions = response.predictions
+    if (!predictions || predictions.length === 0) {
       throw new Error('No embedding data returned from Vertex AI')
     }
 
-    // The embedding is in the response metadata
-    const embedding = (response as any).embedding?.values || (response as any).embeddings?.[0]?.values
+    const prediction = predictions[0]
+    const embedding = (prediction as any).structValue?.fields?.embeddings?.listValue?.values?.[0]?.structValue?.fields?.values?.listValue?.values?.map((v: any) => v.numberValue)
 
     if (!embedding || !Array.isArray(embedding)) {
       throw new Error('Invalid embedding format from Vertex AI')
