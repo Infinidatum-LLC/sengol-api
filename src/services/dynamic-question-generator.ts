@@ -1201,7 +1201,7 @@ async function generateComplianceQuestions(
 
   // Collect all compliance areas to generate
   const complianceAreas = new Set<string>([
-    ...llmAnalysis.complianceRequirements,
+    ...(llmAnalysis.complianceRequirements || []),
   ])
 
   // Ensure minimum compliance coverage
@@ -1340,7 +1340,7 @@ The question MUST:
 5. Focus on specific compliance controls or requirements
 6. Use formal, professional language
 7. Be concise (1-2 sentences max)
-8. Highlight connections to regulatory frameworks: ${llmAnalysis.complianceRequirements.join(', ')}
+8. Highlight connections to regulatory frameworks: ${(llmAnalysis.complianceRequirements || []).join(', ')}
 
 Format: Return ONLY the question text, nothing else. Do not include any preamble or explanation.`
         },
@@ -1358,7 +1358,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
   } catch (error) {
     console.error(`[LLM_COMPLIANCE] Failed to generate compliance question for ${complianceArea}:`, error)
     // Use fallback question generation
-    const regulations = llmAnalysis.complianceRequirements.slice(0, 2).join(' and ')
+    const regulations = (llmAnalysis.complianceRequirements || []).slice(0, 2).join(' and ')
     const data = (request.dataTypes || [])[0] || 'data'
     complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
   }
@@ -1366,13 +1366,13 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
   // ✅ Validate compliance question text
   if (complianceQuestionText.length < 20 || complianceQuestionText === complianceArea) {
     console.warn(`[VALIDATION] Invalid compliance question text, using fallback for ${complianceArea}`)
-    const regulations = llmAnalysis.complianceRequirements.slice(0, 2).join(' and ')
+    const regulations = (llmAnalysis.complianceRequirements || []).slice(0, 2).join(' and ')
     const data = (request.dataTypes || [])[0] || 'data'
     complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
   }
 
   // Calculate weights for compliance
-  const baseWeight = llmAnalysis.complianceRequirements.includes(complianceArea) ? 0.9 : 0.7
+  const baseWeight = (llmAnalysis.complianceRequirements || []).includes(complianceArea) ? 0.9 : 0.7
   const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
   const industryWeight = request.industry ? 0.85 : 0.7
   const finalWeight = (baseWeight * 0.6) + (evidenceWeight * 0.25) + (industryWeight * 0.15)
@@ -1445,7 +1445,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
   }
 
   // ✅ Create short label for compliance questions (category + key regulation)
-  const keyRegulation = llmAnalysis.complianceRequirements[0]
+  const keyRegulation = (llmAnalysis.complianceRequirements || [])[0]
   const complianceShortLabel = keyRegulation && keyRegulation !== complianceArea
     ? `${complianceArea} - ${keyRegulation}`
     : complianceArea
@@ -1458,7 +1458,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     description: `Based on ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance)`,
     priority: determinePriority(finalWeight),
 
-    importance: `Required for ${llmAnalysis.complianceRequirements.join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relatedIncidents.length} incidents. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
+    importance: `Required for ${(llmAnalysis.complianceRequirements || []).join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relatedIncidents.length} incidents. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
     reasoning: `Evidence from ${relatedIncidents.length} compliance incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance`,
     examples,
     mitigations: generateComplianceMitigations(complianceArea),
@@ -1473,7 +1473,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     finalWeight,
     weight: finalWeight, // ✅ 0-1 scale (normalized for frontend display as percentage)
 
-    weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `Required by ${llmAnalysis.complianceRequirements.join(', ')}`),
+    weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `Required by ${(llmAnalysis.complianceRequirements || []).join(', ')}`),
     evidenceQuery: complianceArea,
     relatedIncidents: relatedIncidents.slice(0, 5),
     similarIncidents: relatedIncidents.slice(0, 5),
@@ -1723,7 +1723,7 @@ function generateComplianceMitigations(area: string): string[] {
 }
 
 function extractRegulations(incidents: IncidentMatch[], llmAnalysis: LLMAnalysis): string[] {
-  const regulations = new Set<string>(llmAnalysis.complianceRequirements)
+  const regulations = new Set<string>(llmAnalysis.complianceRequirements || [])
 
   incidents.forEach(incident => {
     // Safety check: skip incidents without embedding text
