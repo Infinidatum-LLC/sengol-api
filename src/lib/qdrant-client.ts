@@ -197,7 +197,7 @@ export async function searchIncidents(
   return searchResults.map(result => ({
     id: result.id,
     score: result.score,
-    payload: result.payload as QdrantIncidentMetadata
+    payload: result.payload as unknown as QdrantIncidentMetadata
   }))
 }
 
