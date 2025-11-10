@@ -49,6 +49,7 @@ model User {
   pricingAnalyticsEvents PricingAnalyticsEvent[]
   regulatoryProfile      UserRegulatoryProfile?
   passwordResetTokens    PasswordResetToken[]
+  councilMemberships     CouncilMembership[]
 }
 
 model Account {
@@ -300,6 +301,9 @@ model RiskAssessment {
   // ============================================================
   // ============================================================
 
+  // Council Assignment (Added Nov 8, 2025)
+  councilId String? // Optional council assignment for governance review
+
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
   domainRisks          DomainRisk[]
@@ -310,6 +314,9 @@ model RiskAssessment {
   continuousMonitoring ContinuousMonitoring[]
   dynamicRiskQuestions DynamicRiskQuestion[]
   weightedRiskScores   WeightedRiskScore[]
+  council              Council?                @relation(fields: [councilId], references: [id])
+  approvals            RiskApproval[]
+  ledgerEntries        EvidenceLedgerEntry[]
 
   @@index([userId])
   @@index([projectId])
@@ -317,6 +324,7 @@ model RiskAssessment {
   @@index([createdAt])
   @@index([riskCoverageScore])
   @@index([useWeightedScoring])
+  @@index([councilId])
 }
 
 model DomainRisk {
@@ -3166,4 +3174,172 @@ model WeightedRiskScore {
 
   @@index([assessmentId])
   @@index([category])
+}
+
+// ============================================================
+// AI RISK COUNCIL MODELS (Added 2025-11-08)
+// ============================================================
+
+enum CouncilStatus {
+  ACTIVE
+  ARCHIVED
+  SUSPENDED
+}
+
+enum CouncilRole {
+  CHAIR
+  PARTNER
+  OBSERVER
+}
+
+enum MembershipStatus {
+  ACTIVE
+  REVOKED
+  SUSPENDED
+}
+
+enum ApprovalStatus {
+  APPROVED
+  REJECTED
+  PENDING
+  CONDITIONAL
+}
+
+enum LedgerEntryType {
+  APPROVAL
+  REJECTION
+  STATUS_CHANGE
+  ASSIGNMENT
+  MEMBER_ADDED
+  MEMBER_REVOKED
+  POLICY_CHANGE
+  SYSTEM_EVENT
+}
+
+// Council - Governance body for risk reviews
+model Council {
+  id          String        @id @default(cuid())
+  name        String
+  description String?       @db.Text
+  orgId       String? // Optional organization scope
+  status      CouncilStatus @default(ACTIVE)
+
+  // Approval policy configuration
+  approvalPolicy   Json? // Flexible policy definition
+  quorum           Int     @default(1) // Minimum required votes
+  requireUnanimous Boolean @default(false)
+  metadata         Json? // Additional configuration
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships     CouncilMembership[]
+  approvals       RiskApproval[]
+  ledgerEntries   EvidenceLedgerEntry[]
+  riskAssessments RiskAssessment[] // Assessments assigned to this council
+
+  @@index([orgId])
+  @@index([status])
+}
+
+// CouncilMembership - Individual's role within a council
+model CouncilMembership {
+  id        String           @id @default(cuid())
+  councilId String
+  userId    String
+  role      CouncilRole
+  status    MembershipStatus @default(ACTIVE)
+
+  // Permission overrides
+  permissions Json? // { canApprove, canVote, canViewAll, etc }
+
+  // Assignment tracking
+  assignedBy String? // userId of admin who assigned
+  assignedAt DateTime  @default(now())
+  revokedAt  DateTime?
+  notes      String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  council       Council               @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvals     RiskApproval[]
+  ledgerEntries EvidenceLedgerEntry[]
+
+  @@unique([councilId, userId]) // One membership per user per council
+  @@index([userId])
+  @@index([councilId])
+  @@index([status])
+}
+
+// RiskApproval - Individual partner's decision on an assessment
+model RiskApproval {
+  id            String         @id @default(cuid())
+  assessmentId  String // Links to RiskAssessment
+  councilId     String
+  membershipId  String
+  partnerId     String // Denormalized for quick access
+  step          String // Workflow step (e.g., "final_review")
+  status        ApprovalStatus
+  decisionNotes String?        @db.Text
+  reasonCodes   String[]       @default([]) // Structured rejection/condition reasons
+
+  // Evidence snapshot reference
+  evidenceSnapshotId String? // Reference to frozen evidence state
+
+  // Attachments (metadata only, files stored separately)
+  attachments Json? // [{storageKey, filename, contentType, size}]
+
+  createdAt DateTime @default(now())
+  decidedAt DateTime @default(now())
+
+  // Relations
+  council     Council              @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  membership  CouncilMembership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  assessment  RiskAssessment       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  ledgerEntry EvidenceLedgerEntry? // Each approval creates a ledger entry
+
+  @@index([assessmentId])
+  @@index([councilId])
+  @@index([membershipId])
+  @@index([partnerId])
+  @@index([status])
+}
+
+// EvidenceLedgerEntry - Tamper-evident audit trail
+model EvidenceLedgerEntry {
+  id           String  @id @default(cuid())
+  assessmentId String // Links to RiskAssessment
+  councilId    String?
+  membershipId String?
+  approvalId   String? @unique // One-to-one with RiskApproval
+
+  // Actor information
+  actorId   String? // User who performed the action
+  actorRole String? // Role at time of action
+
+  // Entry metadata
+  entryType LedgerEntryType
+  payload   Json // Structured data (decision, notes, changes, etc)
+
+  // Hash chain for tamper detection
+  hash     String // SHA-256 hash of this entry
+  prevHash String? // Hash of previous entry (null for first entry)
+
+  createdAt DateTime @default(now())
+
+  // Relations
+  council    Council?           @relation(fields: [councilId], references: [id], onDelete: Cascade)
+  membership CouncilMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  approval   RiskApproval?      @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  assessment RiskAssessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
+  @@index([councilId])
+  @@index([entryType])
+  @@index([createdAt])
+  @@index([actorId])
 }

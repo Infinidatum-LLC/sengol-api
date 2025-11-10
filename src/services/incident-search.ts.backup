@@ -1,27 +1,24 @@
 /**
- * Incident Search Service - Qdrant Vector Database
+ * Incident Search Service - Semantic search using Gemini Grounding
  *
- * This service provides evidence-based incident search using Qdrant vector database.
- * Data is automatically populated by the autonomous crawler system.
+ * This service provides evidence-based incident search using Gemini AI grounding
+ * which automatically handles embedding generation and semantic ranking.
  *
  * MIGRATION HISTORY:
  * - d-vecDB VPS → Google Vertex AI RAG (Nov 2025)
- * - Vertex AI RAG → Gemini Grounding (Nov 2025)
- * - Gemini Grounding → Qdrant (Nov 2025) - autonomous crawler integration
+ * - Vertex AI RAG → Gemini Grounding (Nov 2025) - eliminates manual embedding management
  *
- * BENEFITS:
- * - Real-time data from 15 crawler sources
- * - Fast vector search (< 500ms)
- * - Cost-effective (~$96/month vs. Vertex AI costs)
- * - Self-hosted, full control
- * - 3-tier caching still active (L1, L2, L3)
+ * PERFORMANCE OPTIMIZATIONS (Week 2):
+ * - L1 Cache: Local memory LRU cache (1-5ms)
+ * - L2 Cache: Redis distributed cache (20-50ms)
+ * - L3: Gemini grounding with Cloud Storage data (100-3000ms)
+ * - Request deduplication (prevents duplicate in-flight requests)
+ * - Pre-filtering by metadata (reduces search space by 80-90%)
  */
 
-import {
-  searchIncidents as qdrantSearch,
-  QdrantSearchResult,
-  QdrantSearchOptions,
-} from '../lib/qdrant-client'
+import { Storage } from '@google-cloud/storage'
+import { IncidentMetadata, SearchResult, searchByText } from '../lib/vertex-ai-client'
+import { getGeminiClient } from '../lib/gemini-client'
 import {
   vectorSearchCache,
   generateCacheKey,
@@ -35,6 +32,21 @@ import {
   CACHE_TTL,
 } from '../lib/redis-cache'
 import { requestDeduplicator } from '../lib/request-deduplicator'
+import { getGoogleAuth } from '../lib/google-auth'
+
+// Cloud Storage setup - initialize auth first
+getGoogleAuth() // Ensures credentials are properly configured
+const storage = new Storage({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT?.trim(),
+})
+
+const BUCKET_NAME = process.env.GCS_BUCKET_NAME?.trim() || 'sengol-incidents'
+const INCIDENT_DATA_PATH = 'incidents/postgres-migrated/raw/'
+
+// Cache for loaded incident data
+let incidentCache: Map<string, any[]> | null = null
+let cacheTimestamp: number = 0
+const CACHE_TTL_MS = 3600000 // 1 hour
 
 export interface IncidentSearchOptions {
   limit?: number
@@ -97,7 +109,7 @@ export interface IncidentStatistics {
 }
 
 /**
- * Find similar incidents using Qdrant vector similarity search
+ * Find similar incidents using d-vecDB vector similarity search
  * WITH 3-TIER CACHING STRATEGY
  */
 export async function findSimilarIncidents(
@@ -117,7 +129,7 @@ export async function findSimilarIncidents(
     incidentTypes,
   } = options
 
-  console.log('\n🔍 [SEARCH] Starting Qdrant incident search...')
+  console.log('\n🔍 [SEARCH] Starting incident search with optimizations...')
   console.log(`[SEARCH] Query: "${projectDescription.substring(0, 100)}..."`)
   console.log(`[SEARCH] Filters: limit=${limit}, minSim=${minSimilarity}, industry=${industry || 'all'}`)
 
@@ -172,15 +184,15 @@ export async function findSimilarIncidents(
     console.log(`[L2 CACHE MISS] Redis cache miss (${l2Latency}ms)`)
 
     // ========================================================================
-    // L3: Qdrant Vector Search with Request Deduplication (50-500ms)
+    // L3: Vertex AI Vector Search with Request Deduplication (100-3000ms)
     // ========================================================================
-    console.log('[L3 Qdrant] Cache miss - executing vector search...')
+    console.log('[L3 Vertex AI] Cache miss - executing vector search...')
 
     // Use request deduplication to merge identical in-flight requests
     const results = await requestDeduplicator.execute(
       redisCacheKey,
       async () => {
-        return await performQdrantSearch(projectDescription, options)
+        return await performVectorSearch(projectDescription, options)
       },
       { ttl: 10000 } // 10 second dedup window
     )
@@ -191,7 +203,7 @@ export async function findSimilarIncidents(
     await setInCache(redisCacheKey, results, CACHE_TTL.VECTOR_SEARCH)
     setInLocalCache(vectorSearchCache, 'vectorSearch', cacheKey, results)
 
-    console.log(`[Qdrant COMPLETE] ✅ Returned ${results.length} results in ${totalLatency}ms`)
+    console.log(`[Vertex AI COMPLETE] ✅ Returned ${results.length} results in ${totalLatency}ms`)
 
     return results
   } catch (error) {
@@ -203,10 +215,49 @@ export async function findSimilarIncidents(
 }
 
 /**
- * Perform actual Qdrant search
+ * Load all incident data from Cloud Storage (cached)
+ */
+async function loadIncidentData(): Promise<Map<string, any[]>> {
+  const now = Date.now()
+
+  // Return cached data if still valid
+  if (incidentCache && (now - cacheTimestamp) < CACHE_TTL_MS) {
+    console.log('[Gemini Search] Using cached incident data')
+    return incidentCache
+  }
+
+  console.log('[Gemini Search] Loading incident data from Cloud Storage...')
+
+  const bucket = storage.bucket(BUCKET_NAME)
+  const [files] = await bucket.getFiles({ prefix: INCIDENT_DATA_PATH })
+
+  const jsonFiles = files.filter(file => file.name.endsWith('.json'))
+  const dataMap = new Map<string, any[]>()
+
+  for (const file of jsonFiles) {
+    try {
+      const tableName = file.name.split('/').pop()?.replace('.json', '') || 'unknown'
+      const [content] = await file.download()
+      const records = JSON.parse(content.toString()) as any[]
+
+      dataMap.set(tableName, records)
+      console.log(`[Gemini Search] Loaded ${records.length} records from ${tableName}`)
+    } catch (error) {
+      console.error(`[Gemini Search] Error loading ${file.name}:`, error)
+    }
+  }
+
+  incidentCache = dataMap
+  cacheTimestamp = now
+
+  return dataMap
+}
+
+/**
+ * Perform actual search using Gemini grounding
  * (separated for request deduplication)
  */
-async function performQdrantSearch(
+async function performVectorSearch(
   projectDescription: string,
   options: IncidentSearchOptions
 ): Promise<IncidentMatch[]> {
@@ -223,103 +274,254 @@ async function performQdrantSearch(
 
   const searchStartTime = Date.now()
 
-  console.log(`[Qdrant Search] Searching for incidents...`)
-  console.log(`[Qdrant Search] Query: "${projectDescription.substring(0, 100)}..."`)
+  console.log(`[Gemini Search] Searching for incidents...`)
+  console.log(`[Gemini Search] Query: "${projectDescription.substring(0, 100)}..."`)
 
-  // Build Qdrant search options
-  const qdrantOptions: QdrantSearchOptions = {
-    limit,
-    scoreThreshold: minSimilarity,
-    industry,
-    severity,
-    requireMfaData,
-    requireBackupData,
-    requireIrPlanData,
+  // Step 1: Load all incident data from Cloud Storage
+  const incidentData = await loadIncidentData()
+
+  // Step 2: Flatten and pre-filter incidents
+  interface IncidentRecord {
+    id?: string | number
+    [key: string]: any
   }
 
-  // If incidentTypes provided, map to category
-  if (incidentTypes && incidentTypes.length > 0) {
-    // Use first incident type as category
-    qdrantOptions.category = mapIncidentTypeToCategory(incidentTypes[0])
+  let allIncidents: Array<IncidentRecord & { type: string }> = []
+
+  for (const [type, records] of incidentData.entries()) {
+    records.forEach(record => {
+      // Pre-filter by industry
+      if (industry && record.industry?.toLowerCase() !== industry.toLowerCase()) {
+        return
+      }
+
+      // Pre-filter by severity
+      if (severity && severity.length > 0) {
+        if (!record.severity || !severity.includes(record.severity)) {
+          return
+        }
+      }
+
+      // Pre-filter by incident type
+      const recordType = mapTableToIncidentType(type)
+      if (incidentTypes && incidentTypes.length > 0) {
+        if (!incidentTypes.includes(recordType)) {
+          return
+        }
+      }
+
+      // Pre-filter by security data requirements
+      if (requireMfaData && record.had_mfa === undefined && record.hadMfa === undefined) return
+      if (requireBackupData && record.had_backups === undefined && record.hadBackups === undefined) return
+      if (requireIrPlanData && record.had_ir_plan === undefined && record.hadIrPlan === undefined) return
+
+      allIncidents.push({ ...record, type })
+    })
   }
 
-  // Execute Qdrant search
-  const qdrantResults = await qdrantSearch(projectDescription, qdrantOptions)
+  console.log(`[Gemini Search] Found ${allIncidents.length} incidents after pre-filtering`)
+
+  if (allIncidents.length === 0) {
+    return []
+  }
+
+  // Step 3: Try vector search first, fallback to Gemini ranking
+  let rankedIncidents: Array<any & { type: string }>
+
+  try {
+    console.log('[Vector Search] Attempting fast vector search...')
+    const vectorSearchStart = Date.now()
+
+    const vectorResults = await searchByText(
+      projectDescription,
+      {
+        industry: options.industry,
+        severity: options.severity?.[0],
+        incidentType: options.incidentTypes?.[0]
+      },
+      limit * 2 // Get 2x for better selection
+    )
+
+    const vectorSearchTime = Date.now() - vectorSearchStart
+    console.log(`[Performance] Vector search completed in ${vectorSearchTime}ms`)
+
+    if (vectorResults.length > 0) {
+      console.log(`[Vector Search] ✅ Found ${vectorResults.length} results (similarity: ${vectorResults[vectorResults.length - 1].score.toFixed(3)} - ${vectorResults[0].score.toFixed(3)})`)
+
+      // Convert SearchResult to incident format
+      rankedIncidents = vectorResults.map(result => ({
+        ...result.metadata,
+        type: result.metadata.incidentType || 'unknown',
+        // Map metadata fields to expected incident fields
+        id: result.id,
+        attack_type: result.metadata.attackType,
+        organization: result.metadata.organization,
+        industry: result.metadata.industry,
+        severity: result.metadata.severity,
+        incident_date: result.metadata.incidentDate,
+        had_mfa: result.metadata.hadMfa,
+        had_backups: result.metadata.hadBackups,
+        had_ir_plan: result.metadata.hadIrPlan,
+        estimated_cost: result.metadata.estimatedCost,
+        downtime_hours: result.metadata.downtimeHours,
+        records_affected: result.metadata.recordsAffected
+      }))
+    } else {
+      throw new Error('No vector search results, falling back to Gemini')
+    }
+  } catch (vectorError) {
+    console.warn('[Vector Search] Vector search failed, falling back to Gemini ranking:', vectorError)
+    console.log('[Gemini Fallback] Using Gemini-based ranking...')
+    const geminiStart = Date.now()
+    rankedIncidents = await rankIncidentsByRelevance(allIncidents, projectDescription, limit * 2)
+    const geminiTime = Date.now() - geminiStart
+    console.log(`[Performance] Gemini ranking completed in ${geminiTime}ms`)
+  }
+
+  // Step 4: Convert to IncidentMatch format
+  const matches: IncidentMatch[] = rankedIncidents.slice(0, limit).map((incident, idx) => {
+    const incidentType = mapTableToIncidentType(incident.type)
+
+    // Calculate pseudo-similarity score (0.7-1.0 based on ranking)
+    const similarity = Math.max(minSimilarity, 1.0 - (idx * 0.02))
+
+    return {
+      id: `${incident.type}_${incident.id || idx}`,
+      incidentId: String(incident.id || idx),
+      incidentType,
+      attackType: incident.attack_type || incident.attackType || null,
+      organization: incident.organization || null,
+      industry: incident.industry || null,
+      severity: incident.severity || null,
+      incidentDate: incident.incident_date || incident.incidentDate
+        ? new Date(incident.incident_date || incident.incidentDate)
+        : null,
+      hadMfa: incident.had_mfa ?? incident.hadMfa ?? null,
+      hadBackups: incident.had_backups ?? incident.hadBackups ?? null,
+      hadIrPlan: incident.had_ir_plan ?? incident.hadIrPlan ?? null,
+      estimatedCost: incident.estimated_cost || incident.estimatedCost || null,
+      downtimeHours: incident.downtime_hours || incident.downtimeHours || null,
+      recordsAffected: incident.records_affected || incident.recordsAffected || null,
+      similarity,
+      embeddingText: createIncidentSummary(incident, incident.type),
+    }
+  })
 
   const searchLatency = Date.now() - searchStartTime
-  console.log(`[Qdrant Search] ✅ Found ${qdrantResults.length} matches in ${searchLatency}ms`)
-
-  // Map Qdrant results to IncidentMatch format
-  const matches: IncidentMatch[] = qdrantResults.map((result) => 
-    mapQdrantResultToIncidentMatch(result)
-  )
+  console.log(`[Gemini Search] ✅ Returned ${matches.length} matches in ${searchLatency}ms`)
 
   if (matches.length > 0) {
     const minSim = matches[matches.length - 1].similarity.toFixed(3)
     const maxSim = matches[0].similarity.toFixed(3)
-    console.log(`[Qdrant Search] Similarity range: ${minSim} - ${maxSim}`)
+    console.log(`[Gemini Search] Similarity range: ${minSim} - ${maxSim}`)
   }
 
   return matches
 }
 
 /**
- * Map Qdrant search result to IncidentMatch interface
- * Ensures 100% API compatibility
+ * Map table name to incident type
  */
-function mapQdrantResultToIncidentMatch(result: QdrantSearchResult): IncidentMatch {
-  const metadata = result.payload.metadata
-
-  return {
-    id: String(result.id),
-    incidentId: result.payload.embedding_id,
-    incidentType: mapCategoryToIncidentType(result.payload.category),
-    attackType: metadata.attack_type || null,
-    organization: metadata.organization || null,
-    industry: metadata.industry || null,
-    severity: metadata.severity || null,
-    incidentDate: metadata.incident_date ? new Date(metadata.incident_date) : null,
-    hadMfa: metadata.had_mfa ?? null,
-    hadBackups: metadata.had_backups ?? null,
-    hadIrPlan: metadata.had_ir_plan ?? null,
-    estimatedCost: metadata.estimated_cost || null,
-    downtimeHours: metadata.downtime_hours || null,
-    recordsAffected: metadata.records_affected || null,
-    similarity: result.score,
-    embeddingText: result.payload.embedding_text,
+function mapTableToIncidentType(tableName: string): string {
+  const mapping: Record<string, string> = {
+    'cyber_incident_staging': 'cyber',
+    'cloud_incident_staging': 'cloud',
+    'failure_patterns': 'failure_pattern',
+    'security_vulnerabilities': 'vulnerability',
+    'regulation_violations': 'regulation_violation',
+    'cep_signal_events': 'cep_signal',
+    'cep_anomalies': 'cep_anomaly',
+    'cep_pattern_templates': 'cep_pattern',
   }
+  return mapping[tableName] || tableName
 }
 
 /**
- * Map incident type to Qdrant category
+ * Use Gemini to rank incidents by relevance
  */
-function mapIncidentTypeToCategory(incidentType: string): string {
-  const mapping: Record<string, string> = {
-    'cyber': 'incidents',
-    'cloud': 'incidents',
-    'failure_pattern': 'incidents',
-    'vulnerability': 'vulnerabilities',
-    'regulation_violation': 'regulatory',
-    'research': 'research',
-    'news': 'news',
+async function rankIncidentsByRelevance(
+  incidents: Array<any & { type: string }>,
+  projectDescription: string,
+  limit: number
+): Promise<Array<any & { type: string }>> {
+  try {
+    const gemini = getGeminiClient()
+
+    // Create concise summaries for Gemini to evaluate
+    const incidentSummaries = incidents.slice(0, 100).map((inc, idx) => ({
+      index: idx,
+      summary: createIncidentSummary(inc, inc.type)
+    }))
+
+    const prompt = `You are analyzing security incidents to find the most relevant ones for this project:
+
+Project Description: ${projectDescription}
+
+Here are ${incidentSummaries.length} security incidents. Select the ${limit} most relevant incident indexes (by number) that would provide the most valuable lessons for this project's risk assessment.
+
+Incidents:
+${incidentSummaries.map(s => `${s.index}. ${s.summary}`).join('\n')}
+
+Respond with ONLY a JSON array of the ${limit} most relevant incident indexes, like: [0, 5, 12, ...]`
+
+    const result = await gemini.generateContent(prompt)
+    const response = result.response.candidates?.[0]?.content?.parts?.[0]?.text || ''
+
+    // Parse the response to get selected indexes
+    const match = response.match(/\[([\\d,\s]+)\]/)
+    if (match) {
+      const selectedIndexes = match[1].split(',').map((s: string) => parseInt(s.trim())).filter((n: number) => !isNaN(n))
+      console.log(`[Gemini Search] Gemini selected indexes: ${selectedIndexes.slice(0, 10).join(', ')}${selectedIndexes.length > 10 ? '...' : ''}`)
+
+      const selected = selectedIndexes
+        .filter((idx: number) => idx < incidents.length)
+        .map((idx: number) => incidents[idx])
+
+      return selected.slice(0, limit)
+    }
+  } catch (error) {
+    console.error('[Gemini Search] Error using Gemini for ranking:', error)
   }
-  return mapping[incidentType] || 'incidents'
+
+  // Fallback: return first N incidents
+  console.log('[Gemini Search] Using fallback: returning first incidents')
+  return incidents.slice(0, limit)
 }
 
 /**
- * Map Qdrant category to incident type
+ * Create a concise summary of an incident for Gemini evaluation
  */
-function mapCategoryToIncidentType(category: string): string {
-  const mapping: Record<string, string> = {
-    'incidents': 'cyber',
-    'vulnerabilities': 'vulnerability',
-    'regulatory': 'regulation_violation',
-    'research': 'research',
-    'news': 'news',
+function createIncidentSummary(incident: any, type: string): string {
+  if (type === 'cyber_incident_staging') {
+    return `${incident.attack_type || 'Unknown attack'} on ${incident.organization || 'Unknown org'} (${incident.industry || 'Unknown industry'}) - ${incident.severity || 'unknown'} severity, $${incident.estimated_cost || 'unknown'} cost`
   }
-  return mapping[category] || 'cyber'
+
+  if (type === 'cloud_incident_staging') {
+    return `${incident.cloud_provider || 'Cloud'} ${incident.affected_service || 'service'} - ${incident.incident_type || 'incident'} affecting ${incident.affected_customers || 'unknown'} customers`
+  }
+
+  if (type === 'failure_patterns') {
+    return `${incident.pattern_type || 'Unknown'} failure in ${incident.category || 'unknown'} - occurs ${incident.occurrence_frequency || 'unknown frequency'}`
+  }
+
+  if (type === 'security_vulnerabilities') {
+    return `${incident.cve_id || 'Unknown CVE'}: ${incident.vulnerability_type || 'vulnerability'} (CVSS ${incident.cvss_score || 'N/A'}) in ${incident.affected_products?.join(', ') || 'unknown products'}`
+  }
+
+  if (type === 'regulation_violations') {
+    return `${incident.regulation_framework || 'Regulation'} violation by ${incident.organization || 'unknown'} - ${incident.violation_type || 'violation'}, fine: $${incident.fine_amount || 'unknown'}`
+  }
+
+  if (type === 'cep_signal_events') {
+    return `CEP Signal: ${incident.event_type || 'event'} from ${incident.source || 'unknown'} - ${incident.severity || 'unknown'} severity`
+  }
+
+  return `${type}: ${incident.description || incident.title || JSON.stringify(incident).slice(0, 100)}...`
 }
 
+/**
+ * Calculate statistics from a set of incident matches
+ */
 export function calculateIncidentStatistics(incidents: IncidentMatch[]): IncidentStatistics {
   console.log('\n📊 Calculating statistics for ' + incidents.length + ' incidents...')
 

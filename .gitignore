@@ -14,3 +14,10 @@ sengol-api-key.json
 *-sa-key.json
 *.env.bak
 /tmp/credentials-base64.txt
+.env.production
+
+# Documentation files with embedded secrets (keep locally only)
+DEPLOY_NOW.md
+FINAL_DEPLOYMENT_INSTRUCTIONS.md
+GCP_CONSOLE_DEPLOYMENT_GUIDE.md
+.claude/settings.local.json
