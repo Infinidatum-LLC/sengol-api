@@ -272,9 +272,9 @@ function mapQdrantResultToIncidentMatch(result: QdrantSearchResult): IncidentMat
 
   return {
     id: String(result.id),
-    incidentId: result.payload.embedding_id,
-    incidentType: mapCategoryToIncidentType(result.payload.category),
-    attackType: metadata.attack_type || null,
+    incidentId: result.payload.embedding_id || result.payload.id || String(result.id),
+    incidentType: mapCategoryToIncidentType(result.payload.category || result.payload.type),
+    attackType: metadata.attack_type || metadata.failure_type || null,
     organization: metadata.organization || null,
     industry: metadata.industry || null,
     severity: metadata.severity || null,
@@ -283,10 +283,10 @@ function mapQdrantResultToIncidentMatch(result: QdrantSearchResult): IncidentMat
     hadBackups: metadata.had_backups ?? null,
     hadIrPlan: metadata.had_ir_plan ?? null,
     estimatedCost: metadata.estimated_cost || null,
-    downtimeHours: metadata.downtime_hours || null,
+    downtimeHours: metadata.downtime_hours || metadata.detection_time_hours || null,
     recordsAffected: metadata.records_affected || null,
     similarity: result.score,
-    embeddingText: result.payload.embedding_text,
+    embeddingText: result.payload.content || result.payload.embedding_text || 'N/A',
   }
 }
 

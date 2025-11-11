@@ -180,7 +180,7 @@ function generateQuestionCacheKey(request: QuestionGenerationRequest): string {
     data: (request.dataTypes || []).sort().join(','),
     intensity: request.questionIntensity || 'high',
     jurisdictions: (request.jurisdictions || []).sort().join(','),
-    version: 'v6', // ← CACHE BUSTER: Increased maxQuestions limits (high: 12→25, medium: 9→15, low: 6→8)
+    version: 'v7', // ← CACHE BUSTER: Fixed Qdrant field name mismatch (embedding_text → content)
   }
 
   const hash = crypto

@@ -69,11 +69,14 @@ export async function generateEmbedding(text: string): Promise<number[]> {
  * Incident metadata stored in Qdrant payload
  */
 export interface QdrantIncidentMetadata {
-  embedding_id: string
-  embedding_text: string
-  content: string
+  embedding_id?: string
+  embedding_text?: string  // Legacy field name
+  content: string  // Primary text content field
+  type?: string | null
+  id: string
   source_file: string
-  category: string
+  embedding_model: string
+  category?: string
   metadata: {
     title?: string
     severity?: string
