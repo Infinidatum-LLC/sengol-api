@@ -1,4 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 import { generateDynamicQuestions } from '../services/dynamic-question-generator'
 import { analyzeSystem } from '../services/system-analysis.service'
@@ -71,6 +72,7 @@ interface GenerateQuestionsBody {
   selectedTech: string[]
   customTech: string[]
   questionIntensity?: 'high' | 'medium' | 'low' // Optional intensity filter
+  forceRegenerate?: boolean // Force bypass all caches and regenerate from scratch
 }
 
 export async function generateQuestionsController(
@@ -88,7 +90,8 @@ export async function generateQuestionsController(
     industry,
     selectedTech,
     customTech,
-    questionIntensity
+    questionIntensity,
+    forceRegenerate
   } = request.body
 
   try {
@@ -112,6 +115,19 @@ export async function generateQuestionsController(
     if (questionIntensity) {
       console.log(`[GENERATE_QUESTIONS] Intensity: ${questionIntensity}`)
     }
+    if (forceRegenerate) {
+      console.log(`[GENERATE_QUESTIONS] Force Regenerate: ENABLED - Clearing all caches`)
+
+      // Clear database cache (use Prisma.JsonNull for JSONB null values)
+      await prisma.riskAssessment.update({
+        where: { id },
+        data: {
+          riskNotes: Prisma.JsonNull,
+          complianceNotes: Prisma.JsonNull,
+          questionGeneratedAt: null
+        }
+      })
+    }
 
     // Generate questions
     const result = await generateDynamicQuestions({
@@ -120,7 +136,8 @@ export async function generateQuestionsController(
       jurisdictions,
       industry,
       techStack: [...(selectedTech || []), ...(customTech || [])],
-      questionIntensity: questionIntensity || 'high' // Default to high if not specified
+      questionIntensity: questionIntensity || 'high', // Default to high if not specified
+      forceRegenerate: forceRegenerate || false // Pass through to service layer
     })
 
     return reply.send({

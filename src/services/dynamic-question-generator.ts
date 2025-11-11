@@ -110,6 +110,9 @@ export interface QuestionGenerationRequest {
 
   // Question intensity filtering (frontend alignment)
   questionIntensity?: 'high' | 'medium' | 'low' // Controls question filtering (default: 'high')
+
+  // Cache control
+  forceRegenerate?: boolean // Force bypass all caches and regenerate from scratch (default: false)
 }
 
 export interface QuestionGenerationResult {
@@ -518,26 +521,35 @@ export async function generateDynamicQuestions(
     console.log('System: "' + request.systemDescription.substring(0, 100) + '..."')
     console.log('Domains:', request.selectedDomains || 'Not specified')
     console.log('Industry:', request.industry || 'Not specified')
-
-    // ✅ OPTIMIZATION: Check cache for existing results (80-99% speedup for repeat requests)
-    const cacheKey = generateQuestionCacheKey(request)
-    const cachedResult = await getFromCache<QuestionGenerationResult>(cacheKey)
-
-    if (cachedResult) {
-      const cacheLatency = Date.now() - overallStartTime
-      console.log(`\n🚀 [CACHE HIT] Returning cached questions in ${cacheLatency}ms (99% faster!)`)
-      console.log(`   Risk: ${cachedResult.riskQuestions.length}, Compliance: ${cachedResult.complianceQuestions.length}`)
-      // Update timestamp to reflect cache hit (safely handle potential undefined)
-      if (cachedResult.generationMetadata) {
-        cachedResult.generationMetadata = {
-          ...cachedResult.generationMetadata,
-          timestamp: new Date()
-        }
-      }
-      return cachedResult
+    if (request.forceRegenerate) {
+      console.log('🔄 Force Regenerate: ENABLED - Bypassing all caches')
     }
 
-    console.log(`[CACHE MISS] Generating fresh questions...`)
+    // ✅ OPTIMIZATION: Check cache for existing results (80-99% speedup for repeat requests)
+    // Skip cache if forceRegenerate flag is set
+    const cacheKey = generateQuestionCacheKey(request)
+
+    if (!request.forceRegenerate) {
+      const cachedResult = await getFromCache<QuestionGenerationResult>(cacheKey)
+
+      if (cachedResult) {
+        const cacheLatency = Date.now() - overallStartTime
+        console.log(`\n🚀 [CACHE HIT] Returning cached questions in ${cacheLatency}ms (99% faster!)`)
+        console.log(`   Risk: ${cachedResult.riskQuestions.length}, Compliance: ${cachedResult.complianceQuestions.length}`)
+        // Update timestamp to reflect cache hit (safely handle potential undefined)
+        if (cachedResult.generationMetadata) {
+          cachedResult.generationMetadata = {
+            ...cachedResult.generationMetadata,
+            timestamp: new Date()
+          }
+        }
+        return cachedResult
+      }
+
+      console.log(`[CACHE MISS] Generating fresh questions...`)
+    } else {
+      console.log(`[FORCE REGENERATE] Skipping cache check - generating fresh questions...`)
+    }
 
   // Step 1: Find similar incidents from Vertex AI
   const step1Start = Date.now()
