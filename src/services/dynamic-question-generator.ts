@@ -10,7 +10,7 @@
  * that provide real differentiation value to clients.
  */
 
-import { gemini } from '../lib/gemini-client'
+import { openai as gemini } from '../lib/openai-client' // Using OpenAI instead of Gemini to avoid quota issues
 import { findSimilarIncidents, calculateIncidentStatistics, type IncidentMatch } from './incident-search'
 import { getFromCache, setInCache, CACHE_TTL } from '../lib/redis-cache'
 import crypto from 'crypto'
