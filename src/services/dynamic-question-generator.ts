@@ -180,7 +180,7 @@ function generateQuestionCacheKey(request: QuestionGenerationRequest): string {
     data: (request.dataTypes || []).sort().join(','),
     intensity: request.questionIntensity || 'high',
     jurisdictions: (request.jurisdictions || []).sort().join(','),
-    version: 'v5', // ← CACHE BUSTER: Fixed trailing newline in QDRANT_HOST env var
+    version: 'v6', // ← CACHE BUSTER: Increased maxQuestions limits (high: 12→25, medium: 9→15, low: 6→8)
   }
 
   const hash = crypto
@@ -462,17 +462,17 @@ function applyIntensityFiltering(
     high: {
       minWeight: 0.0,
       priorities: ['critical', 'high', 'medium', 'low'] as const,
-      maxQuestions: 12
+      maxQuestions: 25 // ✅ Increased from 12 to allow more questions through
     },
     medium: {
       minWeight: 0.4,
       priorities: ['critical', 'high', 'medium'] as const,
-      maxQuestions: 9
+      maxQuestions: 15 // ✅ Increased from 9 for better coverage
     },
     low: {
       minWeight: 0.6,
       priorities: ['critical', 'high'] as const,
-      maxQuestions: 6
+      maxQuestions: 8 // ✅ Increased from 6 for better coverage
     },
   }
 
