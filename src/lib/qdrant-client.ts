@@ -14,8 +14,8 @@
 import { QdrantClient } from '@qdrant/js-client-rest'
 import { OpenAI } from 'openai'
 
-const QDRANT_HOST = process.env.QDRANT_HOST || '10.128.0.2'
-const QDRANT_PORT = parseInt(process.env.QDRANT_PORT || '6333')
+const QDRANT_HOST = (process.env.QDRANT_HOST || '10.128.0.2').trim()
+const QDRANT_PORT = parseInt((process.env.QDRANT_PORT || '6333').trim())
 const COLLECTION_NAME = 'sengol_incidents_full'
 const EMBEDDING_DIMENSIONS = 1536
 
