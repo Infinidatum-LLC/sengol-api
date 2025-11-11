@@ -180,7 +180,7 @@ function generateQuestionCacheKey(request: QuestionGenerationRequest): string {
     data: (request.dataTypes || []).sort().join(','),
     intensity: request.questionIntensity || 'high',
     jurisdictions: (request.jurisdictions || []).sort().join(','),
-    version: 'v8', // ← CACHE BUSTER: Improved question prompts to generate comprehensive, detailed questions (not single words)
+    version: 'v9', // ← CACHE BUSTER: Performance optimization (batch size 5→8, delay 12s→8s) + comprehensive questions
   }
 
   const hash = crypto
@@ -820,9 +820,9 @@ async function generateRiskQuestions(
   console.log(`[PARALLEL] Queued ${allTasks.length} questions for parallel generation`)
 
   // ✅ RATE LIMITING: Batch requests to avoid quota exhaustion
-  // Gemini free tier: ~15 requests/minute for experimental model
-  const BATCH_SIZE = 5 // Process 5 questions at a time
-  const DELAY_BETWEEN_BATCHES_MS = 12000 // 12 seconds between batches (5 req/min pace)
+  // Optimized for performance: Increased batch size and reduced delay
+  const BATCH_SIZE = 8 // Process 8 questions at a time (increased from 5 for 37% speedup)
+  const DELAY_BETWEEN_BATCHES_MS = 8000 // 8 seconds between batches (reduced from 12s for 33% speedup)
 
   const generatedQuestions: (DynamicQuestion | null)[] = []
 
