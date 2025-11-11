@@ -180,7 +180,7 @@ function generateQuestionCacheKey(request: QuestionGenerationRequest): string {
     data: (request.dataTypes || []).sort().join(','),
     intensity: request.questionIntensity || 'high',
     jurisdictions: (request.jurisdictions || []).sort().join(','),
-    version: 'v3', // ← CACHE BUSTER: Increment when thresholds/logic changes
+    version: 'v4', // ← CACHE BUSTER: Updated for Qdrant external IP fix
   }
 
   const hash = crypto
