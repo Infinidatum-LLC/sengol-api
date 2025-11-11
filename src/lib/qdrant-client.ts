@@ -83,12 +83,14 @@ export interface QdrantIncidentMetadata {
     organization?: string
     incident_date?: string
     attack_type?: string
+    failure_type?: string  // For AI failure patterns
     industry?: string
     had_mfa?: boolean
     had_backups?: boolean
     had_ir_plan?: boolean
     estimated_cost?: number
     downtime_hours?: number
+    detection_time_hours?: number  // For AI failure patterns
     records_affected?: number
   }
 }
