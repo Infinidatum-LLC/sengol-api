@@ -14,10 +14,21 @@
 import { QdrantClient } from '@qdrant/js-client-rest'
 import { OpenAI } from 'openai'
 
+// DIAGNOSTIC: Log all environment variables for debugging
+console.log('[QDRANT_DIAGNOSTIC] Environment variables check:')
+console.log('[QDRANT_DIAGNOSTIC] QDRANT_HOST env var:', process.env.QDRANT_HOST)
+console.log('[QDRANT_DIAGNOSTIC] QDRANT_PORT env var:', process.env.QDRANT_PORT)
+console.log('[QDRANT_DIAGNOSTIC] NODE_ENV:', process.env.NODE_ENV)
+
 const QDRANT_HOST = (process.env.QDRANT_HOST || '10.128.0.2').trim()
 const QDRANT_PORT = parseInt((process.env.QDRANT_PORT || '6333').trim())
 const COLLECTION_NAME = 'sengol_incidents_full'
 const EMBEDDING_DIMENSIONS = 1536
+
+// DIAGNOSTIC: Log final values being used
+console.log('[QDRANT_DIAGNOSTIC] Final QDRANT_HOST value:', QDRANT_HOST)
+console.log('[QDRANT_DIAGNOSTIC] Final QDRANT_PORT value:', QDRANT_PORT)
+console.log('[QDRANT_DIAGNOSTIC] Target URL:', `http://${QDRANT_HOST}:${QDRANT_PORT}`)
 
 // Singleton clients
 let qdrantClient: QdrantClient | null = null
@@ -29,6 +40,7 @@ let openaiClient: OpenAI | null = null
 export function getQdrantClient(): QdrantClient {
   if (!qdrantClient) {
     console.log(`[Qdrant] Connecting to Qdrant at ${QDRANT_HOST}:${QDRANT_PORT}`)
+    console.log(`[Qdrant] Full URL: http://${QDRANT_HOST}:${QDRANT_PORT}`)
     qdrantClient = new QdrantClient({
       url: `http://${QDRANT_HOST}:${QDRANT_PORT}`,
     })
@@ -187,7 +199,23 @@ export async function searchIncidents(
     searchParams.filter = filter
   }
 
-  const searchResults = await client.search(COLLECTION_NAME, searchParams)
+  console.log('[Qdrant] About to execute search with params:', JSON.stringify({
+    collection: COLLECTION_NAME,
+    limit,
+    scoreThreshold,
+    filterCount: filter.must.length
+  }))
+
+  let searchResults
+  try {
+    searchResults = await client.search(COLLECTION_NAME, searchParams)
+    console.log(`[Qdrant] ✅ Search successful - received ${searchResults.length} results`)
+  } catch (error: any) {
+    console.error('[Qdrant] ❌ Search FAILED with error:', error.message)
+    console.error('[Qdrant] Error details:', JSON.stringify(error, null, 2))
+    console.error('[Qdrant] Was trying to connect to:', `http://${QDRANT_HOST}:${QDRANT_PORT}`)
+    throw new Error(`Qdrant search failed: ${error.message}`)
+  }
 
   const searchTime = Date.now() - startSearch
   console.log(`[Qdrant] Search completed in ${searchTime}ms (${searchResults.length} results)`)
@@ -196,6 +224,8 @@ export async function searchIncidents(
     const minScore = searchResults[searchResults.length - 1].score.toFixed(3)
     const maxScore = searchResults[0].score.toFixed(3)
     console.log(`[Qdrant] Score range: ${minScore} - ${maxScore}`)
+  } else {
+    console.warn('[Qdrant] ⚠️  WARNING: Search returned 0 results - this may indicate connectivity or data issues')
   }
 
   // Step 4: Format results
