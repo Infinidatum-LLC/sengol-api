@@ -180,7 +180,7 @@ function generateQuestionCacheKey(request: QuestionGenerationRequest): string {
     data: (request.dataTypes || []).sort().join(','),
     intensity: request.questionIntensity || 'high',
     jurisdictions: (request.jurisdictions || []).sort().join(','),
-    version: 'v7', // ← CACHE BUSTER: Fixed Qdrant field name mismatch (embedding_text → content)
+    version: 'v8', // ← CACHE BUSTER: Improved question prompts to generate comprehensive, detailed questions (not single words)
   }
 
   const hash = crypto
@@ -1075,22 +1075,33 @@ ${relatedIncidents.slice(0, 3).map((ex, i) =>
       messages: [
         {
           role: 'system',
-          content: `You are a cybersecurity and AI risk assessment expert. Generate a formal, structured risk assessment question based on real-world incident data and comprehensive system context.
+          content: `You are a cybersecurity and AI risk assessment expert. Generate a comprehensive, evidence-based risk assessment question that demonstrates deep understanding of the user's system and real-world threats.
 
-The question MUST:
-1. Be highly specific to the user's system:
-   - Technologies: ${(request.techStack || []).slice(0, 3).join(', ')}
-   - Data types: ${(request.dataTypes || []).slice(0, 3).join(', ')}
-   - Data sources: ${(request.dataSources || []).slice(0, 3).join(', ')}
-2. Reference the risk category: ${priorityArea.area}
-3. Incorporate evidence from ${relatedIncidents.length} real-world incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance
-4. Be clear and actionable (answerable with: "addressed", "partially addressed", "not addressed", or "not applicable")
-5. Focus on specific controls, mitigations, or safeguards
-6. Use formal, professional language
-7. Be concise (1-2 sentences max)
-8. Highlight the connection to the user's specific technology/data context
+CRITICAL REQUIREMENTS - The question MUST:
+1. **Be comprehensive and detailed** (3-4 sentences, NOT just a single line)
+2. **Start with specific context** about the user's system:
+   - MUST mention specific technologies: ${(request.techStack || []).slice(0, 3).join(', ') || 'the system'}
+   - MUST reference data types being processed: ${(request.dataTypes || []).slice(0, 3).join(', ') || 'sensitive data'}
+   - MUST mention data sources: ${(request.dataSources || []).slice(0, 3).join(', ') || 'various sources'}
+3. **Explain the threat** related to ${priorityArea.area} based on ${relatedIncidents.length} real incidents with avg severity ${avgSeverity.toFixed(1)}/10
+4. **Include specific examples** of what could go wrong (reference incident patterns)
+5. **Ask for detailed controls** - be specific about what mitigations should exist
+6. **End with impact context** - mention potential consequences based on real incidents (cost, severity, compliance)
 
-Format: Return ONLY the question text, nothing else. Do not include any preamble or explanation.`
+TONE & STYLE:
+- Professional and authoritative
+- Evidence-driven (reference incident statistics)
+- Specific and actionable
+- Demonstrate expertise through detail
+- Make it clear this is based on real-world data analysis
+
+BAD EXAMPLE (too generic):
+"Has your system implemented access controls?"
+
+GOOD EXAMPLE (comprehensive and evidence-based):
+"Your healthcare AI chatbot processes patient medical records (PHI) and provides diagnostic suggestions to doctors. Based on analysis of 15 similar security incidents (average severity: 8.3/10, typical cost: $250K per breach), systems like yours face elevated risks from unauthorized access and privilege escalation attacks. Specifically, we've observed incidents where lack of multi-factor authentication (MFA) and role-based access control (RBAC) led to unauthorized PHI disclosure. How has your system implemented granular access controls, MFA for all users accessing patient data, and RBAC policies that enforce least-privilege access, and what audit mechanisms are in place to detect unauthorized access attempts?"
+
+Format: Return ONLY the complete question text. No preamble, no explanation, just the question.`
         },
         {
           role: 'user',
@@ -1098,7 +1109,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
         }
       ],
       temperature: 0.7,
-      maxTokens: 250
+      maxTokens: 600 // ✅ Increased from 250 to 600 to allow comprehensive, detailed questions (3-4 sentences)
     })
 
     questionText = completion.choices[0].message.content?.trim() || questionText
