@@ -223,6 +223,10 @@ async function performQdrantSearch(
 
   const searchStartTime = Date.now()
 
+  // DIAGNOSTIC LOGGING - Track threshold values
+  console.log(`[QDRANT_DIAGNOSTIC] === performQdrantSearch() called ===`)
+  console.log(`[QDRANT_DIAGNOSTIC] minSimilarity value: ${minSimilarity}`)
+  console.log(`[QDRANT_DIAGNOSTIC] limit value: ${limit}`)
   console.log(`[Qdrant Search] Searching for incidents...`)
   console.log(`[Qdrant Search] Query: "${projectDescription.substring(0, 100)}..."`)
 
@@ -237,6 +241,9 @@ async function performQdrantSearch(
     requireIrPlanData,
   }
 
+  // DIAGNOSTIC LOGGING - Track scoreThreshold being passed to Qdrant
+  console.log(`[QDRANT_DIAGNOSTIC] scoreThreshold passed to Qdrant: ${qdrantOptions.scoreThreshold}`)
+
   // If incidentTypes provided, map to category
   if (incidentTypes && incidentTypes.length > 0) {
     // Use first incident type as category
@@ -245,6 +252,9 @@ async function performQdrantSearch(
 
   // Execute Qdrant search
   const qdrantResults = await qdrantSearch(projectDescription, qdrantOptions)
+
+  // DIAGNOSTIC LOGGING - Track number of results returned
+  console.log(`[QDRANT_DIAGNOSTIC] Qdrant raw results count: ${qdrantResults.length}`)
 
   const searchLatency = Date.now() - searchStartTime
   console.log(`[Qdrant Search] ✅ Found ${qdrantResults.length} matches in ${searchLatency}ms`)

@@ -655,7 +655,7 @@ export async function generateDynamicQuestions(
     scoringFormula,
     incidentSummary: {
       totalIncidentsAnalyzed: similarIncidents.length,
-      relevantIncidents: similarIncidents.filter(i => i.similarity > 0.75).length,
+      relevantIncidents: similarIncidents.length, // ✅ FIXED: Report actual count, not filtered by arbitrary 0.75 threshold
       avgIncidentCost: incidentStats.avgCost,
       topRisks: Array.from(new Set(similarIncidents.slice(0, 10).map(i => i.incidentType))),
       industryBenchmark: generateIndustryBenchmark(incidentStats, request.industry),
