@@ -212,7 +212,7 @@ async function performQdrantSearch(
 ): Promise<IncidentMatch[]> {
   const {
     limit = 20,
-    minSimilarity = 0.7,
+    minSimilarity = 0.3, // ✅ FIXED: Match the default in findSimilarIncidents() to avoid parameter override bug
     industry,
     severity,
     requireMfaData = false,
