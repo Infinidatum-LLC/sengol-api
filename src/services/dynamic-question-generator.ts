@@ -545,7 +545,7 @@ export async function generateDynamicQuestions(
     request.systemDescription,
     {
       limit: 100, // ✅ Increased from 50 to support more questions
-      minSimilarity: 0.6,
+      minSimilarity: 0.3, // ✅ LOWERED from 0.6 to 0.3 to get more incidents (matches PRE-FILTER threshold)
       industry: request.industry,
       severity: ['medium', 'high', 'critical'],
     }
