@@ -108,7 +108,7 @@ export async function findSimilarIncidents(
 
   const {
     limit = 20,
-    minSimilarity = 0.7,
+    minSimilarity = 0.3, // ✅ LOWERED from 0.7 to 0.3 to get more results
     industry,
     severity,
     requireMfaData = false,

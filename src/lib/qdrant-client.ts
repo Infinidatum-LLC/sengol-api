@@ -122,7 +122,7 @@ export async function searchIncidents(
 ): Promise<QdrantSearchResult[]> {
   const {
     limit = 20,
-    scoreThreshold = 0.7,
+    scoreThreshold = 0.3, // ✅ LOWERED from 0.7 to 0.3 to get more results
     category,
     severity,
     industry,
