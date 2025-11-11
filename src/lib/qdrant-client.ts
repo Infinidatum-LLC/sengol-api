@@ -20,8 +20,9 @@ console.log('[QDRANT_DIAGNOSTIC] QDRANT_HOST env var:', process.env.QDRANT_HOST)
 console.log('[QDRANT_DIAGNOSTIC] QDRANT_PORT env var:', process.env.QDRANT_PORT)
 console.log('[QDRANT_DIAGNOSTIC] NODE_ENV:', process.env.NODE_ENV)
 
-const QDRANT_HOST = (process.env.QDRANT_HOST || '10.128.0.2').trim()
-const QDRANT_PORT = parseInt((process.env.QDRANT_PORT || '6333').trim())
+// TEMPORARY FIX: Hard-code correct IP to verify it works (bypasses env vars)
+const QDRANT_HOST = '34.44.96.148' // TODO: Revert to env var once Vercel config is fixed
+const QDRANT_PORT = 6333
 const COLLECTION_NAME = 'sengol_incidents_full'
 const EMBEDDING_DIMENSIONS = 1536
 
