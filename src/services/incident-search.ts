@@ -141,17 +141,49 @@ export async function findSimilarIncidents(
       const beforeCount = incidents.length
       const searchTerms = industry.toLowerCase().split(/[&,\s]+/).filter(term => term.length > 2)
 
-      incidents = incidents.filter((inc) => {
-        if (!inc.industry) return false
-        const incIndustry = inc.industry.toLowerCase()
+      console.log(`[Incident Search] Industry filter DEBUG:`)
+      console.log(`[Incident Search]   Input: "${industry}"`)
+      console.log(`[Incident Search]   Search terms: ${JSON.stringify(searchTerms)}`)
+      console.log(`[Incident Search]   Before filter: ${beforeCount} incidents`)
 
-        // Check if any search term matches the incident industry (bidirectional)
-        return searchTerms.some(term =>
+      // Sample first 5 incident industries for debugging
+      const sampleIndustries = incidents.slice(0, 5).map(inc => inc.industry || 'null')
+      console.log(`[Incident Search]   Sample incident industries: ${JSON.stringify(sampleIndustries)}`)
+
+      let matchCount = 0
+      let noMatchCount = 0
+
+      incidents = incidents.filter((inc) => {
+        if (!inc.industry) {
+          noMatchCount++
+          if (noMatchCount <= 3) {
+            console.log(`[Incident Search]   ❌ No industry field: incident ${inc.id}`)
+          }
+          return false
+        }
+
+        const incIndustry = inc.industry.toLowerCase()
+        const matches = searchTerms.some(term =>
           incIndustry.includes(term) || term.includes(incIndustry)
         )
+
+        if (matches) {
+          matchCount++
+          if (matchCount <= 3) {
+            console.log(`[Incident Search]   ✅ Match: "${inc.industry}"`)
+          }
+        } else {
+          noMatchCount++
+          if (noMatchCount <= 3) {
+            console.log(`[Incident Search]   ❌ No match: "${inc.industry}" vs terms ${JSON.stringify(searchTerms)}`)
+          }
+        }
+
+        return matches
       })
 
       console.log(`[Incident Search] Industry filter ("${industry}"): ${beforeCount} → ${incidents.length}`)
+      console.log(`[Incident Search]   Matches: ${matchCount}, No matches: ${noMatchCount}`)
     }
 
     // Post-filter by severity if specified
