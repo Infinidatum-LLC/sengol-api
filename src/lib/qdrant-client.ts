@@ -23,7 +23,7 @@ console.log('[QDRANT_DIAGNOSTIC] NODE_ENV:', process.env.NODE_ENV)
 // TEMPORARY FIX: Hard-code correct IP to verify it works (bypasses env vars)
 const QDRANT_HOST = '34.44.96.148' // TODO: Revert to env var once Vercel config is fixed
 const QDRANT_PORT = 6333
-const COLLECTION_NAME = 'sengol_incidents_full'
+const COLLECTION_NAME = 'sengol_incidents'  // Changed from sengol_incidents_full to match loaded data
 const EMBEDDING_DIMENSIONS = 1536
 
 // DIAGNOSTIC: Log final values being used
@@ -141,7 +141,7 @@ export async function searchIncidents(
 ): Promise<QdrantSearchResult[]> {
   const {
     limit = 20,
-    scoreThreshold = 0.3, // ✅ LOWERED from 0.7 to 0.3 to get more results
+    scoreThreshold = 0.0, // 🔍 DEBUG: Temporarily set to 0.0 to test if results are being filtered by threshold
     category,
     severity,
     industry,
