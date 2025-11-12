@@ -147,3 +147,26 @@ Looking at the logs:
 - If the original code used `incidents` parameter correctly, why were 0 questions generated?
 - Need to investigate if there's a different bug in the question generation logic
 
+---
+## DEBUG LOGGING DEPLOYMENT - Nov 12, 2025 21:05 UTC
+
+### Status
+- **Revision**: sengol-api-00009-tng
+- **Deployed**: 21:05:34 UTC
+- **Changes**: Added comprehensive debug logging to src/services/incident-search.ts lines 144-186
+
+### Debug Logging Details
+The new logging will show:
+- Input industry string
+- Search terms after splitting (e.g., ["healthcare", "life", "sciences"])
+- Sample incident industries from Qdrant
+- First 3 matching incidents with their industry values
+- First 3 non-matching incidents with comparison details
+- Final counts: matches vs no-matches
+
+### Next Steps
+1. User regenerates questions on assessment cmhwff31m0001jsr0agolb283
+2. Check Cloud Run logs for debug output
+3. Identify why industry filter is removing all incidents
+4. Fix root cause based on debug information
+
