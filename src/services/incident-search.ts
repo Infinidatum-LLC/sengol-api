@@ -153,7 +153,7 @@ export async function findSimilarIncidents(
       let matchCount = 0
       let noMatchCount = 0
 
-      incidents = incidents.filter((inc) => {
+      const filteredIncidents = incidents.filter((inc) => {
         if (!inc.industry) {
           noMatchCount++
           if (noMatchCount <= 3) {
@@ -182,8 +182,16 @@ export async function findSimilarIncidents(
         return matches
       })
 
-      console.log(`[Incident Search] Industry filter ("${industry}"): ${beforeCount} → ${incidents.length}`)
+      console.log(`[Incident Search] Industry filter ("${industry}"): ${beforeCount} → ${filteredIncidents.length}`)
       console.log(`[Incident Search]   Matches: ${matchCount}, No matches: ${noMatchCount}`)
+
+      // If industry filter removes ALL results, skip it (rely on semantic search)
+      if (filteredIncidents.length === 0) {
+        console.log(`[Incident Search] ⚠️  Industry filter too restrictive - skipping to rely on semantic search`)
+        console.log(`[Incident Search]   Keeping all ${beforeCount} semantically matched incidents`)
+      } else {
+        incidents = filteredIncidents
+      }
     }
 
     // Post-filter by severity if specified
