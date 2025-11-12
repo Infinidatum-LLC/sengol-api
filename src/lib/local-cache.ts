@@ -7,7 +7,7 @@
  * Cache Hierarchy:
  * L1: Local Memory (this file) - 1-5ms latency
  * L2: Redis (redis-cache.ts) - 20-50ms latency
- * L3: Database/d-vecDB - 100-5000ms latency
+ * L3: Database/Vector DB - 100-5000ms latency
  */
 
 import { LRUCache } from 'lru-cache'

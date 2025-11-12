@@ -11,13 +11,6 @@ export const config = {
   databaseUrl: process.env.DATABASE_URL!,
   redisUrl: process.env.REDIS_URL,
 
-  // d-vecDB
-  dvecdbHost: process.env.DVECDB_HOST!,
-  dvecdbPort: parseInt(process.env.DVECDB_PORT || '8080'),
-  dvecdbCollection: process.env.DVECDB_COLLECTION || 'incidents',
-  dvecdbTimeout: parseInt(process.env.DVECDB_TIMEOUT || '30000'),
-  dvecdbMaxRetries: parseInt(process.env.DVECDB_MAX_RETRIES || '3'),
-
   // Auth
   jwtSecret: process.env.JWT_SECRET!,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',

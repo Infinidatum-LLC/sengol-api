@@ -48,7 +48,7 @@ interface VectorSearchResponse {
   metadata: {
     search_time_ms: number
     embedding_time_ms: number
-    dvecdb_time_ms: number
+    vector_db_time_ms: number
     postgres_time_ms: number
   }
 }
@@ -63,7 +63,7 @@ export async function vectorSearchController(
 ) {
   const startTime = Date.now()
   let embeddingTime = 0
-  let dvecdbTime = 0
+  let vectorDbTime = 0
   let postgresTime = 0
 
   try {
@@ -109,11 +109,11 @@ export async function vectorSearchController(
       )
     }
 
-    // Step 2: Search Vertex AI for similar vectors
+    // Step 2: Search Vector DB for similar vectors
     // TODO: Migrate this to use Vertex AI for research papers/news/regulations
     // For now, using searchSimilar (placeholder - returns empty array)
-    const dvecdbStart = Date.now()
-    let dvecdbResults: any[] = []
+    const vectorDbStart = Date.now()
+    let vectorDbResults: any[] = []
 
     try {
       const vertexResults = await searchVertexAI(
@@ -121,18 +121,18 @@ export async function vectorSearchController(
         type ? { incidentType: type } : undefined,
         Math.min(limit, 50)
       )
-      dvecdbResults = vertexResults
-      dvecdbTime = Date.now() - dvecdbStart
-      request.log.info({ dvecdbTime, resultCount: dvecdbResults.length }, 'Vertex AI search complete')
+      vectorDbResults = vertexResults
+      vectorDbTime = Date.now() - vectorDbStart
+      request.log.info({ vectorDbTime, resultCount: vectorDbResults.length }, 'Vector DB search complete')
     } catch (error) {
-      dvecdbTime = Date.now() - dvecdbStart
-      request.log.error({ err: error, dvecdbTime }, 'Vertex AI search failed')
+      vectorDbTime = Date.now() - vectorDbStart
+      request.log.error({ err: error, vectorDbTime }, 'Vector DB search failed')
       throw new VectorDBError(
         `Vector database search failed: ${(error as Error).message}`,
         {
           query: query.substring(0, 100),
           limit,
-          dvecdbTime,
+          vectorDbTime,
         }
       )
     }
@@ -142,11 +142,11 @@ export async function vectorSearchController(
     const results: SearchResult[] = []
 
     try {
-      for (const result of dvecdbResults) {
+      for (const result of vectorDbResults) {
         if (!result.metadata?.pg_id || !result.metadata?.pg_table) {
           request.log.warn(
             { result },
-            'Skipping d-VecDB result: missing metadata'
+            'Skipping Vector DB result: missing metadata'
           )
           continue
         }
@@ -206,7 +206,7 @@ export async function vectorSearchController(
 
         if (record) {
           // Calculate similarity score from distance
-          // d-VecDB returns cosine distance (0 = identical, 2 = opposite)
+          // Vector DB returns cosine distance (0 = identical, 2 = opposite)
           // Convert to similarity score: score = 1 - (distance / 2)
           // This gives us a 0-1 scale where 1 = identical, 0 = opposite
           const distance = result.distance || 0
@@ -242,7 +242,7 @@ export async function vectorSearchController(
       metadata: {
         search_time_ms: totalTime,
         embedding_time_ms: embeddingTime,
-        dvecdb_time_ms: dvecdbTime,
+        vector_db_time_ms: vectorDbTime,
         postgres_time_ms: postgresTime,
       },
     }
@@ -254,7 +254,7 @@ export async function vectorSearchController(
       {
         totalTime,
         embeddingTime,
-        dvecdbTime,
+        vectorDbTime,
         postgresTime,
         results: results.length,
       },
@@ -270,7 +270,7 @@ export async function vectorSearchController(
         err: error,
         totalTime,
         embeddingTime,
-        dvecdbTime,
+        vectorDbTime,
         postgresTime,
       },
       'Vector search failed'
@@ -304,13 +304,13 @@ export async function vectorSearchHealthController(
 ) {
   const checks = {
     openai: 'unknown',
-    dvecdb: 'unknown',
+    vector_db: 'unknown',
     postgres: 'unknown',
   }
 
   const latency = {
     openai_ms: 0,
-    dvecdb_ms: 0,
+    vector_db_ms: 0,
     postgres_ms: 0,
   }
 
@@ -319,15 +319,15 @@ export async function vectorSearchHealthController(
   checks.openai = 'migrated_to_vertex'
   latency.openai_ms = 0
 
-  // Check Vertex AI
-  const dvecdbStart = Date.now()
+  // Check Vector DB
+  const vectorDbStart = Date.now()
   try {
     const healthStatus = await vertexHealthCheck()
-    checks.dvecdb = healthStatus.configured && healthStatus.vertexAIReachable ? 'up' : 'down'
-    latency.dvecdb_ms = Date.now() - dvecdbStart
+    checks.vector_db = healthStatus.configured && healthStatus.vertexAIReachable ? 'up' : 'down'
+    latency.vector_db_ms = Date.now() - vectorDbStart
   } catch (error) {
-    checks.dvecdb = 'down'
-    latency.dvecdb_ms = Date.now() - dvecdbStart
+    checks.vector_db = 'down'
+    latency.vector_db_ms = Date.now() - vectorDbStart
   }
 
   // Check PostgreSQL

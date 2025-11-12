@@ -6,8 +6,8 @@
  *
  * Example:
  * - 10 users search "AI bias" within 1 second
- * - Without dedup: 10 d-vecDB queries
- * - With dedup: 1 d-vecDB query (other 9 wait for result)
+ * - Without dedup: 10 Vector DB queries
+ * - With dedup: 1 Vector DB query (other 9 wait for result)
  */
 
 import crypto from 'crypto'

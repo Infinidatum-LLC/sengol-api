@@ -853,7 +853,7 @@ async function generateRiskQuestions(
         try {
           const question = await generateSingleRiskQuestion(
             riskArea,
-            similarIncidents, // ✅ FIX: Use similarIncidents (not undefined "incidents")
+            incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of empty array
             request,
             llmAnalysis,
             domain
@@ -1311,7 +1311,7 @@ async function generateComplianceQuestions(
       try {
         const question = await generateSingleComplianceQuestion(
           complianceArea,
-          similarIncidents, // ✅ FIX: Use similarIncidents (not undefined "incidents")
+          incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of per-question vector searches
           request,
           llmAnalysis
         )

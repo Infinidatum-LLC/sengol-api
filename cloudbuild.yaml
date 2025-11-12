@@ -1,0 +1,77 @@
+# Cloud Build configuration for auto-deploying sengol-api to Cloud Run
+# This file enables git-based auto-deploy similar to Vercel
+# Triggered automatically on git push when Cloud Build trigger is configured
+
+steps:
+  # Step 1: Build the Docker image using Cloud Build
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-image'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/sengol-api:latest'
+      - '.'
+
+  # Step 2: Push the Docker image to Google Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-image'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+    waitFor: ['build-image']
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy-cloud-run'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'sengol-api'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+      - '--region'
+      - 'us-central1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--vpc-connector'
+      - 'sengol-connector'
+      - '--vpc-egress'
+      - 'all-traffic'
+      - '--memory'
+      - '2Gi'
+      - '--cpu'
+      - '2'
+      - '--timeout'
+      - '300'
+      - '--max-instances'
+      - '10'
+      - '--min-instances'
+      - '0'
+      # Environment variables (loaded from Secret Manager for security)
+      - '--set-env-vars'
+      - 'NODE_ENV=production'
+      - '--update-secrets'
+      - 'DATABASE_URL=DATABASE_URL:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,JWT_SECRET=JWT_SECRET:latest,QDRANT_HOST=QDRANT_HOST:latest,QDRANT_PORT=QDRANT_PORT:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest'
+    waitFor: ['push-image']
+
+# Store images in Google Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/sengol-api:latest'
+
+# Options
+options:
+  machineType: 'E2_HIGHCPU_8'  # Fast build machine
+  logging: CLOUD_LOGGING_ONLY
+
+# Timeout for entire build (15 minutes)
+timeout: '900s'
+
+# Substitutions (can be overridden when trigger is created)
+substitutions:
+  _SERVICE_NAME: sengol-api
+  _REGION: us-central1

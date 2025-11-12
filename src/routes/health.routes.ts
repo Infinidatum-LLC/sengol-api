@@ -225,7 +225,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
         expectedLatency: {
           l1Hit: '1-5ms',
           l2Hit: '20-50ms',
-          l3Miss: '100-3000ms', // Vertex AI is faster than d-vecDB VPS
+          l3Miss: '100-3000ms', // Vertex AI is faster than Vector DB VPS
         },
       },
     })

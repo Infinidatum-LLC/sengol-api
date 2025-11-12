@@ -1,7 +1,7 @@
 /**
  * Industry Benchmarking Service
  *
- * Calculates industry benchmarks and comparisons using d-vecDB incident data
+ * Calculates industry benchmarks and comparisons using Vector DB incident data
  * with intelligent fallback to synthetic benchmarks when needed.
  */
 
@@ -20,7 +20,7 @@ export interface BenchmarkData {
   p75RiskScore: number
   p90RiskScore: number
   sampleSize: number
-  dataSource: 'dvecdb_realtime' | 'synthetic_fallback'
+  dataSource: 'vector_db_realtime' | 'synthetic_fallback'
   avgIncidentCost?: number
   topRiskFactors: Array<{
     category: string
@@ -152,7 +152,7 @@ const SYNTHETIC_BENCHMARKS: Record<string, Partial<BenchmarkData>> = {
 // ============================================================================
 
 /**
- * Calculate benchmark from d-vecDB incidents
+ * Calculate benchmark from Vector DB incidents
  */
 export async function calculateBenchmarkFromIncidents(
   incidents: IncidentMatch[],
@@ -224,7 +224,7 @@ export async function calculateBenchmarkFromIncidents(
     p75RiskScore: Math.round(p75RiskScore * 10) / 10,
     p90RiskScore: Math.round(p90RiskScore * 10) / 10,
     sampleSize: incidents.length,
-    dataSource: 'dvecdb_realtime',
+    dataSource: 'vector_db_realtime',
     avgIncidentCost: Math.round(stats.avgCost),
     topRiskFactors,
     avgComplianceScore: null, // Not available from incident data
@@ -373,8 +373,8 @@ export async function getBenchmarkData(params: {
   let fallbackMessage: string | null = null
 
   try {
-    // Try to get real-time benchmark from d-vecDB
-    console.log(`[Benchmark] Querying d-vecDB for ${industry} incidents`)
+    // Try to get real-time benchmark from Vector DB
+    console.log(`[Benchmark] Querying Vector DB for ${industry} incidents`)
 
     const incidents = await findSimilarIncidents(systemDescription, {
       limit: 100,
@@ -389,7 +389,7 @@ export async function getBenchmarkData(params: {
       throw new Error(`Only ${incidents.length} incidents found, need at least 10`)
     }
   } catch (error) {
-    console.warn(`[Benchmark] d-vecDB failed, using synthetic fallback:`, error)
+    console.warn(`[Benchmark] Vector DB failed, using synthetic fallback:`, error)
     benchmark = getSyntheticBenchmark(industry, aiSystemType)
     isFallback = true
     fallbackMessage = 'Using synthetic industry benchmark data. Real-time incident data temporarily unavailable.'

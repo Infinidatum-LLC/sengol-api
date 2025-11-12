@@ -1,12 +1,12 @@
 /**
  * Google Vertex AI RAG Client
  *
- * Replaces d-vecDB VPS with Google Vertex AI for:
+ * Replaces Vector DB VPS with Google Vertex AI for:
  * - Vector embeddings (text-embedding-004 model)
  * - Semantic search using RAG (Retrieval-Augmented Generation)
  * - Cloud Storage integration for incident data
  *
- * MAINTAINS SAME INTERFACE as d-vecDB for zero frontend changes
+ * MAINTAINS SAME INTERFACE as Vector DB for zero frontend changes
  */
 
 import { VertexAI } from '@google-cloud/vertexai'
