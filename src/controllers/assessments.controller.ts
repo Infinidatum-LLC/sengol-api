@@ -406,11 +406,18 @@ export async function updateAssessmentStep2Controller(
 interface UpdateStep3Body {
   userId: string
   // Accept both old and new field names for backward compatibility
-  complianceResponses?: Record<string, any> // Deprecated: use complianceQuestionResponses
+  complianceResponses?: Record<string, any> // Deprecated: use questionResponses
+  questionResponses?: Record<string, any> // New field name from frontend
   complianceQuestionResponses?: Record<string, any>
+  userScores?: Record<string, number> // User-provided scores per question
+  complianceNotes?: Record<string, string> // Notes per question
   jurisdictions?: string[]
+  regulationIds?: string[]
   selectedDomains?: string[] // May be re-sent from Step 2 recovery
   complianceScore?: number // Deprecated: calculated server-side
+  complianceCoverageScore?: number // Coverage score from frontend
+  complianceCoverageDetails?: any // Coverage details by jurisdiction
+  additionalComplianceElements?: any[]
 }
 
 export async function updateAssessmentStep3Controller(
@@ -422,18 +429,39 @@ export async function updateAssessmentStep3Controller(
     const {
       userId,
       complianceResponses,
+      questionResponses,
       complianceQuestionResponses,
+      userScores,
+      complianceNotes,
       jurisdictions,
+      regulationIds,
       selectedDomains,
       complianceScore,
+      complianceCoverageScore,
+      complianceCoverageDetails,
+      additionalComplianceElements,
     } = request.body
 
-    // Support both old and new field names
-    const responses = complianceQuestionResponses || complianceResponses
+    // Support multiple field names for backward compatibility
+    // Priority: questionResponses (new) > complianceQuestionResponses > complianceResponses (old)
+    const responses = questionResponses || complianceQuestionResponses || complianceResponses
 
     if (!userId || !responses) {
-      throw new ValidationError('userId and complianceQuestionResponses are required')
+      throw new ValidationError('userId and compliance responses are required')
     }
+
+    // Log incoming data for debugging
+    request.log.info({
+      assessmentId: id,
+      hasQuestionResponses: !!questionResponses,
+      hasComplianceQuestionResponses: !!complianceQuestionResponses,
+      hasComplianceResponses: !!complianceResponses,
+      hasUserScores: !!userScores,
+      hasComplianceNotes: !!complianceNotes,
+      questionResponseKeys: responses ? Object.keys(responses).length : 0,
+      userScoreKeys: userScores ? Object.keys(userScores).length : 0,
+      complianceNoteKeys: complianceNotes ? Object.keys(complianceNotes).length : 0,
+    }, 'Processing step 3 compliance data')
 
     // Verify ownership and get existing data
     const assessment = await prisma.riskAssessment.findUnique({
@@ -473,16 +501,53 @@ export async function updateAssessmentStep3Controller(
 
     // Prepare update data (merge with existing, preserve Step 1 and Step 2)
     const updateData: any = {
-      complianceDetails: responses,
+      // Save compliance responses to the proper field
+      complianceQuestionResponses: responses,
+      complianceDetails: responses, // Keep for backward compatibility
       complianceScore: finalComplianceScore || null,
       sengolScore: sengolScore || null,
       overallRiskScore: sengolScore || null, // Alias for compatibility
     }
 
+    // Save user scores if provided
+    if (userScores && Object.keys(userScores).length > 0) {
+      updateData.complianceUserScores = userScores
+      request.log.info({ userScoresCount: Object.keys(userScores).length }, 'Saving compliance user scores')
+    }
+
+    // Save compliance notes if provided
+    if (complianceNotes && Object.keys(complianceNotes).length > 0) {
+      updateData.complianceNotes = complianceNotes
+      request.log.info({ complianceNotesCount: Object.keys(complianceNotes).length }, 'Saving compliance notes')
+    }
+
+    // Save coverage score and details if provided
+    if (complianceCoverageScore !== undefined && complianceCoverageScore !== null) {
+      updateData.complianceCoverageScore = complianceCoverageScore
+      request.log.info({ complianceCoverageScore }, 'Saving compliance coverage score')
+    }
+
+    if (complianceCoverageDetails) {
+      updateData.complianceCoverageDetails = complianceCoverageDetails
+      request.log.info({ complianceCoverageDetails }, 'Saving compliance coverage details')
+    }
+
     // Update jurisdictions if provided
     if (jurisdictions && jurisdictions.length > 0) {
       updateData.jurisdictions = jurisdictions
+      request.log.info({ jurisdictionsCount: jurisdictions.length }, 'Updating jurisdictions')
     }
+
+    // Log the final update data for debugging
+    request.log.info({
+      assessmentId: id,
+      fieldsBeingSaved: Object.keys(updateData),
+      hasComplianceQuestionResponses: !!updateData.complianceQuestionResponses,
+      hasComplianceUserScores: !!updateData.complianceUserScores,
+      hasComplianceNotes: !!updateData.complianceNotes,
+      hasComplianceCoverageScore: updateData.complianceCoverageScore !== undefined,
+      hasComplianceCoverageDetails: !!updateData.complianceCoverageDetails,
+    }, 'Updating assessment with compliance data')
 
     // Note: selectedDomains is not stored in DB, it's a frontend state variable
     // We'll pass it through in the response if provided
@@ -500,6 +565,11 @@ export async function updateAssessmentStep3Controller(
         jurisdictions: true,
         riskQuestionResponses: true,
         complianceDetails: true,
+        complianceQuestionResponses: true,
+        complianceUserScores: true,
+        complianceNotes: true,
+        complianceCoverageScore: true,
+        complianceCoverageDetails: true,
         aiRiskScore: true,
         cyberRiskScore: true,
         cloudRiskScore: true,
@@ -508,6 +578,19 @@ export async function updateAssessmentStep3Controller(
         overallRiskScore: true,
       },
     })
+
+    // Log successful save for debugging
+    request.log.info({
+      assessmentId: id,
+      savedComplianceQuestionResponses: !!updated.complianceQuestionResponses,
+      savedComplianceUserScores: !!updated.complianceUserScores,
+      savedComplianceNotes: !!updated.complianceNotes,
+      savedComplianceCoverageScore: updated.complianceCoverageScore !== null,
+      savedComplianceCoverageDetails: !!updated.complianceCoverageDetails,
+      responseKeys: updated.complianceQuestionResponses ? Object.keys(updated.complianceQuestionResponses as Record<string, any>).length : 0,
+      userScoreKeys: updated.complianceUserScores ? Object.keys(updated.complianceUserScores as Record<string, any>).length : 0,
+      complianceNoteKeys: updated.complianceNotes ? Object.keys(updated.complianceNotes as Record<string, any>).length : 0,
+    }, 'Successfully saved compliance data to database')
 
     // Normalize response for frontend (pass through selectedDomains if provided)
     const normalizedData = {

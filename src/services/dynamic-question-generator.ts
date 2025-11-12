@@ -1002,22 +1002,31 @@ function getDomainSpecificRiskAreas(
 
 async function generateSingleRiskQuestion(
   priorityArea: { area: string; priority: number; reasoning: string },
-  relatedIncidents: IncidentMatch[], // ✅ OPTIMIZED: Now receives preloaded incidents
+  relatedIncidents: IncidentMatch[], // Kept for backward compatibility but will perform dedicated search
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis,
   domain?: 'ai' | 'cyber' | 'cloud'
 ): Promise<DynamicQuestion> {
-  // ✅ OPTIMIZATION: Skip per-question vector search if incidents are provided
-  // This eliminates 36+ vector searches and speeds up generation by 40-60%
+  // 🔍 PER-QUESTION VECTOR SEARCH: Each question gets its own dedicated incident search
+  // This ensures each question has the most relevant incidents specific to its topic
+  // Trade-off: Slower generation time but significantly better accuracy
 
-  // Use all preloaded incidents (already semantically relevant from initial search)
-  // The initial vector search already found the most relevant incidents
-  const relevantIncidents = relatedIncidents.slice(0, 20) // Take top 20
+  console.log(`[VECTOR_SEARCH] Performing dedicated search for "${priorityArea.area}"`)
 
-  console.log(`[OPTIMIZED] Using ${relevantIncidents.length} preloaded incidents for "${priorityArea.area}"`)
+  // Build question-specific search query
+  const searchQuery = `${priorityArea.area} security incident vulnerability breach attack ${request.systemDescription.substring(0, 200)}`
 
-  // ✅ Calculate multi-factor relevance for filtered incidents
-  const incidentsWithRelevance = relevantIncidents.map(incident => ({
+  // Perform dedicated vector search for this specific question
+  const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
+    limit: 20,
+    industry: request.industry,
+    minSimilarity: 0.3
+  })
+
+  console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} question-specific incidents for "${priorityArea.area}"`)
+
+  // ✅ Calculate multi-factor relevance for question-specific incidents
+  const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
     incident,
     multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
     technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
@@ -1030,8 +1039,8 @@ async function generateSingleRiskQuestion(
     .sort((a, b) => b.multiFactorRelevance - a.multiFactorRelevance)
     .slice(0, 15) // Reduced from 20 to 15
 
-  // Use filtered incidents
-  relatedIncidents = filteredIncidents.map(i => i.incident)
+  // Use filtered incidents for this question
+  const relevantIncidents = filteredIncidents.map(i => i.incident)
 
   // Calculate average multi-factor relevance
   const avgMultiFactorRelevance = filteredIncidents.length > 0
@@ -1334,20 +1343,30 @@ async function generateComplianceQuestions(
 
 async function generateSingleComplianceQuestion(
   complianceArea: string,
-  relatedIncidents: IncidentMatch[], // ✅ OPTIMIZED: Now receives preloaded incidents
+  relatedIncidents: IncidentMatch[], // Kept for backward compatibility but will perform dedicated search
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion> {
-  // ✅ OPTIMIZATION: Skip per-question vector search if incidents are provided
-  // This eliminates 10+ vector searches for compliance questions
+  // 🔍 PER-QUESTION VECTOR SEARCH: Each compliance question gets its own dedicated search
+  // This ensures each question has the most relevant compliance incidents specific to its area
+  // Trade-off: Slower generation time but significantly better accuracy
 
-  // Use all preloaded incidents (already semantically relevant from initial search)
-  const relevantIncidents = relatedIncidents.slice(0, 15) // Take top 15
+  console.log(`[VECTOR_SEARCH] Performing dedicated search for compliance area "${complianceArea}"`)
 
-  console.log(`[OPTIMIZED] Using ${relevantIncidents.length} preloaded incidents for compliance: "${complianceArea}"`)
+  // Build compliance-specific search query
+  const searchQuery = `${complianceArea} compliance violation regulatory breach incident ${request.systemDescription.substring(0, 200)}`
 
-  // ✅ Calculate multi-factor relevance for filtered incidents
-  const incidentsWithRelevance = relevantIncidents.map(incident => ({
+  // Perform dedicated vector search for this specific compliance area
+  const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
+    limit: 15,
+    industry: request.industry,
+    minSimilarity: 0.3
+  })
+
+  console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} question-specific incidents for compliance "${complianceArea}"`)
+
+  // ✅ Calculate multi-factor relevance for question-specific incidents
+  const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
     incident,
     multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
     technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
@@ -1360,8 +1379,8 @@ async function generateSingleComplianceQuestion(
     .sort((a, b) => b.multiFactorRelevance - a.multiFactorRelevance)
     .slice(0, 10)
 
-  // Use filtered incidents
-  relatedIncidents = filteredIncidents.map(i => i.incident)
+  // Use filtered incidents for this compliance question
+  const relevantIncidents = filteredIncidents.map(i => i.incident)
 
   // Calculate average multi-factor relevance
   const avgMultiFactorRelevance = filteredIncidents.length > 0
