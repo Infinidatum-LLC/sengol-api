@@ -142,10 +142,10 @@ export async function saveComplianceResponses(
     const updated = await prisma.riskAssessment.update({
       where: { id },
       data: {
-        complianceQuestionResponses: responses,
+        complianceQuestionResponses: responses as any,
         complianceCoverageScore: coverage.score,
         complianceCoverageDetails: coverage.details as any,
-        complianceUserScores: Object.keys(complianceUserScores).length > 0 ? complianceUserScores : undefined,
+        complianceUserScores: Object.keys(complianceUserScores).length > 0 ? (complianceUserScores as any) : undefined,
         updatedAt: new Date()
       }
     })
