@@ -1,266 +1,151 @@
 /**
- * Qdrant Vector Database Client
- *
- * Connects to the deployed Qdrant instance for semantic incident search.
- * The Qdrant database is populated by the automated crawler system.
- *
- * Infrastructure:
- * - VM: sengol-vector-db (10.128.0.2:6333)
- * - Collection: sengol_incidents_full
- * - Dimensions: 1536 (OpenAI text-embedding-3-small)
- * - Distance Metric: COSINE
+ * SIMPLIFIED Qdrant Client - Rewritten from scratch
+ * Based on successful Python tests that proved the data works
  */
 
 import { QdrantClient } from '@qdrant/js-client-rest'
 import { OpenAI } from 'openai'
 
-// DIAGNOSTIC: Log all environment variables for debugging
-console.log('[QDRANT_DIAGNOSTIC] Environment variables check:')
-console.log('[QDRANT_DIAGNOSTIC] QDRANT_HOST env var:', process.env.QDRANT_HOST)
-console.log('[QDRANT_DIAGNOSTIC] QDRANT_PORT env var:', process.env.QDRANT_PORT)
-console.log('[QDRANT_DIAGNOSTIC] NODE_ENV:', process.env.NODE_ENV)
-
-// TEMPORARY FIX: Hard-code correct IP to verify it works (bypasses env vars)
-const QDRANT_HOST = '34.44.96.148' // TODO: Revert to env var once Vercel config is fixed
-const QDRANT_PORT = 6333
-const COLLECTION_NAME = 'sengol_incidents'  // Changed from sengol_incidents_full to match loaded data
+// Configuration
+const QDRANT_HOST = process.env.QDRANT_HOST || 'localhost'
+const QDRANT_PORT = parseInt(process.env.QDRANT_PORT || '6333')
+const COLLECTION_NAME = 'sengol_incidents'
+const EMBEDDING_MODEL = 'text-embedding-3-small'
 const EMBEDDING_DIMENSIONS = 1536
 
-// DIAGNOSTIC: Log final values being used
-console.log('[QDRANT_DIAGNOSTIC] Final QDRANT_HOST value:', QDRANT_HOST)
-console.log('[QDRANT_DIAGNOSTIC] Final QDRANT_PORT value:', QDRANT_PORT)
-console.log('[QDRANT_DIAGNOSTIC] Target URL:', `http://${QDRANT_HOST}:${QDRANT_PORT}`)
+console.log(`[Qdrant] Configuration:`)
+console.log(`  Host: ${QDRANT_HOST}`)
+console.log(`  Port: ${QDRANT_PORT}`)
+console.log(`  Collection: ${COLLECTION_NAME}`)
+console.log(`  Model: ${EMBEDDING_MODEL}`)
 
 // Singleton clients
 let qdrantClient: QdrantClient | null = null
 let openaiClient: OpenAI | null = null
 
 /**
- * Get or create Qdrant client instance
+ * Get Qdrant client
  */
-export function getQdrantClient(): QdrantClient {
+function getQdrantClient(): QdrantClient {
   if (!qdrantClient) {
-    console.log(`[Qdrant] Connecting to Qdrant at ${QDRANT_HOST}:${QDRANT_PORT}`)
-    console.log(`[Qdrant] Full URL: http://${QDRANT_HOST}:${QDRANT_PORT}`)
     qdrantClient = new QdrantClient({
       url: `http://${QDRANT_HOST}:${QDRANT_PORT}`,
     })
+    console.log(`[Qdrant] Client initialized`)
   }
   return qdrantClient
 }
 
 /**
- * Get or create OpenAI client for embedding generation
+ * Get OpenAI client
  */
 function getOpenAIClient(): OpenAI {
   if (!openaiClient) {
     const apiKey = process.env.OPENAI_API_KEY
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY environment variable is required')
+      throw new Error('OPENAI_API_KEY required')
     }
     openaiClient = new OpenAI({ apiKey })
+    console.log(`[OpenAI] Client initialized`)
   }
   return openaiClient
 }
 
 /**
- * Generate embedding for a text query
+ * Generate embedding (matches Python test exactly)
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
+  const startTime = Date.now()
   const client = getOpenAIClient()
 
   const response = await client.embeddings.create({
-    model: 'text-embedding-3-small',
+    model: EMBEDDING_MODEL,
     input: text,
     dimensions: EMBEDDING_DIMENSIONS,
   })
+
+  const latency = Date.now() - startTime
+  console.log(`[OpenAI] Generated embedding in ${latency}ms`)
 
   return response.data[0].embedding
 }
 
 /**
- * Incident metadata stored in Qdrant payload
- */
-export interface QdrantIncidentMetadata {
-  embedding_id?: string
-  embedding_text?: string  // Legacy field name
-  content: string  // Primary text content field
-  type?: string | null
-  id: string
-  source_file: string
-  embedding_model: string
-  category?: string
-  metadata: {
-    title?: string
-    notes?: string  // Actual incident description (primary text content)
-    severity?: string
-    organization?: string
-    incident_date?: string
-    attack_type?: string
-    failure_type?: string  // For AI failure patterns
-    industry?: string
-    had_mfa?: boolean
-    had_backups?: boolean
-    had_ir_plan?: boolean
-    estimated_cost?: number
-    downtime_hours?: number
-    detection_time_hours?: number  // For AI failure patterns
-    records_affected?: number
-  }
-}
-
-/**
- * Search result from Qdrant
- */
-export interface QdrantSearchResult {
-  id: string | number
-  score: number
-  payload: QdrantIncidentMetadata
-}
-
-/**
- * Search options for Qdrant queries
- */
-export interface QdrantSearchOptions {
-  limit?: number
-  scoreThreshold?: number
-  category?: string
-  severity?: string[]
-  industry?: string
-  requireMfaData?: boolean
-  requireBackupData?: boolean
-  requireIrPlanData?: boolean
-}
-
-/**
- * Search for similar incidents in Qdrant using vector similarity
+ * Search incidents (simplified - no complex filtering)
  */
 export async function searchIncidents(
   query: string,
-  options: QdrantSearchOptions = {}
-): Promise<QdrantSearchResult[]> {
-  const {
-    limit = 20,
-    scoreThreshold = 0.0, // 🔍 DEBUG: Temporarily set to 0.0 to test if results are being filtered by threshold
-    category,
-    severity,
-    industry,
-    requireMfaData = false,
-    requireBackupData = false,
-    requireIrPlanData = false,
-  } = options
-
-  console.log(`[Qdrant] Searching for: "${query.substring(0, 100)}..."`)
-  console.log(`[Qdrant] Filters: limit=${limit}, threshold=${scoreThreshold}, category=${category || 'all'}`)
-
-  // Step 1: Generate embedding for query
-  const startEmbedding = Date.now()
-  const queryVector = await generateEmbedding(query)
-  const embeddingTime = Date.now() - startEmbedding
-  console.log(`[Qdrant] Generated query embedding in ${embeddingTime}ms`)
-
-  // Step 2: Build filter conditions
-  const filter: any = { must: [] }
-
-  if (category) {
-    filter.must.push({ key: 'category', match: { value: category } })
-  }
-
-  if (industry) {
-    filter.must.push({ key: 'metadata.industry', match: { value: industry } })
-  }
-
-  if (severity && severity.length > 0) {
-    filter.must.push({ key: 'metadata.severity', match: { any: severity } })
-  }
-
-  if (requireMfaData) {
-    filter.must.push({ key: 'metadata.had_mfa', match: { value: null }, should_not: true })
-  }
-
-  if (requireBackupData) {
-    filter.must.push({ key: 'metadata.had_backups', match: { value: null }, should_not: true })
-  }
-
-  if (requireIrPlanData) {
-    filter.must.push({ key: 'metadata.had_ir_plan', match: { value: null }, should_not: true })
-  }
-
-  // Step 3: Execute vector search
-  const client = getQdrantClient()
-  const startSearch = Date.now()
-
-  const searchParams: any = {
-    vector: queryVector,
-    limit,
-    score_threshold: scoreThreshold,
-    with_payload: true,
-  }
-
-  if (filter.must.length > 0) {
-    searchParams.filter = filter
-  }
-
-  console.log('[Qdrant] About to execute search with params:', JSON.stringify({
-    collection: COLLECTION_NAME,
-    limit,
-    scoreThreshold,
-    filterCount: filter.must.length
-  }))
-
-  let searchResults
-  try {
-    searchResults = await client.search(COLLECTION_NAME, searchParams)
-    console.log(`[Qdrant] ✅ Search successful - received ${searchResults.length} results`)
-  } catch (error: any) {
-    console.error('[Qdrant] ❌ Search FAILED with error:', error.message)
-    console.error('[Qdrant] Error details:', JSON.stringify(error, null, 2))
-    console.error('[Qdrant] Was trying to connect to:', `http://${QDRANT_HOST}:${QDRANT_PORT}`)
-    throw new Error(`Qdrant search failed: ${error.message}`)
-  }
-
-  const searchTime = Date.now() - startSearch
-  console.log(`[Qdrant] Search completed in ${searchTime}ms (${searchResults.length} results)`)
-
-  if (searchResults.length > 0) {
-    const minScore = searchResults[searchResults.length - 1].score.toFixed(3)
-    const maxScore = searchResults[0].score.toFixed(3)
-    console.log(`[Qdrant] Score range: ${minScore} - ${maxScore}`)
-  } else {
-    console.warn('[Qdrant] ⚠️  WARNING: Search returned 0 results - this may indicate connectivity or data issues')
-  }
-
-  // Step 4: Format results
-  return searchResults.map(result => ({
-    id: result.id,
-    score: result.score,
-    payload: result.payload as unknown as QdrantIncidentMetadata
-  }))
-}
-
-/**
- * Get collection info
- */
-export async function getCollectionInfo() {
-  const client = getQdrantClient()
+  limit: number = 20,
+  minScore: number = 0.3
+): Promise<any[]> {
+  console.log(`\n[Qdrant] === NEW SEARCH ===`)
+  console.log(`[Qdrant] Query: "${query.substring(0, 80)}..."`)
+  console.log(`[Qdrant] Limit: ${limit}`)
+  console.log(`[Qdrant] Min Score: ${minScore}`)
 
   try {
-    const info = await client.getCollection(COLLECTION_NAME)
-    console.log(`[Qdrant] Collection "${COLLECTION_NAME}" info:`)
-    console.log(`  - Vectors: ${info.points_count}`)
-    console.log(`  - Dimensions: ${info.config.params.vectors?.size || 'N/A'}`)
-    console.log(`  - Distance: ${info.config.params.vectors?.distance || 'N/A'}`)
-    return info
+    // Step 1: Generate embedding
+    const embeddingStart = Date.now()
+    const queryVector = await generateEmbedding(query)
+    const embeddingTime = Date.now() - embeddingStart
+    console.log(`[Qdrant] Embedding generated in ${embeddingTime}ms (${queryVector.length} dims)`)
+
+    // Step 2: Search Qdrant
+    const searchStart = Date.now()
+    const client = getQdrantClient()
+
+    console.log(`[Qdrant] Executing search...`)
+    console.log(`[Qdrant]   Collection: ${COLLECTION_NAME}`)
+    console.log(`[Qdrant]   Min score (post-filter): ${minScore}`)
+    console.log(`[Qdrant]   Limit: ${limit}`)
+
+    // FIX: Remove score_threshold from search params - do post-filtering instead
+    // The score_threshold parameter was silently failing and returning 0 results
+    const rawResults = await client.search(COLLECTION_NAME, {
+      vector: queryVector,
+      limit: limit * 3,  // Get more results to filter
+      with_payload: true,
+    })
+
+    const searchTime = Date.now() - searchStart
+    console.log(`[Qdrant] Search completed in ${searchTime}ms`)
+    console.log(`[Qdrant] Raw results: ${rawResults.length} matches (before filtering)`)
+
+    // Post-filter by score
+    const results = rawResults.filter(r => r.score >= minScore).slice(0, limit)
+    console.log(`[Qdrant] Filtered results: ${results.length} matches (score >= ${minScore})`)
+
+    if (results.length > 0) {
+      const topScore = results[0].score
+      const lowScore = results[results.length - 1].score
+      console.log(`[Qdrant] Score range: ${lowScore.toFixed(3)} - ${topScore.toFixed(3)}`)
+
+      // Log top 3 results
+      console.log(`[Qdrant] Top 3 results:`)
+      results.slice(0, 3).forEach((r, i) => {
+        const content = (r.payload?.content || 'N/A').toString().substring(0, 60)
+        console.log(`[Qdrant]   ${i+1}. Score ${r.score.toFixed(3)}: ${content}...`)
+      })
+    } else {
+      console.warn(`[Qdrant] WARNING: 0 results returned`)
+      console.warn(`[Qdrant] This should NOT happen with score threshold ${minScore}`)
+    }
+
+    const totalTime = Date.now() - embeddingStart
+    console.log(`[Qdrant] Total search time: ${totalTime}ms`)
+
+    return results
+
   } catch (error) {
-    console.error(`[Qdrant] Failed to get collection info:`, error)
+    console.error(`[Qdrant] ERROR:`, error)
     throw error
   }
 }
 
 /**
- * Health check for Qdrant connection
+ * Health check
  */
-export async function checkQdrantHealth(): Promise<boolean> {
+export async function healthCheck(): Promise<boolean> {
   try {
     const client = getQdrantClient()
     const collections = await client.getCollections()
@@ -270,11 +155,15 @@ export async function checkQdrantHealth(): Promise<boolean> {
     )
 
     if (!hasCollection) {
-      console.warn(`[Qdrant] Collection "${COLLECTION_NAME}" not found`)
+      console.error(`[Qdrant] Collection "${COLLECTION_NAME}" not found`)
       return false
     }
 
-    console.log(`[Qdrant] Health check passed`)
+    const info = await client.getCollection(COLLECTION_NAME)
+    console.log(`[Qdrant] Health check passed:`)
+    console.log(`  Points: ${info.points_count}`)
+    console.log(`  Status: ${info.status}`)
+
     return true
   } catch (error) {
     console.error(`[Qdrant] Health check failed:`, error)
