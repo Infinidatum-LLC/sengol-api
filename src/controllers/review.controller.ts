@@ -65,12 +65,12 @@ interface GenerateQuestionsParams {
 }
 
 interface GenerateQuestionsBody {
-  systemDescription: string
-  selectedDomains: string[]
-  jurisdictions: string[]
-  industry: string
-  selectedTech: string[]
-  customTech: string[]
+  systemDescription?: string
+  selectedDomains?: string[]
+  jurisdictions?: string[]
+  industry?: string
+  selectedTech?: string[]
+  customTech?: string[]
   questionIntensity?: 'high' | 'medium' | 'low' // Optional intensity filter
   forceRegenerate?: boolean // Force bypass all caches and regenerate from scratch
 }
@@ -84,10 +84,10 @@ export async function generateQuestionsController(
 ) {
   const { id } = request.params
   const {
-    systemDescription,
-    selectedDomains,
-    jurisdictions,
-    industry,
+    systemDescription: requestSystemDescription,
+    selectedDomains: requestDomains,
+    jurisdictions: requestJurisdictions,
+    industry: requestIndustry,
     selectedTech,
     customTech,
     questionIntensity,
@@ -109,9 +109,23 @@ export async function generateQuestionsController(
     //   return reply.code(403).send({ error: 'Forbidden' })
     // }
 
+    // Use request body values if provided, otherwise fall back to database values
+    const systemDescription = requestSystemDescription || assessment.systemDescription
+    const selectedDomains = requestDomains || []
+    const jurisdictions = requestJurisdictions || assessment.jurisdictions || []
+    const industry = requestIndustry || assessment.industry
+
+    // Validate systemDescription exists (either from request or database)
+    if (!systemDescription || typeof systemDescription !== 'string' || systemDescription.trim().length === 0) {
+      return reply.code(400).send({
+        error: 'System description is required',
+        message: 'Please provide a system description or ensure the assessment has one saved'
+      })
+    }
+
     console.log(`[GENERATE_QUESTIONS] Assessment: ${id}`)
     console.log(`[GENERATE_QUESTIONS] System: ${systemDescription.substring(0, 100)}...`)
-    console.log(`[GENERATE_QUESTIONS] Domains: ${(selectedDomains || []).join(', ')}`)
+    console.log(`[GENERATE_QUESTIONS] Domains: ${selectedDomains.join(', ')}`)
     if (questionIntensity) {
       console.log(`[GENERATE_QUESTIONS] Intensity: ${questionIntensity}`)
     }
