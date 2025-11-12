@@ -136,13 +136,22 @@ export async function findSimilarIncidents(
 
     console.log(`[Incident Search] Mapped to ${incidents.length} IncidentMatch objects`)
 
-    // Post-filter by industry if specified
+    // Post-filter by industry if specified (bidirectional matching)
     if (industry) {
       const beforeCount = incidents.length
-      incidents = incidents.filter((inc) =>
-        inc.industry && inc.industry.toLowerCase().includes(industry.toLowerCase())
-      )
-      console.log(`[Incident Search] Industry filter: ${beforeCount} → ${incidents.length}`)
+      const searchTerms = industry.toLowerCase().split(/[&,\s]+/).filter(term => term.length > 2)
+
+      incidents = incidents.filter((inc) => {
+        if (!inc.industry) return false
+        const incIndustry = inc.industry.toLowerCase()
+
+        // Check if any search term matches the incident industry (bidirectional)
+        return searchTerms.some(term =>
+          incIndustry.includes(term) || term.includes(incIndustry)
+        )
+      })
+
+      console.log(`[Incident Search] Industry filter ("${industry}"): ${beforeCount} → ${incidents.length}`)
     }
 
     // Post-filter by severity if specified
