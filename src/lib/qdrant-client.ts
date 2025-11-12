@@ -92,6 +92,7 @@ export interface QdrantIncidentMetadata {
   category?: string
   metadata: {
     title?: string
+    notes?: string  // Actual incident description (primary text content)
     severity?: string
     organization?: string
     incident_date?: string

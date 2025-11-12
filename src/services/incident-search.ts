@@ -296,7 +296,7 @@ function mapQdrantResultToIncidentMatch(result: QdrantSearchResult): IncidentMat
     downtimeHours: metadata?.downtime_hours || metadata?.detection_time_hours || null,
     recordsAffected: metadata?.records_affected || null,
     similarity: result.score,
-    embeddingText: result.payload.content || result.payload.embedding_text || 'N/A',
+    embeddingText: metadata?.notes || result.payload.content || result.payload.embedding_text || 'N/A',
   }
 }
 
