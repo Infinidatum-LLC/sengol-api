@@ -1050,19 +1050,19 @@ async function generateSingleRiskQuestion(
   // ✅ NEW: Generate formalized question using LLM
   console.log(`[LLM_QUESTION] Generating formalized question for "${priorityArea.area}"...`)
 
-  const avgCost = relatedIncidents.length > 0
-    ? relatedIncidents
+  const avgCost = relevantIncidents.length > 0
+    ? relevantIncidents
         .filter(i => i.estimatedCost)
-        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
+        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relevantIncidents.filter(i => i.estimatedCost).length
     : 0
 
-  const avgSeverity = relatedIncidents.length > 0
-    ? relatedIncidents
+  const avgSeverity = relevantIncidents.length > 0
+    ? relevantIncidents
         .filter(i => i.severity)
         .reduce((sum, i) => {
           const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
           return sum + (severityMap[i.severity!.toLowerCase()] || 5)
-        }, 0) / relatedIncidents.filter(i => i.severity).length
+        }, 0) / relevantIncidents.filter(i => i.severity).length
     : 5
 
   const evidenceSummary = `
@@ -1078,13 +1078,13 @@ System Context:
 - Deployment: ${request.deployment || 'Not specified'}
 
 Evidence from Incident Database (78K+ incidents):
-- ${relatedIncidents.length} highly relevant incidents found
+- ${relevantIncidents.length} highly relevant incidents found
 - Average severity: ${avgSeverity.toFixed(1)}/10
 - Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%
 - Estimated avg cost: $${(avgCost / 1000).toFixed(0)}K per incident
 
 Recent Examples (Top 3):
-${relatedIncidents.slice(0, 3).map((ex, i) =>
+${relevantIncidents.slice(0, 3).map((ex, i) =>
   `${i + 1}. ${ex.organization || 'Organization'} - ${ex.incidentType} (${ex.incidentDate ? new Date(ex.incidentDate).toISOString().split('T')[0] : 'Recent'}, severity: ${ex.severity || 'medium'})`
 ).join('\n')}
 `.trim()
@@ -1104,7 +1104,7 @@ CRITICAL REQUIREMENTS - The question MUST:
    - MUST mention specific technologies: ${(request.techStack || []).slice(0, 3).join(', ') || 'the system'}
    - MUST reference data types being processed: ${(request.dataTypes || []).slice(0, 3).join(', ') || 'sensitive data'}
    - MUST mention data sources: ${(request.dataSources || []).slice(0, 3).join(', ') || 'various sources'}
-3. **Explain the threat** related to ${priorityArea.area} based on ${relatedIncidents.length} real incidents with avg severity ${avgSeverity.toFixed(1)}/10
+3. **Explain the threat** related to ${priorityArea.area} based on ${relevantIncidents.length} real incidents with avg severity ${avgSeverity.toFixed(1)}/10
 4. **Include specific examples** of what could go wrong (reference incident patterns)
 5. **Ask for detailed controls** - be specific about what mitigations should exist
 6. **End with impact context** - mention potential consequences based on real incidents (cost, severity, compliance)
@@ -1183,18 +1183,18 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
   })
 
   // Calculate total cost
-  const totalCost = relatedIncidents
+  const totalCost = relevantIncidents
     .filter(i => i.estimatedCost)
     .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0)
 
   // ✅ Create evidence object with incident metadata
   const evidence: IncidentEvidence = {
-    incidentCount: relatedIncidents.length,
+    incidentCount: relevantIncidents.length,
     avgSeverity: avgSeverity || 5,
-    relevanceScore: relatedIncidents.length > 0
-      ? relatedIncidents.reduce((sum, i) => sum + i.similarity, 0) / relatedIncidents.length
+    relevanceScore: relevantIncidents.length > 0
+      ? relevantIncidents.reduce((sum, i) => sum + i.similarity, 0) / relevantIncidents.length
       : 0,
-    recentExamples: relatedIncidents.slice(0, 5).map(incident => ({
+    recentExamples: relevantIncidents.slice(0, 5).map(incident => ({
       id: incident.incidentId || `inc_${Date.now()}`,
       title: incident.embeddingText?.substring(0, 100) || incident.incidentType || 'Incident',
       // ✅ Try multiple field names for organization (frontend compatibility)
@@ -1239,7 +1239,7 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     statistics: {
       totalCost,
       avgCost,
-      affectedSystems: relatedIncidents.length,
+      affectedSystems: relevantIncidents.length,
     }
   }
 
@@ -1252,14 +1252,14 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     label: shortLabel, // ✅ SHORT: For UI labels/headers
     text: questionText, // ✅ FULL QUESTION: What users see and answer
     question: questionText, // ✅ ALIAS: For backward compatibility
-    description: `Evidence from ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance) with average severity ${avgSeverity.toFixed(1)}/10`,
+    description: `Evidence from ${relevantIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance) with average severity ${avgSeverity.toFixed(1)}/10`,
     priority: determinePriority(finalWeight),
 
-    importance: `${priorityArea.reasoning}. Historical data shows ${relatedIncidents.length} similar incidents with average cost of $${avgCost.toLocaleString()}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
-    reasoning: `${priorityArea.reasoning}. Evidence from ${relatedIncidents.length} incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance (severity ${avgSeverity.toFixed(1)}/10)`,
+    importance: `${priorityArea.reasoning}. Historical data shows ${relevantIncidents.length} similar incidents with average cost of $${avgCost.toLocaleString()}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
+    reasoning: `${priorityArea.reasoning}. Evidence from ${relevantIncidents.length} incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance (severity ${avgSeverity.toFixed(1)}/10)`,
     examples,
-    mitigations: generateMitigations(priorityArea.area, relatedIncidents),
-    regulations: extractRegulations(relatedIncidents, llmAnalysis),
+    mitigations: generateMitigations(priorityArea.area, relevantIncidents),
+    regulations: extractRegulations(relevantIncidents, llmAnalysis),
 
     // ✅ CRITICAL: Evidence object with multi-factor relevance
     evidence,
@@ -1272,14 +1272,14 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `${priorityArea.reasoning}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%`),
     evidenceQuery: priorityArea.area,
-    relatedIncidents: relatedIncidents.slice(0, 10),
-    similarIncidents: relatedIncidents.slice(0, 10),
-    relatedIncidentCount: relatedIncidents.length,
+    relatedIncidents: relevantIncidents.slice(0, 10),
+    similarIncidents: relevantIncidents.slice(0, 10),
+    relatedIncidentCount: relevantIncidents.length,
 
     category: categorizeDomain(priorityArea.area),
     domain: domain || categorizeDomain(priorityArea.area), // ✅ Add domain for frontend filtering
     generatedFrom: 'hybrid',
-    confidence: calculateConfidence(relatedIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
+    confidence: calculateConfidence(relevantIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
     aiGenerated: true,
   }
 
