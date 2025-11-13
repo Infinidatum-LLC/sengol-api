@@ -16,7 +16,7 @@ import { FastifyRequest, FastifyReply } from 'fastify'
 import { generateEmbedding as generateVertexEmbedding, searchSimilar as searchVertexAI, healthCheck as vertexHealthCheck } from '../lib/vertex-ai-client'
 import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError, VectorDBError, LLMError } from '../lib/errors'
-import { vectorSearchCache, generateCacheKey } from '../lib/cache'
+import { vectorSearchCache, generateCacheKey } from '../lib/local-cache'
 
 // Get raw Prisma client for operations
 const prisma = resilientPrisma.getRawClient()

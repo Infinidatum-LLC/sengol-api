@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { resilientPrisma, userTierCache as dbUserTierCache, userAdminCache as dbUserAdminCache, subscriptionCache as dbSubscriptionCache } from '../lib/prisma-resilient'
 import { resilientGeminiClient } from '../lib/gemini-resilient'
-import { vectorSearchCache, llmResponseCache } from '../lib/cache'
+import { vectorSearchCache, llmResponseCache } from '../lib/local-cache'
 import { config } from '../config/env'
 import { healthCheck as vertexAIHealthCheck, getStorageStats } from '../lib/vertex-ai-client'
 

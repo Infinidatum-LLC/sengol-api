@@ -67,6 +67,19 @@ export const userDataCache = new LRUCache<string, any>({
   allowStale: false,
 })
 
+/**
+ * Cache for LLM responses
+ * - Long TTL (1 hour) since LLM responses are deterministic for same input
+ * - Expensive to regenerate
+ */
+export const llmResponseCache = new LRUCache<string, any>({
+  max: 1000,
+  ttl: 3600000, // 1 hour TTL
+  ttlAutopurge: true,
+  updateAgeOnGet: true,
+  allowStale: false,
+})
+
 // ============================================================================
 // CACHE KEY GENERATION
 // ============================================================================
