@@ -1096,31 +1096,30 @@ ${relevantIncidents.slice(0, 3).map((ex, i) =>
       messages: [
         {
           role: 'system',
-          content: `You are a cybersecurity and AI risk assessment expert. Generate a comprehensive, evidence-based risk assessment question that demonstrates deep understanding of the user's system and real-world threats.
+          content: `You are a cybersecurity risk assessment expert. Generate a clear, focused, and concise risk assessment question.
 
-CRITICAL REQUIREMENTS - The question MUST:
-1. **Be comprehensive and detailed** (3-4 sentences, NOT just a single line)
-2. **Start with specific context** about the user's system:
-   - MUST mention specific technologies: ${(request.techStack || []).slice(0, 3).join(', ') || 'the system'}
-   - MUST reference data types being processed: ${(request.dataTypes || []).slice(0, 3).join(', ') || 'sensitive data'}
-   - MUST mention data sources: ${(request.dataSources || []).slice(0, 3).join(', ') || 'various sources'}
-3. **Explain the threat** related to ${priorityArea.area} based on ${relevantIncidents.length} real incidents with avg severity ${avgSeverity.toFixed(1)}/10
-4. **Include specific examples** of what could go wrong (reference incident patterns)
-5. **Ask for detailed controls** - be specific about what mitigations should exist
-6. **End with impact context** - mention potential consequences based on real incidents (cost, severity, compliance)
+CRITICAL REQUIREMENTS:
+1. **Be concise** - Keep question to 1-2 sentences maximum (NOT 3-4 sentences)
+2. **Be direct** - Ask about specific controls without lengthy setup
+3. **Reference evidence** - Briefly mention incident data (e.g., "based on X incidents")
+4. **Be actionable** - Focus on what controls should exist
 
-TONE & STYLE:
-- Professional and authoritative
-- Evidence-driven (reference incident statistics)
+AVOID:
+- Lengthy system descriptions or repetitive context
+- Multiple compound clauses or run-on sentences
+- Verbose incident analysis narratives
+- Excessive examples or background information
+
+TONE:
+- Professional and clear
+- Evidence-based but concise
 - Specific and actionable
-- Demonstrate expertise through detail
-- Make it clear this is based on real-world data analysis
 
-BAD EXAMPLE (too generic):
-"Has your system implemented access controls?"
-
-GOOD EXAMPLE (comprehensive and evidence-based):
+BAD EXAMPLE (too verbose):
 "Your healthcare AI chatbot processes patient medical records (PHI) and provides diagnostic suggestions to doctors. Based on analysis of 15 similar security incidents (average severity: 8.3/10, typical cost: $250K per breach), systems like yours face elevated risks from unauthorized access and privilege escalation attacks. Specifically, we've observed incidents where lack of multi-factor authentication (MFA) and role-based access control (RBAC) led to unauthorized PHI disclosure. How has your system implemented granular access controls, MFA for all users accessing patient data, and RBAC policies that enforce least-privilege access, and what audit mechanisms are in place to detect unauthorized access attempts?"
+
+GOOD EXAMPLE (concise):
+"Based on 15 access control incidents (avg severity: 8.3/10), what MFA, RBAC, and audit mechanisms protect ${(request.dataTypes || ['sensitive data'])[0]} in your ${(request.techStack || ['system'])[0]}?"
 
 Format: Return ONLY the complete question text. No preamble, no explanation, just the question.`
         },
@@ -1130,7 +1129,7 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
         }
       ],
       temperature: 0.7,
-      maxTokens: 600 // ✅ Increased from 250 to 600 to allow comprehensive, detailed questions (3-4 sentences)
+      maxTokens: 200 // Reduced from 600 to 200 for concise questions (1-2 sentences)
     })
 
     questionText = completion.choices[0].message.content?.trim() || questionText
