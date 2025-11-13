@@ -1390,19 +1390,19 @@ async function generateSingleComplianceQuestion(
   // ✅ NEW: Generate formalized compliance question using LLM
   console.log(`[LLM_COMPLIANCE] Generating formalized compliance question for "${complianceArea}"...`)
 
-  const avgFine = relatedIncidents.length > 0
-    ? relatedIncidents
+  const avgFine = relevantIncidents.length > 0
+    ? relevantIncidents
         .filter(i => i.estimatedCost)
-        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relatedIncidents.filter(i => i.estimatedCost).length
+        .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0) / relevantIncidents.filter(i => i.estimatedCost).length
     : 0
 
-  const avgSeverity = relatedIncidents.length > 0
-    ? relatedIncidents
+  const avgSeverity = relevantIncidents.length > 0
+    ? relevantIncidents
         .filter(i => i.severity)
         .reduce((sum, i) => {
           const severityMap: Record<string, number> = { critical: 10, high: 8, medium: 5, low: 2 }
           return sum + (severityMap[i.severity!.toLowerCase()] || 5)
-        }, 0) / relatedIncidents.filter(i => i.severity).length
+        }, 0) / relevantIncidents.filter(i => i.severity).length
     : 5
 
   const complianceEvidenceSummary = `
@@ -1418,13 +1418,13 @@ System Context:
 - Jurisdictions: ${(request.jurisdictions || []).join(', ') || 'Not specified'}
 
 Evidence from Compliance Violations Database:
-- ${relatedIncidents.length} relevant compliance incidents found
+- ${relevantIncidents.length} relevant compliance incidents found
 - Average severity: ${avgSeverity.toFixed(1)}/10
 - Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%
 - Average fine: $${(avgFine / 1000).toFixed(0)}K per violation
 
 Recent Examples (Top 3):
-${relatedIncidents.slice(0, 3).map((ex, i) =>
+${relevantIncidents.slice(0, 3).map((ex, i) =>
   `${i + 1}. ${ex.organization || 'Organization'} - ${ex.incidentType} (${ex.incidentDate ? new Date(ex.incidentDate).toISOString().split('T')[0] : 'Recent'}, fine: $${ex.estimatedCost ? (Number(ex.estimatedCost) / 1000).toFixed(0) + 'K' : 'Unknown'})`
 ).join('\n')}
 `.trim()
@@ -1444,7 +1444,7 @@ The question MUST:
    - Data types: ${(request.dataTypes || []).slice(0, 3).join(', ')}
    - Jurisdictions: ${(request.jurisdictions || []).slice(0, 3).join(', ')}
 2. Reference the compliance area: ${complianceArea}
-3. Incorporate evidence from ${relatedIncidents.length} real compliance violations with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance
+3. Incorporate evidence from ${relevantIncidents.length} real compliance violations with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance
 4. Be clear and actionable (answerable with: "addressed", "partially addressed", "not addressed", or "not applicable")
 5. Focus on specific compliance controls or requirements
 6. Use formal, professional language
@@ -1482,29 +1482,29 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
 
   // Calculate weights for compliance
   const baseWeight = (llmAnalysis.complianceRequirements || []).includes(complianceArea) ? 0.9 : 0.7
-  const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
+  const evidenceWeight = calculateEvidenceWeight(relevantIncidents)
   const industryWeight = request.industry ? 0.85 : 0.7
   const finalWeight = (baseWeight * 0.6) + (evidenceWeight * 0.25) + (industryWeight * 0.15)
 
   // Extract examples
-  const examples = relatedIncidents.slice(0, 3).map(incident => {
+  const examples = relevantIncidents.slice(0, 3).map(incident => {
     const cost = incident.estimatedCost ? ` (Fine: $${Number(incident.estimatedCost).toLocaleString()})` : ''
     return `${incident.organization || 'Organization'} - ${incident.incidentType}${cost}`
   })
 
   // Calculate total cost
-  const totalCost = relatedIncidents
+  const totalCost = relevantIncidents
     .filter(i => i.estimatedCost)
     .reduce((sum, i) => sum + Number(i.estimatedCost || 0), 0)
 
   // ✅ Create evidence object for compliance questions
   const evidence: IncidentEvidence = {
-    incidentCount: relatedIncidents.length,
+    incidentCount: relevantIncidents.length,
     avgSeverity: avgSeverity || 5,
-    relevanceScore: relatedIncidents.length > 0
-      ? relatedIncidents.reduce((sum, i) => sum + i.similarity, 0) / relatedIncidents.length
+    relevanceScore: relevantIncidents.length > 0
+      ? relevantIncidents.reduce((sum, i) => sum + i.similarity, 0) / relevantIncidents.length
       : 0,
-    recentExamples: relatedIncidents.slice(0, 5).map(incident => ({
+    recentExamples: relevantIncidents.slice(0, 5).map(incident => ({
       id: incident.incidentId || `inc_${Date.now()}`,
       title: incident.embeddingText?.substring(0, 100) || incident.incidentType || 'Compliance Incident',
       // ✅ Try multiple field names for organization (frontend compatibility)
@@ -1549,7 +1549,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     statistics: {
       totalCost,
       avgCost: avgFine,
-      affectedSystems: relatedIncidents.length,
+      affectedSystems: relevantIncidents.length,
     }
   }
 
@@ -1564,11 +1564,11 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     label: complianceShortLabel, // ✅ SHORT: For UI labels/headers
     text: complianceQuestionText, // ✅ FULL QUESTION: What users see and answer
     question: complianceQuestionText, // ✅ ALIAS: For backward compatibility
-    description: `Based on ${relatedIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance)`,
+    description: `Based on ${relevantIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance)`,
     priority: determinePriority(finalWeight),
 
-    importance: `Required for ${(llmAnalysis.complianceRequirements || []).join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relatedIncidents.length} incidents. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
-    reasoning: `Evidence from ${relatedIncidents.length} compliance incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance`,
+    importance: `Required for ${(llmAnalysis.complianceRequirements || []).join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relevantIncidents.length} incidents. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
+    reasoning: `Evidence from ${relevantIncidents.length} compliance incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance`,
     examples,
     mitigations: generateComplianceMitigations(complianceArea),
     regulations: llmAnalysis.complianceRequirements,
@@ -1584,14 +1584,14 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `Required by ${(llmAnalysis.complianceRequirements || []).join(', ')}`),
     evidenceQuery: complianceArea,
-    relatedIncidents: relatedIncidents.slice(0, 5),
-    similarIncidents: relatedIncidents.slice(0, 5),
-    relatedIncidentCount: relatedIncidents.length,
+    relatedIncidents: relevantIncidents.slice(0, 5),
+    similarIncidents: relevantIncidents.slice(0, 5),
+    relatedIncidentCount: relevantIncidents.length,
 
     category: 'compliance',
     domain: 'compliance', // ✅ Add domain for compliance questions
     generatedFrom: 'hybrid',
-    confidence: calculateConfidence(relatedIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
+    confidence: calculateConfidence(relevantIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
     aiGenerated: true,
   }
 
