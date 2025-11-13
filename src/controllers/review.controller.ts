@@ -111,7 +111,7 @@ export async function generateQuestionsController(
 
     // Use request body values if provided, otherwise fall back to database values
     const systemDescription = requestSystemDescription || assessment.systemDescription
-    const selectedDomains = requestDomains || []
+    const selectedDomains = requestDomains || assessment.selectedDomains || []
     const jurisdictions = requestJurisdictions || assessment.jurisdictions || []
     const industry = requestIndustry || assessment.industry
 

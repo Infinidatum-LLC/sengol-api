@@ -232,6 +232,7 @@ export async function updateAssessmentStep1Controller(
       where: { id },
       data: {
         systemDescription,
+        selectedDomains: selectedDomains || [],
         jurisdictions: jurisdictions || [],
         industry: industry || assessment.industry,
         systemCriticality: systemCriticality || assessment.systemCriticality,

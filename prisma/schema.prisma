@@ -252,6 +252,7 @@ model RiskAssessment {
   letterGrade String? // A, B, C, D, F
 
   // Sub-Scores Breakdown
+  selectedDomains String[] @default([]) // User-selected domains: ai, cyber, cloud
   aiRiskScore    Int? // 0-100 for AI-specific risks
   cyberRiskScore Int? // 0-100 for cybersecurity risks
   cloudRiskScore Int? // 0-100 for cloud/infrastructure risks
