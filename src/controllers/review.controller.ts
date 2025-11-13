@@ -111,7 +111,14 @@ export async function generateQuestionsController(
 
     // Use request body values if provided, otherwise fall back to database values
     const systemDescription = requestSystemDescription || assessment.systemDescription
-    const selectedDomains = requestDomains || assessment.selectedDomains || []
+    // ✅ FIX: Properly handle empty arrays - check both falsy AND length > 0
+    const selectedDomains = (
+      requestDomains && requestDomains.length > 0
+        ? requestDomains
+        : assessment.selectedDomains && assessment.selectedDomains.length > 0
+          ? assessment.selectedDomains
+          : ['ai', 'cyber', 'cloud'] // Always default to all domains if none specified
+    )
     const jurisdictions = requestJurisdictions || assessment.jurisdictions || []
     const industry = requestIndustry || assessment.industry
 

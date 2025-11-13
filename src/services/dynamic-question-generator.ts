@@ -798,7 +798,11 @@ async function generateRiskQuestions(
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion[]> {
   const questions: DynamicQuestion[] = []
-  const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
+  // ✅ FIX: Defensive check for empty array - empty array is truthy but invalid
+  const selectedDomains =
+    (request.selectedDomains && request.selectedDomains.length > 0)
+      ? request.selectedDomains
+      : ['ai', 'cyber', 'cloud']
   const questionsPerDomain = request.questionsPerDomain || 12 // ✅ OPTIMIZED: Default 12 per domain (was 25)
   // ✅ FIX: Lower default threshold to 0.3 (30%) to allow more questions through
   // Intensity filtering will handle final selection based on user's choice (high/medium/low)
