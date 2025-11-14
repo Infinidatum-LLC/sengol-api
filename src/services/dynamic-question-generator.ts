@@ -1912,11 +1912,17 @@ function categorizeDomain(area: string): 'ai' | 'cyber' | 'cloud' | 'compliance'
 
 // ✅ Strip any "Based on X incidents" prefix that LLM might include despite instructions
 function stripIncidentPrefix(question: string): string {
-  // Match patterns like: "Based on X incidents...", "Based on X similar incidents...", "Based on evidence...", etc.
-  const prefixPattern = /^Based\s+on\s+(\d+\s+)?.*?incidents.*?\s*[\.\,\:]/i
-  const stripped = question.replace(prefixPattern, '').trim()
+  // Pattern 1: Match "Based on X incidents (##% relevance)" or similar with parentheses
+  const parenthesesPattern = /^Based\s+on\s+\d+\s+(?:similar\s+)?incidents\s*\([^)]*%[^)]*\)\s*/i
+  let stripped = question.replace(parenthesesPattern, '').trim()
 
-  // Also remove leading phrases that mention data or analysis
+  // Pattern 2: Match "Based on X incidents." or with punctuation
+  if (stripped === question) {
+    const punctuationPattern = /^Based\s+on\s+(\d+\s+)?(?:similar\s+)?incidents.*?[\.\,\:]\s*/i
+    stripped = question.replace(punctuationPattern, '').trim()
+  }
+
+  // Pattern 3: Remove leading phrases that mention data or analysis
   const dataPattern = /^(According to|Based on|From our analysis|Our data shows)\s+/i
   const finalStripped = stripped.replace(dataPattern, '').trim()
 
