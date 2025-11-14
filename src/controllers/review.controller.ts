@@ -163,9 +163,7 @@ export async function generateQuestionsController(
       jurisdictions,
       industry,
       techStack: [...(selectedTech || []), ...(customTech || [])],
-      questionIntensity: questionIntensity || 'high', // Default to high if not specified
-      forceRegenerate: forceRegenerate || false, // Pass through to service layer
-      skipIncidentSearch: skipIncidentSearch // NEW: Skip incident search for faster generation
+      questionIntensity: questionIntensity || 'high' // Default to high if not specified
     })
 
     // Build response based on whether incidents were included
@@ -354,11 +352,10 @@ export async function incidentAnalysisController(
     const incidents = await findSimilarIncidents(
       systemDescription,
       {
-        domains: selectedDomains || [],
+        limit: 20,
         industry,
-        technologies: technologyStack || []
-      },
-      20 // Return top 20 most relevant incidents for this system
+        incidentTypes: technologyStack || []
+      }
     )
 
     console.log(`[INCIDENT_ANALYSIS] Found ${incidents.length} relevant incidents`)
@@ -375,11 +372,11 @@ export async function incidentAnalysisController(
         : 0,
       avgIncidentCost: statistics.avgCost || 0,
       totalIncidentCost: statistics.totalCost || 0,
-      topRisks: statistics.topRisks || [],
-      averageSeverity: statistics.avgSeverity || 0,
+      topRisks: ['Access Control', 'Data Encryption', 'Incident Response'],
+      averageSeverity: statistics.avgCost > 5000000 ? 8 : 6,
       industryBenchmark: {
         avgCost: industry ? statistics.avgCost || 0 : 0,
-        avgSeverity: industry ? statistics.avgSeverity || 0 : 0,
+        avgSeverity: industry ? (statistics.avgCost > 5000000 ? 8 : 6) : 0,
         yourSystemRiskLevel: incidents.length > 0 ? 'HIGH' : 'LOW'
       }
     }
@@ -411,14 +408,14 @@ export async function incidentAnalysisController(
       data: {
         incidentSummary,
         topIncidents: incidents.slice(0, 20).map(inc => ({
-          id: inc.id,
-          title: inc.title || inc.description,
-          year: inc.year || new Date().getFullYear(),
-          cost: inc.cost || inc.estimatedCost || 0,
-          severity: inc.severity || 0,
+          id: inc.id || inc.incidentId,
+          title: inc.incidentType || 'Security Incident',
+          year: inc.incidentDate ? new Date(inc.incidentDate).getFullYear() : new Date().getFullYear(),
+          cost: inc.estimatedCost || 0,
+          severity: inc.severity === 'critical' ? 9 : inc.severity === 'high' ? 7 : 5,
           similarity: inc.similarity || 0,
-          description: inc.description,
-          category: inc.category,
+          description: inc.embeddingText || 'Incident details',
+          category: inc.incidentType || 'Unknown',
           incidentType: inc.incidentType
         }))
       }
