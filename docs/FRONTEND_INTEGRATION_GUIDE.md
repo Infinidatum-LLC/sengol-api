@@ -1,882 +1,399 @@
-# Council API - Frontend Integration Guide
+# Frontend Integration Guide
 
-This guide explains how to integrate the AI Risk Council API into the Sengol Next.js frontend application.
-
----
-
-## Table of Contents
-
-1. [Overview](#overview)
-2. [API Client Setup](#api-client-setup)
-3. [Type Definitions](#type-definitions)
-4. [React Hooks](#react-hooks)
-5. [UI Components](#ui-components)
-6. [Page Structure](#page-structure)
-7. [Error Handling](#error-handling)
-8. [Best Practices](#best-practices)
+**Location:** Frontend documentation for integrating with Sengol API
+**Purpose:** Guide frontend developers on API contracts, data formats, and threshold behavior
+**Last Updated:** Phase 4 - Documentation
 
 ---
 
 ## Overview
 
-The Council API provides governance workflow capabilities for risk assessments. Key features:
-- Council management (admin)
-- Membership administration (admin)
-- Assessment review and approval (council members)
-- Tamper-evident audit trail
+This guide explains how the frontend should interact with the Sengol API for dynamic risk question generation, including:
 
-**Base URL**: `/api/v1` (proxied through Next.js API routes)
-
----
-
-## API Client Setup
-
-### 1. Create API Client
-
-Create `lib/api/council.ts`:
-
-```typescript
-import { api } from './client' // Your existing API client
-
-export interface Council {
-  id: string
-  name: string
-  description?: string
-  status: 'ACTIVE' | 'ARCHIVED' | 'SUSPENDED'
-  quorum: number
-  requireUnanimous: boolean
-  createdAt: string
-  updatedAt: string
-}
-
-export interface CouncilMembership {
-  id: string
-  councilId: string
-  userId: string
-  role: 'CHAIR' | 'PARTNER' | 'OBSERVER'
-  status: 'ACTIVE' | 'REVOKED' | 'SUSPENDED'
-  assignedAt: string
-  revokedAt?: string
-  notes?: string
-  user?: {
-    id: string
-    name: string
-    email: string
-  }
-}
-
-export interface RiskApproval {
-  id: string
-  assessmentId: string
-  councilId: string
-  status: 'APPROVED' | 'REJECTED' | 'PENDING' | 'CONDITIONAL'
-  decisionNotes?: string
-  reasonCodes: string[]
-  decidedAt: string
-  membership?: CouncilMembership
-}
-
-export interface ApprovalStatus {
-  approved: boolean
-  rejected: boolean
-  pending: boolean
-  quorumMet: boolean
-  totalApprovals: number
-  totalRejections: number
-  requiredQuorum: number
-  requiresUnanimous: boolean
-}
-
-// Council Management
-export const councilApi = {
-  // List councils
-  list: async (params?: {
-    status?: string
-    orgId?: string
-    cursor?: string
-    limit?: number
-  }) => {
-    return api.get<{
-      councils: Council[]
-      pagination: { limit: number; cursor: string | null }
-    }>('/v1/councils', { params })
-  },
-
-  // Get council details
-  get: async (councilId: string, includeRevoked = false) => {
-    return api.get<{ council: Council }>(`/v1/councils/${councilId}`, {
-      params: { includeRevoked }
-    })
-  },
-
-  // Create council (admin only)
-  create: async (data: {
-    name: string
-    description?: string
-    quorum?: number
-    requireUnanimous?: boolean
-  }) => {
-    return api.post<{ council: Council }>('/v1/councils', data)
-  },
-
-  // Update council (admin only)
-  update: async (councilId: string, data: Partial<Council>) => {
-    return api.patch<{ council: Council }>(`/v1/councils/${councilId}`, data)
-  },
-
-  // Archive council (admin only)
-  archive: async (councilId: string) => {
-    return api.post<{ council: Council }>(`/v1/councils/${councilId}/archive`)
-  },
-
-  // Members
-  members: {
-    list: async (councilId: string, status?: string) => {
-      return api.get<{ members: CouncilMembership[] }>(
-        `/v1/councils/${councilId}/members`,
-        { params: { status } }
-      )
-    },
-
-    add: async (councilId: string, data: {
-      userId: string
-      role: 'CHAIR' | 'PARTNER' | 'OBSERVER'
-      notes?: string
-    }) => {
-      return api.post<{ membership: CouncilMembership }>(
-        `/v1/councils/${councilId}/assignments`,
-        data
-      )
-    },
-
-    update: async (councilId: string, membershipId: string, data: {
-      role?: string
-      notes?: string
-    }) => {
-      return api.patch<{ membership: CouncilMembership }>(
-        `/v1/councils/${councilId}/members/${membershipId}`,
-        data
-      )
-    },
-
-    revoke: async (councilId: string, membershipId: string, notes?: string) => {
-      return api.post<{ membership: CouncilMembership }>(
-        `/v1/councils/${councilId}/members/${membershipId}/revoke`,
-        { notes }
-      )
-    }
-  },
-
-  // Assessment workflow
-  assessments: {
-    list: async (councilId: string, params?: {
-      status?: string
-      cursor?: string
-      limit?: number
-    }) => {
-      return api.get(`/v1/councils/${councilId}/assessments`, { params })
-    },
-
-    assign: async (assessmentId: string, councilId: string) => {
-      return api.post(`/v1/assessments/${assessmentId}/council/assign`, {
-        councilId
-      })
-    },
-
-    unassign: async (assessmentId: string) => {
-      return api.delete(`/v1/assessments/${assessmentId}/council/assign`)
-    },
-
-    submitDecision: async (assessmentId: string, data: {
-      councilId: string
-      step: string
-      status: 'APPROVED' | 'REJECTED' | 'PENDING' | 'CONDITIONAL'
-      notes?: string
-      reasonCodes?: string[]
-    }) => {
-      return api.post<{
-        approval: RiskApproval
-        approvalStatus: ApprovalStatus
-      }>(`/v1/assessments/${assessmentId}/council/decision`, data)
-    },
-
-    getApprovals: async (assessmentId: string) => {
-      return api.get<{ approvals: RiskApproval[] }>(
-        `/v1/assessments/${assessmentId}/council/approvals`
-      )
-    }
-  },
-
-  // Ledger
-  ledger: {
-    get: async (assessmentId: string, params?: {
-      entryType?: string[]
-      cursor?: string
-      limit?: number
-    }) => {
-      return api.get(`/v1/assessments/${assessmentId}/ledger`, { params })
-    },
-
-    verify: async (assessmentId: string) => {
-      return api.post(`/v1/assessments/${assessmentId}/ledger/verify`)
-    }
-  }
-}
-```
+- Request/response formats
+- Data fields to send and receive
+- Question intensity levels and weights
+- Threshold behavior and tuning
+- Error handling patterns
+- Cache optimization
 
 ---
 
-## React Hooks
+## Core Concept: Evidence-Based Question Generation
 
-### 1. useCouncils Hook
+The Sengol API generates **dynamic risk assessment questions** based on:
 
-Create `hooks/useCouncils.ts`:
+1. **System description** (what you're assessing)
+2. **Historical incident data** (78,767+ real security incidents)
+3. **Configurable thresholds** (how strict to be)
+4. **Weight formulas** (how to prioritize)
 
-```typescript
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { councilApi } from '@/lib/api/council'
-import { toast } from 'sonner'
+**Result:** Questions are NOT generic templates—they're tailored to your system with real evidence and explainable weights.
 
-export function useCouncils(params?: { status?: string }) {
-  return useQuery({
-    queryKey: ['councils', params],
-    queryFn: () => councilApi.list(params)
-  })
-}
+---
 
-export function useCouncil(councilId: string) {
-  return useQuery({
-    queryKey: ['council', councilId],
-    queryFn: () => councilApi.get(councilId),
-    enabled: !!councilId
-  })
-}
+## API Endpoints
 
-export function useCreateCouncil() {
-  const queryClient = useQueryClient()
+### 1. Generate Questions
 
-  return useMutation({
-    mutationFn: councilApi.create,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['councils'] })
-      toast.success('Council created successfully')
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to create council')
-    }
-  })
-}
+**Endpoint:** `POST /api/review/:id/generate-questions`
 
-export function useUpdateCouncil(councilId: string) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: (data: any) => councilApi.update(councilId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['council', councilId] })
-      queryClient.invalidateQueries({ queryKey: ['councils'] })
-      toast.success('Council updated successfully')
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to update council')
-    }
-  })
+**Request Body:**
+```json
+{
+  "systemDescription": "Payment processing API that handles credit card transactions...",
+  "industryType": "finance",
+  "assessmentId": "cmhxtdd490001qiverq62l7rm",
+  "includeEvidence": true,
+  "intensityLevel": "medium"
 }
 ```
 
-### 2. useCouncilMembers Hook
+**Request Fields:**
 
-```typescript
-export function useCouncilMembers(councilId: string) {
-  return useQuery({
-    queryKey: ['council-members', councilId],
-    queryFn: () => councilApi.members.list(councilId),
-    enabled: !!councilId
-  })
-}
+| Field | Type | Required | Description | Example |
+|-------|------|----------|-------------|---------|
+| `systemDescription` | string | Yes | Detailed description of the system being assessed | "Online banking platform with user authentication, transaction processing, and data storage" |
+| `industryType` | string | Yes | Industry classification for relevance weighting | `"finance"`, `"healthcare"`, `"technology"`, `"retail"` |
+| `assessmentId` | string | Yes | Unique assessment ID for persistence | UUID or database ID |
+| `includeEvidence` | boolean | No (default: true) | Include incident evidence with questions | `true` or `false` |
+| `intensityLevel` | string | No (default: "medium") | Question filtering intensity | `"high"`, `"medium"`, `"low"` |
 
-export function useAddMember(councilId: string) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: councilApi.members.add.bind(null, councilId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['council-members', councilId] })
-      toast.success('Member added successfully')
-    }
-  })
-}
-```
-
-### 3. useAssessmentApproval Hook
-
-```typescript
-export function useAssessmentApprovals(assessmentId: string) {
-  return useQuery({
-    queryKey: ['assessment-approvals', assessmentId],
-    queryFn: () => councilApi.assessments.getApprovals(assessmentId),
-    enabled: !!assessmentId
-  })
-}
-
-export function useSubmitDecision(assessmentId: string) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: councilApi.assessments.submitDecision.bind(null, assessmentId),
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['assessment-approvals', assessmentId] })
-
-      const { approvalStatus } = data
-      if (approvalStatus.approved) {
-        toast.success('Assessment approved! Quorum met.')
-      } else if (approvalStatus.quorumMet) {
-        toast.success('Decision submitted. Quorum met.')
-      } else {
-        toast.success(`Decision submitted. ${approvalStatus.totalApprovals}/${approvalStatus.requiredQuorum} approvals.`)
+**Response Format:**
+```json
+{
+  "assessmentId": "cmhxtdd490001qiverq62l7rm",
+  "status": "success",
+  "metadata": {
+    "generatedAt": "2025-11-13T10:30:00Z",
+    "systemDescription": "Payment processing API...",
+    "industryType": "finance",
+    "generationTimeMs": 2450,
+    "incidentsSearched": 60,
+    "incidentsUsed": 45
+  },
+  "questions": {
+    "high": [
+      {
+        "id": "q-1",
+        "category": "security",
+        "question": "Is MFA enabled for all user authentication?",
+        "weight": 0.85,
+        "intensity": "high",
+        "evidence": {
+          "incidentCount": 47,
+          "incidentSeverity": "high",
+          "adoptionRate": 0.23,
+          "costWithout": "$2.3M",
+          "costWith": "$150K"
+        },
+        "explanation": "MFA adoption in finance is critical. 47 incidents match this query...",
+        "relatedIncidents": [
+          {
+            "id": "inc-12345",
+            "title": "Credential theft in payment processor",
+            "severity": "high",
+            "year": 2023,
+            "similarityScore": 0.87
+          }
+        ]
       }
+    ],
+    "medium": [...],
+    "low": [...]
+  },
+  "scoringFormula": {
+    "explanation": "Questions are weighted by evidence, base importance, and industry relevance",
+    "formula": "(baseWeight × 0.5) + (evidenceWeight × 0.3) + (industryWeight × 0.2)",
+    "components": {
+      "baseWeight": "LLM analysis of system description importance (0-1)",
+      "evidenceWeight": "Historical incident frequency (0-1)",
+      "industryWeight": "Industry-specific relevance (0-1)"
     }
-  })
+  }
 }
 ```
 
 ---
 
-## UI Components
+## Question Intensity Levels
 
-### 1. CouncilList Component
+### Understanding Intensity
 
-Create `components/council/CouncilList.tsx`:
+The backend uses **three intensity levels** to filter questions by evidence strength and priority:
 
-```typescript
-'use client'
-
-import { useCouncils } from '@/hooks/useCouncils'
-import { Badge } from '@/components/ui/badge'
-import { Card } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
-import Link from 'next/link'
-
-export function CouncilList() {
-  const { data, isLoading } = useCouncils({ status: 'ACTIVE' })
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {data?.councils.map((council) => (
-        <Link key={council.id} href={`/admin/councils/${council.id}`}>
-          <Card className="p-6 hover:border-primary transition-colors">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold text-lg">{council.name}</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {council.description}
-                </p>
-              </div>
-              <Badge variant={council.status === 'ACTIVE' ? 'default' : 'secondary'}>
-                {council.status}
-              </Badge>
-            </div>
-            <div className="mt-4 flex items-center gap-4 text-sm text-muted-foreground">
-              <span>Quorum: {council.quorum}</span>
-              {council.requireUnanimous && (
-                <Badge variant="outline">Unanimous</Badge>
-              )}
-            </div>
-          </Card>
-        </Link>
-      ))}
-    </div>
-  )
-}
+```
+HIGH    → Only questions with 70%+ confidence + critical priorities
+MEDIUM  → Questions with 50%+ confidence + risk/resilience focus
+LOW     → Questions with 30%+ confidence + governance/awareness focus
 ```
 
-### 2. ApprovalDecisionForm Component
+### Frontend Mapping
 
-```typescript
-'use client'
+**High Intensity** (`intensityLevel: "high"`)
+- **Use case:** Executive summaries, compliance audits
+- **Response:** 10-15 questions maximum
+- **Weight threshold:** ≥ 0.7
 
-import { useForm } from 'react-hook-form'
-import { useSubmitDecision } from '@/hooks/useCouncils'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+**Medium Intensity** (`intensityLevel: "medium"`)
+- **Use case:** Standard risk assessments (most common)
+- **Response:** 15-25 questions maximum
+- **Weight threshold:** ≥ 0.5
 
-interface ApprovalFormProps {
-  assessmentId: string
-  councilId: string
-  step: string
-}
+**Low Intensity** (`intensityLevel: "low"`)
+- **Use case:** Discovery phase, comprehensive frameworks
+- **Response:** 20-35 questions maximum
+- **Weight threshold:** ≥ 0.3
 
-export function ApprovalDecisionForm({ assessmentId, councilId, step }: ApprovalFormProps) {
-  const { register, handleSubmit, setValue, watch } = useForm()
-  const submitDecision = useSubmitDecision(assessmentId)
-  const status = watch('status')
+---
 
-  const onSubmit = (data: any) => {
-    submitDecision.mutate({
-      councilId,
-      step,
-      status: data.status,
-      notes: data.notes,
-      reasonCodes: data.reasonCodes?.split(',').map((c: string) => c.trim()) || []
-    })
-  }
+## Weight Components and Interpretation
 
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-      <div>
-        <label className="text-sm font-medium">Decision</label>
-        <Select
-          onValueChange={(value) => setValue('status', value)}
-          defaultValue="PENDING"
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select decision" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="APPROVED">Approve</SelectItem>
-            <SelectItem value="REJECTED">Reject</SelectItem>
-            <SelectItem value="CONDITIONAL">Conditional</SelectItem>
-            <SelectItem value="PENDING">Pending</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+### Three-Component Weight Formula
 
-      <div>
-        <label className="text-sm font-medium">Notes</label>
-        <Textarea
-          {...register('notes')}
-          placeholder="Explain your decision..."
-          rows={4}
-        />
-      </div>
-
-      {(status === 'REJECTED' || status === 'CONDITIONAL') && (
-        <div>
-          <label className="text-sm font-medium">Reason Codes</label>
-          <input
-            {...register('reasonCodes')}
-            className="w-full p-2 border rounded"
-            placeholder="INSUFFICIENT_CONTROLS, MISSING_DOCUMENTATION"
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Comma-separated reason codes
-          </p>
-        </div>
-      )}
-
-      <Button
-        type="submit"
-        disabled={submitDecision.isPending}
-        className="w-full"
-      >
-        {submitDecision.isPending ? 'Submitting...' : 'Submit Decision'}
-      </Button>
-    </form>
-  )
-}
+```
+finalWeight = (baseWeight × 0.5) + (evidenceWeight × 0.3) + (industryWeight × 0.2)
 ```
 
-### 3. ApprovalStatusBadge Component
+### 1. Base Weight (0.5 coefficient)
 
-```typescript
-import { Badge } from '@/components/ui/badge'
-import { CheckCircle2, XCircle, Clock, AlertCircle } from 'lucide-react'
+**What it is:** LLM analysis of how important this topic is for your system
 
-interface ApprovalStatusProps {
-  status: ApprovalStatus
-}
+**Example:**
+- System: "Payment processor with card storage"
+- Question: "PCI-DSS compliance?"
+- Base weight: 0.95 (clearly critical)
 
-export function ApprovalStatusBadge({ status }: ApprovalStatusProps) {
-  if (status.approved) {
-    return (
-      <Badge variant="default" className="bg-green-500">
-        <CheckCircle2 className="h-4 w-4 mr-1" />
-        Approved ({status.totalApprovals}/{status.requiredQuorum})
-      </Badge>
-    )
-  }
+### 2. Evidence Weight (0.3 coefficient)
 
-  if (status.rejected) {
-    return (
-      <Badge variant="destructive">
-        <XCircle className="h-4 w-4 mr-1" />
-        Rejected
-      </Badge>
-    )
-  }
+**What it is:** How frequently this issue occurs in real incidents
 
-  if (status.quorumMet) {
-    return (
-      <Badge variant="secondary">
-        <AlertCircle className="h-4 w-4 mr-1" />
-        Quorum Met ({status.totalApprovals}/{status.requiredQuorum})
-      </Badge>
-    )
-  }
+**Example:**
+- Question: "MFA enforcement?"
+- Matching incidents: 47 (high frequency)
+- Evidence weight: 0.85 (strong evidence)
 
-  return (
-    <Badge variant="outline">
-      <Clock className="h-4 w-4 mr-1" />
-      Pending ({status.totalApprovals}/{status.requiredQuorum})
-    </Badge>
-  )
+### 3. Industry Weight (0.2 coefficient)
+
+**What it is:** How relevant this is to your specific industry
+
+**Example:**
+- Industry: "finance"
+- Question: "PCI-DSS compliance?"
+- Industry weight: 0.95 (critical for payments)
+
+---
+
+## Saving Questions to Backend
+
+### Endpoint: Save Completed Assessment
+
+**Endpoint:** `POST /api/review/:id/save-questions`
+
+**Request Body:**
+```json
+{
+  "assessmentId": "cmhxtdd490001qiverq62l7rm",
+  "questions": [
+    {
+      "id": "q-1",
+      "question": "Is MFA enabled for all authentication?",
+      "category": "security",
+      "weight": 0.85,
+      "intensity": "high",
+      "userAnswer": "partial",
+      "answerDetails": "MFA enabled for admin accounts, not all users",
+      "notes": "Need to evaluate cost-benefit of full deployment"
+    }
+  ],
+  "completedAt": "2025-11-13T14:30:00Z",
+  "status": "completed"
 }
 ```
 
 ---
 
-## Page Structure
+## Question Categories
 
-### 1. Admin Council Management Page
+Supported categories:
 
-Create `app/admin/councils/page.tsx`:
-
-```typescript
-import { CouncilList } from '@/components/council/CouncilList'
-import { Button } from '@/components/ui/button'
-import Link from 'next/link'
-import { Plus } from 'lucide-react'
-
-export default function CouncilsPage() {
-  return (
-    <div className="container mx-auto py-8">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">AI Risk Councils</h1>
-          <p className="text-muted-foreground mt-2">
-            Manage governance bodies for risk assessment review
-          </p>
-        </div>
-        <Link href="/admin/councils/new">
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            New Council
-          </Button>
-        </Link>
-      </div>
-
-      <CouncilList />
-    </div>
-  )
-}
-```
-
-### 2. Council Detail Page
-
-Create `app/admin/councils/[councilId]/page.tsx`:
-
-```typescript
-'use client'
-
-import { useCouncil, useCouncilMembers } from '@/hooks/useCouncils'
-import { ApprovalStatusBadge } from '@/components/council/ApprovalStatusBadge'
-import { Card } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-
-export default function CouncilDetailPage({
-  params
-}: {
-  params: { councilId: string }
-}) {
-  const { data: councilData } = useCouncil(params.councilId)
-  const { data: membersData } = useCouncilMembers(params.councilId)
-
-  const council = councilData?.council
-
-  return (
-    <div className="container mx-auto py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold">{council?.name}</h1>
-        <p className="text-muted-foreground mt-2">{council?.description}</p>
-      </div>
-
-      <Tabs defaultValue="members">
-        <TabsList>
-          <TabsTrigger value="members">Members</TabsTrigger>
-          <TabsTrigger value="assessments">Assessments</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="members">
-          <Card className="p-6">
-            {/* Member management UI */}
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="assessments">
-          <Card className="p-6">
-            {/* Assigned assessments list */}
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="settings">
-          <Card className="p-6">
-            {/* Council settings */}
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
-  )
-}
-```
-
-### 3. Assessment Review Page (Council Member View)
-
-Create `app/review/[assessmentId]/council/page.tsx`:
-
-```typescript
-'use client'
-
-import { useAssessmentApprovals } from '@/hooks/useCouncils'
-import { ApprovalDecisionForm } from '@/components/council/ApprovalDecisionForm'
-import { ApprovalStatusBadge } from '@/components/council/ApprovalStatusBadge'
-import { Card } from '@/components/ui/card'
-
-export default function CouncilReviewPage({
-  params
-}: {
-  params: { assessmentId: string }
-}) {
-  const { data } = useAssessmentApprovals(params.assessmentId)
-
-  return (
-    <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8">Council Review</h1>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Submit Decision</h2>
-          <ApprovalDecisionForm
-            assessmentId={params.assessmentId}
-            councilId="council_id" // From assessment data
-            step="final_review"
-          />
-        </Card>
-
-        <Card className="p-6">
-          <h2 className="text-xl font-semibold mb-4">Approval History</h2>
-          <div className="space-y-4">
-            {data?.approvals.map((approval) => (
-              <div key={approval.id} className="border-l-4 border-primary pl-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">
-                    {approval.membership?.user?.name}
-                  </span>
-                  <ApprovalStatusBadge status={approval.status} />
-                </div>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {approval.decisionNotes}
-                </p>
-                <span className="text-xs text-muted-foreground">
-                  {new Date(approval.decidedAt).toLocaleDateString()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-    </div>
-  )
-}
-```
+- `security` - Security controls & architecture
+- `compliance` - Regulatory & standards compliance  
+- `incident-response` - Incident detection & response
+- `resilience` - Business continuity & disaster recovery
+- `monitoring` - Logging, monitoring, alerting
+- `risk` - Risk assessment & management
+- `governance` - Policies, procedures, oversight
+- `awareness` - Training & security awareness
+- `process` - Documented processes & procedures
 
 ---
 
 ## Error Handling
 
-### Error Boundary
+### Common Error Scenarios
 
-```typescript
-'use client'
-
-import { useEffect } from 'react'
-import { Button } from '@/components/ui/button'
-import { AlertCircle } from 'lucide-react'
-
-export function CouncilErrorBoundary({
-  error,
-  reset,
-}: {
-  error: Error & { digest?: string }
-  reset: () => void
-}) {
-  useEffect(() => {
-    console.error('Council error:', error)
-  }, [error])
-
-  return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] p-8">
-      <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-      <h2 className="text-2xl font-bold mb-2">Something went wrong</h2>
-      <p className="text-muted-foreground mb-6 text-center max-w-md">
-        {error.message || 'An error occurred while loading council data.'}
-      </p>
-      <Button onClick={reset}>Try again</Button>
-    </div>
-  )
+**Invalid System Description (400)**
+```json
+{
+  "error": "Invalid system description",
+  "code": "VALIDATION_ERROR",
+  "statusCode": 400,
+  "details": "System description must be at least 50 characters"
 }
 ```
+
+**Vector Database Timeout (503)**
+```json
+{
+  "error": "Vector database search failed",
+  "code": "VECTOR_DB_ERROR",
+  "statusCode": 503,
+  "details": "Search operation timed out after 30 seconds"
+}
+```
+
+**Rate Limiting (429)**
+```json
+{
+  "error": "Too many requests",
+  "code": "RATE_LIMIT_ERROR",
+  "statusCode": 429,
+  "details": "Maximum 10 assessments per hour",
+  "retryAfter": 300
+}
+```
+
+---
+
+## Response Time Expectations
+
+**Typical timeline:**
+- Vector search: 500-1000ms
+- LLM analysis: 1000-2000ms
+- Post-processing: 200-500ms
+- **Total: 2-4 seconds typical**
+
+**Timeout:** Implement 10 second max timeout, with exponential backoff retry strategy.
 
 ---
 
 ## Best Practices
 
-### 1. Permission Checks
+### 1. Validate System Description
 
 ```typescript
-function canManageCouncil(user: User): boolean {
-  return user.role === 'admin'
-}
+const validateSystemDescription = (text) => {
+  const minLength = 50
+  const minWords = 10
+  const words = text.trim().split(/\s+/).length
 
-function canSubmitDecision(user: User, councilId: string): boolean {
-  const allowedRoles = ['admin', 'council_chair', 'council_partner']
-  return allowedRoles.includes(user.role)
-}
-
-// Usage in component
-{canManageCouncil(user) && (
-  <Button onClick={createCouncil}>Create Council</Button>
-)}
-```
-
-### 2. Optimistic Updates
-
-```typescript
-export function useAddMember(councilId: string) {
-  const queryClient = useQueryClient()
-
-  return useMutation({
-    mutationFn: councilApi.members.add.bind(null, councilId),
-    onMutate: async (newMember) => {
-      // Cancel outgoing refetches
-      await queryClient.cancelQueries({
-        queryKey: ['council-members', councilId]
-      })
-
-      // Snapshot previous value
-      const previousMembers = queryClient.getQueryData(['council-members', councilId])
-
-      // Optimistically update
-      queryClient.setQueryData(['council-members', councilId], (old: any) => ({
-        ...old,
-        members: [...(old?.members || []), { ...newMember, id: 'temp' }]
-      }))
-
-      return { previousMembers }
-    },
-    onError: (err, newMember, context) => {
-      // Rollback on error
-      queryClient.setQueryData(
-        ['council-members', councilId],
-        context?.previousMembers
-      )
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['council-members', councilId] })
-    }
-  })
-}
-```
-
-### 3. Loading States
-
-```typescript
-function CouncilDetail({ councilId }: { councilId: string }) {
-  const { data, isLoading, error } = useCouncil(councilId)
-
-  if (isLoading) {
-    return <CouncilDetailSkeleton />
+  if (text.length < minLength || words < minWords) {
+    return 'Please provide at least 50 characters (10+ words)'
   }
-
-  if (error) {
-    return <ErrorState error={error} />
-  }
-
-  return <CouncilContent council={data.council} />
+  return null
 }
 ```
 
-### 4. Real-time Updates
+### 2. Show Generation Progress
 
 ```typescript
-// Poll for approval status updates
-export function useApprovalStatus(assessmentId: string) {
-  return useQuery({
-    queryKey: ['approval-status', assessmentId],
-    queryFn: () => councilApi.assessments.getApprovals(assessmentId),
-    refetchInterval: 30000, // Poll every 30 seconds
-    refetchIntervalInBackground: true
-  })
+// 0-30%: Initialization
+// 30-60%: Vector search
+// 60-90%: LLM analysis
+// 90-100%: Post-processing
+```
+
+### 3. Display Evidence Gracefully
+
+```typescript
+const EvidenceDisplay = ({ evidence }) => {
+  if (!evidence || evidence.incidentCount === 0) {
+    return <Note>Limited historical data available</Note>
+  }
+  
+  return (
+    <div>
+      <Stat label="Related Incidents" value={evidence.incidentCount} />
+      <Stat label="Adoption Rate" value={`${(evidence.adoptionRate * 100).toFixed(0)}%`} />
+    </div>
+  )
+}
+```
+
+### 4. Track User Answers Locally
+
+```typescript
+// Auto-save answers to localStorage before submitting
+useEffect(() => {
+  localStorage.setItem('assessment-draft', JSON.stringify(answers))
+}, [answers])
+```
+
+---
+
+## Caching Strategy
+
+**Backend caches:**
+- Vector search results: 1 hour TTL
+- LLM responses: 2 hours TTL
+- Embeddings: 1 hour TTL
+
+**Check response metadata for cache hits:**
+```typescript
+if (response.metadata.cached) {
+  showInfo('Loaded from cache (faster)')
 }
 ```
 
 ---
 
-## Testing
+## Testing Integration
 
-### Unit Tests
+### Mock Response
 
 ```typescript
-import { render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ApprovalDecisionForm } from './ApprovalDecisionForm'
-
-describe('ApprovalDecisionForm', () => {
-  it('submits decision successfully', async () => {
-    const queryClient = new QueryClient()
-    const user = userEvent.setup()
-
-    render(
-      <QueryClientProvider client={queryClient}>
-        <ApprovalDecisionForm
-          assessmentId="test-assessment"
-          councilId="test-council"
-          step="final_review"
-        />
-      </QueryClientProvider>
-    )
-
-    await user.click(screen.getByRole('combobox'))
-    await user.click(screen.getByText('Approve'))
-    await user.type(screen.getByPlaceholderText('Explain your decision...'), 'All controls verified')
-    await user.click(screen.getByText('Submit Decision'))
-
-    await waitFor(() => {
-      expect(screen.getByText('Decision submitted')).toBeInTheDocument()
-    })
-  })
-})
+export const mockGenerateQuestionsResponse = {
+  assessmentId: 'test-123',
+  status: 'success',
+  questions: {
+    high: [...],
+    medium: [...],
+    low: [...]
+  }
+}
 ```
 
 ---
 
-## Summary
+## Troubleshooting
 
-This integration guide provides:
-- ✅ Type-safe API client
-- ✅ React Query hooks for data fetching
-- ✅ Reusable UI components
-- ✅ Complete page examples
-- ✅ Error handling patterns
-- ✅ Best practices for permissions, optimistic updates, and testing
+### Questions too generic?
+- Add more detail to system description (min 50 chars)
+- Lower intensity level to "low"
 
-For additional help, refer to:
-- [Council API Reference](./COUNCIL_API_REFERENCE.md)
-- [Test Results](../COUNCIL_API_TEST_RESULTS.md)
-- [Implementation Guide](../COUNCIL_API_IMPLEMENTATION.md)
+### No questions generated?
+- Check API response status code
+- Verify assessment ID exists
+- Check browser console for errors
+
+### Response taking > 5 seconds?
+- Use fallback to cached questions if available
+- Implement retry logic with exponential backoff
+
+---
+
+## References
+
+- **Backend Configuration:** `/sengol-api/src/config/thresholds.ts`
+- **Generation Logic:** `/sengol-api/src/services/dynamic-question-generator.ts`
+- **API Controller:** `/sengol-api/src/controllers/review.controller.ts`
+- **Database Schema:** `/sengol-api/prisma/schema.prisma` (RiskAssessment model)
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2025-11-13 | Initial frontend integration documentation (Phase 4) |
