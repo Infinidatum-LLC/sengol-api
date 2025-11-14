@@ -1085,10 +1085,11 @@ Data: ${(request.dataTypes || []).slice(0, 2).join(', ') || 'General data'}
 CRITICAL REQUIREMENTS:
 1. **Be concise** - Keep question to 1-2 sentences maximum (NOT 3-4 sentences)
 2. **Be direct** - Ask about specific controls without lengthy setup
-3. **Reference evidence** - Briefly mention incident data (e.g., "based on X incidents")
-4. **Be actionable** - Focus on what controls should exist
+3. **Be actionable** - Focus on what controls should exist
+4. **NO incident prefixes** - Do NOT mention "based on X incidents" or similar phrases in the question text
 
 AVOID:
+- Phrases like "based on X incidents", "based on evidence", "according to data"
 - Lengthy system descriptions or repetitive context
 - Multiple compound clauses or run-on sentences
 - Verbose incident analysis narratives
@@ -1096,16 +1097,15 @@ AVOID:
 
 TONE:
 - Professional and clear
-- Evidence-based but concise
-- Specific and actionable
+- Practical and specific
+- Actionable
 
-BAD EXAMPLE (too verbose):
-"Your healthcare AI chatbot processes patient medical records (PHI) and provides diagnostic suggestions to doctors. Based on analysis of 15 similar security incidents (average severity: 8.3/10, typical cost: $250K per breach), systems like yours face elevated risks from unauthorized access and privilege escalation attacks. Specifically, we've observed incidents where lack of multi-factor authentication (MFA) and role-based access control (RBAC) led to unauthorized PHI disclosure. How has your system implemented granular access controls, MFA for all users accessing patient data, and RBAC policies that enforce least-privilege access, and what audit mechanisms are in place to detect unauthorized access attempts?"
+GOOD EXAMPLES (concise, no incident prefixes):
+- "What MFA, RBAC, and audit mechanisms protect ${(request.dataTypes || ['sensitive data'])[0]} in your ${(request.techStack || ['system'])[0]}?"
+- "How does your ${request.deployment || 'system'} validate AI model outputs before using them in decisions?"
+- "What encryption and access controls protect your ${(request.dataTypes || ['data'])[0]} at rest and in transit?"
 
-GOOD EXAMPLE (concise):
-"Based on 15 access control incidents (avg severity: 8.3/10), what MFA, RBAC, and audit mechanisms protect ${(request.dataTypes || ['sensitive data'])[0]} in your ${(request.techStack || ['system'])[0]}?"
-
-Format: Return ONLY the complete question text. No preamble, no explanation, just the question.`
+Format: Return ONLY the complete question text. No preamble, no explanation, just the question. Never start with "Based on" or similar incident references.`
         },
         {
           role: 'user',
@@ -1117,6 +1117,10 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     })
 
     questionText = completion.choices[0].message.content?.trim() || questionText
+
+    // ✅ Strip any "Based on X incidents" prefix that LLM might include despite instructions
+    questionText = stripIncidentPrefix(questionText)
+
     console.log(`[LLM_QUESTION] Generated: ${questionText.substring(0, 80)}...`)
   } catch (error) {
     console.error(`[LLM_QUESTION] Failed to generate question for ${priorityArea.area}:`, error)
@@ -1457,6 +1461,8 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     const llmResponse = completion.choices?.[0]?.message?.content?.trim()
     if (llmResponse && llmResponse.length > 20) {
       complianceQuestionText = llmResponse
+      // ✅ Strip any "Based on X incidents" prefix from compliance questions
+      complianceQuestionText = stripIncidentPrefix(complianceQuestionText)
     }
     console.log(`[LLM_COMPLIANCE] Generated: ${complianceQuestionText.substring(0, 80)}...`)
   } catch (error) {
@@ -1902,6 +1908,19 @@ function categorizeDomain(area: string): 'ai' | 'cyber' | 'cloud' | 'compliance'
   if (lower.includes('cloud') || lower.includes('infrastructure')) return 'cloud'
   if (lower.includes('compliance') || lower.includes('regulation')) return 'compliance'
   return 'cyber'
+}
+
+// ✅ Strip any "Based on X incidents" prefix that LLM might include despite instructions
+function stripIncidentPrefix(question: string): string {
+  // Match patterns like: "Based on X incidents...", "Based on X similar incidents...", "Based on evidence...", etc.
+  const prefixPattern = /^Based\s+on\s+(\d+\s+)?.*?incidents.*?\s*[\.\,\:]/i
+  const stripped = question.replace(prefixPattern, '').trim()
+
+  // Also remove leading phrases that mention data or analysis
+  const dataPattern = /^(According to|Based on|From our analysis|Our data shows)\s+/i
+  const finalStripped = stripped.replace(dataPattern, '').trim()
+
+  return finalStripped || question // Return original if all content would be removed
 }
 
 function generateIndustryBenchmark(incidentStats: any, industry?: string): string {
