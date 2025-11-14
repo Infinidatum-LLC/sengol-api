@@ -103,9 +103,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
 
     // Cache statistics (including database caches)
+    const localCacheMetrics = getLocalCacheMetrics()
     health.cache = {
-      vectorSearch: vectorSearchCache.getStats(),
-      llmResponse: llmResponseCache.getStats(),
+      local: localCacheMetrics,
       database: {
         userTier: dbUserTierCache.getStats(),
         userAdmin: dbUserAdminCache.getStats(),
@@ -169,9 +169,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
 
   // Cache statistics endpoint
   fastify.get('/health/cache', async (request, reply) => {
+    const localCacheMetrics = getLocalCacheMetrics()
     return reply.send({
-      vectorSearch: vectorSearchCache.getStats(),
-      llmResponse: llmResponseCache.getStats(),
+      local: localCacheMetrics,
       database: {
         userTier: dbUserTierCache.getStats(),
         userAdmin: dbUserAdminCache.getStats(),
