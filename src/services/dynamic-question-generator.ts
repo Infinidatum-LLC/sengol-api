@@ -1453,7 +1453,11 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
       maxTokens: 250
     })
 
-    complianceQuestionText = completion.choices[0].message.content?.trim() || complianceQuestionText
+    // ✅ FIX #1: Properly extract and validate LLM response
+    const llmResponse = completion.choices?.[0]?.message?.content?.trim()
+    if (llmResponse && llmResponse.length > 20) {
+      complianceQuestionText = llmResponse
+    }
     console.log(`[LLM_COMPLIANCE] Generated: ${complianceQuestionText.substring(0, 80)}...`)
   } catch (error) {
     console.error(`[LLM_COMPLIANCE] Failed to generate compliance question for ${complianceArea}:`, error)
@@ -1463,9 +1467,9 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
   }
 
-  // ✅ Validate compliance question text
-  if (complianceQuestionText.length < 20 || complianceQuestionText === complianceArea) {
-    console.warn(`[VALIDATION] Invalid compliance question text, using fallback for ${complianceArea}`)
+  // ✅ FIX #1: Validate compliance question text with comprehensive checks
+  if (!complianceQuestionText || complianceQuestionText.length < 20 || complianceQuestionText === complianceArea) {
+    console.warn(`[VALIDATION] Invalid compliance question text ("${complianceQuestionText}"), using fallback for ${complianceArea}`)
     const regulations = (llmAnalysis.complianceRequirements || []).slice(0, 2).join(' and ')
     const data = (request.dataTypes || [])[0] || 'data'
     complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
@@ -1564,8 +1568,41 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     mitigations: generateComplianceMitigations(complianceArea),
     regulations: llmAnalysis.complianceRequirements,
 
-    // ✅ CRITICAL: Evidence object
-    evidence,
+    // ✅ FIX #2: Explicitly set related incidents for frontend display
+    relatedIncidents: relevantIncidents.slice(0, 10).map(incident => ({
+      ...incident,
+      similarity: incident.similarity || avgMultiFactorRelevance,
+      cost: incident.estimatedCost || 0,
+      benchmarkingData: {
+        industryAverage: avgFine,
+        affectedOrganizations: relevantIncidents.length,
+        caseType: 'Compliance Violation',
+        severity: incident.severity || 'high',
+        resolution: 'Implement required compliance controls'
+      }
+    })),
+    similarIncidents: relevantIncidents.slice(0, 10).map(incident => ({
+      ...incident,
+      similarity: incident.similarity || avgMultiFactorRelevance,
+      cost: incident.estimatedCost || 0
+    })),
+
+    // ✅ CRITICAL: Evidence object with benchmarking data
+    evidence: {
+      ...evidence,
+      benchmarking: {
+        industryAverageCost: avgFine,
+        affectedCompanies: relevantIncidents.length,
+        complianceFrameworks: (llmAnalysis.complianceRequirements || []).join(', '),
+        riskLevel: avgSeverity > 7 ? 'critical' : avgSeverity > 5 ? 'high' : 'medium',
+        estimatedLiability: totalCost,
+        caseAnalysis: {
+          patterns: relevantIncidents.slice(0, 3).map((_, i) => `Pattern ${i + 1}: ${complianceArea} violation in regulated industry`),
+          commonCauses: ['Inadequate documentation', 'Insufficient controls', 'Lack of enforcement'],
+          recommendations: generateComplianceMitigations(complianceArea)
+        }
+      }
+    },
 
     baseWeight,
     evidenceWeight,
