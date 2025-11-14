@@ -13,6 +13,7 @@
 import { openai as gemini } from '../lib/openai-client' // Using OpenAI instead of Gemini to avoid quota issues
 import { findSimilarIncidents, calculateIncidentStatistics, type IncidentMatch } from './incident-search'
 import { getFromCache, setInCache, CACHE_TTL } from '../lib/redis-cache'
+import { PRE_FILTER_THRESHOLDS, QUESTION_INTENSITY, WEIGHT_FORMULAS, VECTOR_SEARCH_CONFIG, type QuestionIntensity } from '../config/thresholds'
 import crypto from 'crypto'
 
 // ============================================================================
@@ -452,32 +453,17 @@ function calculateStringSimilarity(str1: string, str2: string): number {
 /**
  * Apply question intensity filtering
  *
- * Filters questions based on weight and priority thresholds according to frontend rules:
- * - high: minWeight 0.0, all priorities, max 12 questions
- * - medium: minWeight 0.4, critical/high/medium, max 9 questions
- * - low: minWeight 0.6, critical/high only, max 6 questions
+ * Filters questions based on weight and priority thresholds according to centralized config:
+ * - high: minWeight 0.0, all priorities, max 25 questions
+ * - medium: minWeight 0.4, critical/high/medium, max 15 questions
+ * - low: minWeight 0.6, critical/high only, max 8 questions
  */
 function applyIntensityFiltering(
   questions: DynamicQuestion[],
   intensity: 'high' | 'medium' | 'low' = 'high'
 ): DynamicQuestion[] {
-  const rules = {
-    high: {
-      minWeight: 0.0,
-      priorities: ['critical', 'high', 'medium', 'low'] as const,
-      maxQuestions: 25 // ✅ Increased from 12 to allow more questions through
-    },
-    medium: {
-      minWeight: 0.4,
-      priorities: ['critical', 'high', 'medium'] as const,
-      maxQuestions: 15 // ✅ Increased from 9 for better coverage
-    },
-    low: {
-      minWeight: 0.6,
-      priorities: ['critical', 'high'] as const,
-      maxQuestions: 8 // ✅ Increased from 6 for better coverage
-    },
-  }
+  // ✅ PHASE 3: Use centralized threshold configuration
+  const rules = QUESTION_INTENSITY
 
   const rule = rules[intensity]
 
@@ -558,7 +544,7 @@ export async function generateDynamicQuestions(
     request.systemDescription,
     {
       limit: 100, // ✅ Increased from 50 to support more questions
-      minSimilarity: 0.3, // ✅ LOWERED from 0.6 to 0.3 to get more incidents (matches PRE-FILTER threshold)
+      minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity, // ✅ PHASE 3: Use centralized threshold (0.3)
       industry: request.industry,
       severity: ['medium', 'high', 'critical'],
     }
@@ -804,9 +790,9 @@ async function generateRiskQuestions(
       ? request.selectedDomains
       : ['ai', 'cyber', 'cloud']
   const questionsPerDomain = request.questionsPerDomain || 12 // ✅ OPTIMIZED: Default 12 per domain (was 25)
-  // ✅ FIX: Lower default threshold to 0.3 (30%) to allow more questions through
+  // ✅ PHASE 3: Use centralized pre-filter threshold for minimum weight
   // Intensity filtering will handle final selection based on user's choice (high/medium/low)
-  const minWeight = request.minRiskPotential || request.minWeight || 0.3 // ✅ Default 30% risk threshold (was 0.7)
+  const minWeight = request.minRiskPotential || request.minWeight || PRE_FILTER_THRESHOLDS.minWeight // ✅ Default from centralized config (0.3)
 
   console.log(`Generating ${questionsPerDomain} questions per domain for: ${selectedDomains.join(', ')}`)
   console.log(`Minimum risk threshold (pre-filter): ${(minWeight * 100).toFixed(0)}% (intensity filtering will apply additional rules)`)
@@ -883,8 +869,8 @@ async function generateRiskQuestions(
   console.log(`[PARALLEL] ✅ Generated ${generatedQuestions.length} questions in ${generationTime}s (parallel execution)`)
 
   // Filter out failed questions and apply thresholds
-  // ✅ FIX: Lower from 3 to 1 to allow more questions (intensity filtering handles final selection)
-  const minIncidentCount = request.minIncidentCount || 1
+  // ✅ PHASE 3: Use centralized pre-filter threshold for minimum incident count
+  const minIncidentCount = request.minIncidentCount || PRE_FILTER_THRESHOLDS.minIncidentCount
 
   console.log(`\n🔍 [PRE-FILTER] Applying initial filter: minWeight=${minWeight}, minIncidentCount=${minIncidentCount}`)
   let filteredByWeight = 0
@@ -1022,9 +1008,9 @@ async function generateSingleRiskQuestion(
 
   // Perform dedicated vector search for this specific question
   const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
-    limit: 20,
+    limit: VECTOR_SEARCH_CONFIG.incidentsPerQuestion, // ✅ PHASE 3: Use centralized config (20)
     industry: request.industry,
-    minSimilarity: 0.3
+    minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity // ✅ PHASE 3: Use centralized threshold (0.3)
   })
 
   console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} question-specific incidents for "${priorityArea.area}"`)
@@ -1361,9 +1347,9 @@ async function generateSingleComplianceQuestion(
 
   // Perform dedicated vector search for this specific compliance area
   const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
-    limit: 15,
+    limit: VECTOR_SEARCH_CONFIG.maxEvidenceIncidents, // ✅ PHASE 3: Use centralized config (15)
     industry: request.industry,
-    minSimilarity: 0.3
+    minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity // ✅ PHASE 3: Use centralized threshold (0.3)
   })
 
   console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} question-specific incidents for compliance "${complianceArea}"`)
