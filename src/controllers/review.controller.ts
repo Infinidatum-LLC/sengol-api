@@ -73,6 +73,7 @@ interface GenerateQuestionsBody {
   customTech?: string[]
   questionIntensity?: 'high' | 'medium' | 'low' // Optional intensity filter
   forceRegenerate?: boolean // Force bypass all caches and regenerate from scratch
+  skipIncidentSearch?: boolean // NEW: Skip incident search for faster generation (5-10s vs 30-120s)
 }
 
 export async function generateQuestionsController(
@@ -91,7 +92,8 @@ export async function generateQuestionsController(
     selectedTech,
     customTech,
     questionIntensity,
-    forceRegenerate
+    forceRegenerate,
+    skipIncidentSearch = false
   } = request.body
 
   try {
@@ -150,6 +152,10 @@ export async function generateQuestionsController(
       })
     }
 
+    if (skipIncidentSearch) {
+      console.log(`[GENERATE_QUESTIONS] Skip Incident Search: ENABLED - Questions will be generated without incident analysis`)
+    }
+
     // Generate questions
     const result = await generateDynamicQuestions({
       systemDescription,
@@ -158,18 +164,26 @@ export async function generateQuestionsController(
       industry,
       techStack: [...(selectedTech || []), ...(customTech || [])],
       questionIntensity: questionIntensity || 'high', // Default to high if not specified
-      forceRegenerate: forceRegenerate || false // Pass through to service layer
+      forceRegenerate: forceRegenerate || false, // Pass through to service layer
+      skipIncidentSearch: skipIncidentSearch // NEW: Skip incident search for faster generation
     })
+
+    // Build response based on whether incidents were included
+    const responseData: any = {
+      riskQuestions: result.riskQuestions,
+      complianceQuestions: result.complianceQuestions,
+      scoringFormula: result.scoringFormula,
+      generationMetadata: result.generationMetadata
+    }
+
+    // Only include incident summary if NOT skipped
+    if (!skipIncidentSearch && result.incidentSummary) {
+      responseData.incidentSummary = result.incidentSummary
+    }
 
     return reply.send({
       success: true,
-      data: {
-        riskQuestions: result.riskQuestions,
-        complianceQuestions: result.complianceQuestions,
-        scoringFormula: result.scoringFormula,
-        incidentSummary: result.incidentSummary,
-        generationMetadata: result.generationMetadata
-      }
+      data: responseData
     })
   } catch (error) {
     console.error('[GENERATE_QUESTIONS] Error:', error)
@@ -265,6 +279,154 @@ export async function saveQuestionsController(
     request.log.error({ err: error }, 'Failed to save questions')
     return reply.code(500).send({
       error: 'Failed to save questions',
+      message: error instanceof Error ? error.message : 'Unknown error',
+      status: 500
+    })
+  }
+}
+
+// ============================================================================
+// POST /api/review/:id/incident-analysis
+// ============================================================================
+// NEW ENDPOINT: Run incident analysis AFTER user completes assessment
+// Part of architectural rethink: Decouple incidents from question generation
+// Purpose: Provide holistic incident analysis based on entire system assessment
+// ============================================================================
+
+interface IncidentAnalysisParams {
+  id: string
+}
+
+interface IncidentAnalysisBody {
+  systemDescription: string
+  selectedDomains?: string[]
+  industry?: string
+  technologyStack?: string[]
+}
+
+export async function incidentAnalysisController(
+  request: FastifyRequest<{
+    Params: IncidentAnalysisParams
+    Body: IncidentAnalysisBody
+  }>,
+  reply: FastifyReply
+) {
+  const { id } = request.params
+  const {
+    systemDescription,
+    selectedDomains = [],
+    industry,
+    technologyStack = []
+  } = request.body
+
+  try {
+    // Validate system description
+    if (!systemDescription || typeof systemDescription !== 'string' || systemDescription.trim().length === 0) {
+      return reply.code(400).send({
+        error: 'System description is required',
+        message: 'Please provide a system description for incident analysis',
+        status: 400
+      })
+    }
+
+    // Get assessment to verify ownership and gather context
+    const assessment = await prisma.riskAssessment.findUnique({
+      where: { id }
+    })
+
+    if (!assessment) {
+      return reply.code(404).send({
+        error: 'Assessment not found',
+        status: 404
+      })
+    }
+
+    console.log(`[INCIDENT_ANALYSIS] Assessment: ${id}`)
+    console.log(`[INCIDENT_ANALYSIS] System: ${systemDescription.substring(0, 100)}...`)
+    console.log(`[INCIDENT_ANALYSIS] Domains: ${(selectedDomains || []).join(', ') || 'all'}`)
+    console.log(`[INCIDENT_ANALYSIS] Industry: ${industry || 'not specified'}`)
+
+    // Call the incident search service to find relevant incidents
+    // NOTE: This uses the same findSimilarIncidents function as question generation,
+    // but now applied holistically to the entire system assessment
+    const { findSimilarIncidents, calculateIncidentStatistics } = await import('../services/incident-search')
+
+    const incidents = await findSimilarIncidents(
+      systemDescription,
+      {
+        domains: selectedDomains || [],
+        industry,
+        technologies: technologyStack || []
+      },
+      20 // Return top 20 most relevant incidents for this system
+    )
+
+    console.log(`[INCIDENT_ANALYSIS] Found ${incidents.length} relevant incidents`)
+
+    // Calculate overall statistics from the incident matches
+    const statistics = calculateIncidentStatistics(incidents)
+
+    // Build comprehensive incident analysis response
+    const incidentSummary = {
+      totalIncidentsAnalyzed: incidents.length,
+      relevantIncidents: incidents.length,
+      avgSimilarityScore: incidents.length > 0
+        ? incidents.reduce((sum, inc) => sum + (inc.similarity || 0), 0) / incidents.length
+        : 0,
+      avgIncidentCost: statistics.avgCost || 0,
+      totalIncidentCost: statistics.totalCost || 0,
+      topRisks: statistics.topRisks || [],
+      averageSeverity: statistics.avgSeverity || 0,
+      industryBenchmark: {
+        avgCost: industry ? statistics.avgCost || 0 : 0,
+        avgSeverity: industry ? statistics.avgSeverity || 0 : 0,
+        yourSystemRiskLevel: incidents.length > 0 ? 'HIGH' : 'LOW'
+      }
+    }
+
+    // Save incident analysis to database for future reference
+    await prisma.riskAssessment.update({
+      where: { id },
+      data: {
+        complianceNotes: {
+          ...((assessment.complianceNotes as any) || {}),
+          incidentAnalysis: incidentSummary,
+          analyzedAt: new Date().toISOString()
+        },
+        updatedAt: new Date()
+      }
+    })
+
+    request.log.info(
+      {
+        assessmentId: id,
+        incidentCount: incidents.length,
+        avgSimilarity: incidentSummary.avgSimilarityScore
+      },
+      'Incident analysis completed'
+    )
+
+    return reply.send({
+      success: true,
+      data: {
+        incidentSummary,
+        topIncidents: incidents.slice(0, 20).map(inc => ({
+          id: inc.id,
+          title: inc.title || inc.description,
+          year: inc.year || new Date().getFullYear(),
+          cost: inc.cost || inc.estimatedCost || 0,
+          severity: inc.severity || 0,
+          similarity: inc.similarity || 0,
+          description: inc.description,
+          category: inc.category,
+          incidentType: inc.incidentType
+        }))
+      }
+    })
+  } catch (error) {
+    console.error('[INCIDENT_ANALYSIS] Error:', error)
+    return reply.code(500).send({
+      error: 'Failed to analyze incidents',
       message: error instanceof Error ? error.message : 'Unknown error',
       status: 500
     })
