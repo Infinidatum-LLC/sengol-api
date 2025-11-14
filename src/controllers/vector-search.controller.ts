@@ -72,7 +72,11 @@ export async function vectorSearchController(
     request.log.info({ query, limit, type }, 'Vector search request')
 
     // Check cache first
-    const cacheKey = generateCacheKey('vector-search', query, limit, type)
+    const cacheKey = generateCacheKey({
+      query,
+      limit,
+      filters: type ? { type } : undefined,
+    })
     const cached = vectorSearchCache.get(cacheKey)
 
     if (cached) {
@@ -248,7 +252,7 @@ export async function vectorSearchController(
     }
 
     // Cache the results (24 hour TTL for vector searches)
-    vectorSearchCache.set(cacheKey, response, 24 * 60 * 60 * 1000)
+    vectorSearchCache.set(cacheKey, response)
 
     request.log.info(
       {
