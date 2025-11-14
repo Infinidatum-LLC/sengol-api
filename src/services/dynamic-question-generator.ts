@@ -1587,22 +1587,8 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
       cost: incident.estimatedCost || 0
     })),
 
-    // ✅ CRITICAL: Evidence object with benchmarking data
-    evidence: {
-      ...evidence,
-      benchmarking: {
-        industryAverageCost: avgFine,
-        affectedCompanies: relevantIncidents.length,
-        complianceFrameworks: (llmAnalysis.complianceRequirements || []).join(', '),
-        riskLevel: avgSeverity > 7 ? 'critical' : avgSeverity > 5 ? 'high' : 'medium',
-        estimatedLiability: totalCost,
-        caseAnalysis: {
-          patterns: relevantIncidents.slice(0, 3).map((_, i) => `Pattern ${i + 1}: ${complianceArea} violation in regulated industry`),
-          commonCauses: ['Inadequate documentation', 'Insufficient controls', 'Lack of enforcement'],
-          recommendations: generateComplianceMitigations(complianceArea)
-        }
-      }
-    },
+    // ✅ CRITICAL: Evidence object (maintains existing type structure)
+    evidence,
 
     baseWeight,
     evidenceWeight,
@@ -1612,8 +1598,6 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
 
     weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `Required by ${(llmAnalysis.complianceRequirements || []).join(', ')}`),
     evidenceQuery: complianceArea,
-    relatedIncidents: relevantIncidents.slice(0, 5),
-    similarIncidents: relevantIncidents.slice(0, 5),
     relatedIncidentCount: relevantIncidents.length,
 
     category: 'compliance',
