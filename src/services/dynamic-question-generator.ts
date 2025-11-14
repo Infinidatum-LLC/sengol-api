@@ -1056,27 +1056,11 @@ async function generateSingleRiskQuestion(
     : 5
 
   const evidenceSummary = `
-Risk Category: ${priorityArea.area}
-Risk Reasoning: ${priorityArea.reasoning}
-
-System Context:
-- Description: ${request.systemDescription.substring(0, 300)}
-- Technology Stack: ${(request.techStack || []).slice(0, 5).join(', ') || 'Not specified'}
-- Data Types: ${(request.dataTypes || []).slice(0, 5).join(', ') || 'Not specified'}
-- Data Sources: ${(request.dataSources || []).slice(0, 5).join(', ') || 'Not specified'}
-- Industry: ${request.industry || 'Not specified'}
-- Deployment: ${request.deployment || 'Not specified'}
-
-Evidence from Incident Database (78K+ incidents):
-- ${relevantIncidents.length} highly relevant incidents found
-- Average severity: ${avgSeverity.toFixed(1)}/10
-- Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%
-- Estimated avg cost: $${(avgCost / 1000).toFixed(0)}K per incident
-
-Recent Examples (Top 3):
-${relevantIncidents.slice(0, 3).map((ex, i) =>
-  `${i + 1}. ${ex.organization || 'Organization'} - ${ex.incidentType} (${ex.incidentDate ? new Date(ex.incidentDate).toISOString().split('T')[0] : 'Recent'}, severity: ${ex.severity || 'medium'})`
-).join('\n')}
+Risk: ${priorityArea.area}
+Evidence: ${relevantIncidents.length} incidents found (avg severity: ${avgSeverity.toFixed(1)}/10, relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%)
+System: ${request.systemDescription.substring(0, 150)}
+Tech: ${(request.techStack || []).slice(0, 3).join(', ') || 'General'}
+Data: ${(request.dataTypes || []).slice(0, 2).join(', ') || 'General data'}
 `.trim()
 
   let questionText = priorityArea.area // Fallback
@@ -1244,8 +1228,8 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     description: `Evidence from ${relevantIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance) with average severity ${avgSeverity.toFixed(1)}/10`,
     priority: determinePriority(finalWeight),
 
-    importance: `${priorityArea.reasoning}. Historical data shows ${relevantIncidents.length} similar incidents with average cost of $${avgCost.toLocaleString()}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
-    reasoning: `${priorityArea.reasoning}. Evidence from ${relevantIncidents.length} incidents with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance (severity ${avgSeverity.toFixed(1)}/10)`,
+    importance: `${relevantIncidents.length} incidents found (severity ${avgSeverity.toFixed(1)}/10, relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}%, avg cost $${(avgCost / 1000).toFixed(0)}K).`,
+    reasoning: `${relevantIncidents.length} incidents | Severity ${avgSeverity.toFixed(1)}/10 | Relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}% | Cost $${(avgCost / 1000).toFixed(0)}K`,
     examples,
     mitigations: generateMitigations(priorityArea.area, relevantIncidents),
     regulations: extractRegulations(relevantIncidents, llmAnalysis),
