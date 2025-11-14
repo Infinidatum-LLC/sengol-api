@@ -1025,7 +1025,8 @@ async function generateSingleRiskQuestion(
   console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} total incidents, ${newIncidents.length} new for "${priorityArea.area}" (${questionSpecificIncidents.length - newIncidents.length} duplicates filtered)`)
 
   // ✅ Calculate multi-factor relevance for question-specific incidents
-  const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
+  // CRITICAL: Use newIncidents (filtered deduplicated list) instead of questionSpecificIncidents (unfiltered)
+  const incidentsWithRelevance = newIncidents.map(incident => ({
     incident,
     multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
     technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
