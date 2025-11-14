@@ -990,6 +990,9 @@ function getDomainSpecificRiskAreas(
     .sort((a, b) => b.priority - a.priority)
 }
 
+// Track used incident IDs across all questions to prevent duplication
+const usedIncidentIds = new Set<string>()
+
 async function generateSingleRiskQuestion(
   priorityArea: { area: string; priority: number; reasoning: string },
   relatedIncidents: IncidentMatch[], // Kept for backward compatibility but will perform dedicated search
@@ -1008,12 +1011,18 @@ async function generateSingleRiskQuestion(
 
   // Perform dedicated vector search for this specific question
   const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
-    limit: VECTOR_SEARCH_CONFIG.incidentsPerQuestion, // ✅ PHASE 3: Use centralized config (20)
+    limit: VECTOR_SEARCH_CONFIG.incidentsPerQuestion * 2, // Fetch 2x to account for deduplication
     industry: request.industry,
     minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity // ✅ PHASE 3: Use centralized threshold (0.3)
   })
 
-  console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} question-specific incidents for "${priorityArea.area}"`)
+  // ✅ Filter out incidents already used in previous questions
+  const newIncidents = questionSpecificIncidents.filter(incident => {
+    const incidentId = incident.incidentId || incident.embeddingText
+    return !usedIncidentIds.has(incidentId)
+  })
+
+  console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} total incidents, ${newIncidents.length} new for "${priorityArea.area}" (${questionSpecificIncidents.length - newIncidents.length} duplicates filtered)`)
 
   // ✅ Calculate multi-factor relevance for question-specific incidents
   const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
@@ -1255,6 +1264,14 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     confidence: calculateConfidence(relevantIncidents, baseWeight) > 0.7 ? 'high' : 'medium',
     aiGenerated: true,
   }
+
+  // ✅ CRITICAL: Mark all used incidents as processed to prevent duplication
+  relevantIncidents.forEach(incident => {
+    const incidentId = incident.incidentId || incident.embeddingText
+    usedIncidentIds.add(incidentId)
+  })
+
+  console.log(`[INCIDENT_DEDUPLICATION] Added ${relevantIncidents.length} incidents to used set for "${priorityArea.area}"`)
 
   return question
 }
