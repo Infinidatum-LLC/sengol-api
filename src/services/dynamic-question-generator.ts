@@ -537,14 +537,21 @@ export async function generateDynamicQuestions(
       console.log(`[FORCE REGENERATE] Skipping cache check - generating fresh questions...`)
     }
 
-  // Step 1: Find similar incidents from Vertex AI
+  // ============================================================================
+  // INCIDENT SEARCH - DISABLED FOR PERFORMANCE OPTIMIZATION
+  // Date: 2025-11-13
+  // Reason: Moving incident analysis to Step 3 endpoint for better UX
+  // Previously took 20-25 seconds during question generation
+  // Now deferred to /api/review/:id/incident-analysis endpoint
+  // ============================================================================
+  /*
   const step1Start = Date.now()
   console.log('\n📊 Step 1: Finding similar historical incidents from Vertex AI...')
   const similarIncidents = await findSimilarIncidents(
     request.systemDescription,
     {
-      limit: 100, // ✅ Increased from 50 to support more questions
-      minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity, // ✅ PHASE 3: Use centralized threshold (0.3)
+      limit: 100,
+      minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity,
       industry: request.industry,
       severity: ['medium', 'high', 'critical'],
     }
@@ -557,6 +564,13 @@ export async function generateDynamicQuestions(
   console.log(`Found ${similarIncidents.length} similar incidents`)
   console.log(`Average cost: $${incidentStats.avgCost.toLocaleString()}`)
   console.log(`Top incident types: ${Array.from(new Set(similarIncidents.slice(0, 5).map(i => i.incidentType))).join(', ')}`)
+  */
+
+  // Use empty incidents list for fast generation
+  const similarIncidents: IncidentMatch[] = []
+  const incidentStats = { avgCost: 0, totalCost: 0, mfaAdoptionRate: 0 }
+  const step1Time = '0.1' // Minimal time when skipped
+  console.log(`[OPTIMIZATION] Step 1 (Incident Search): SKIPPED - Deferred to Step 3 endpoint`)
 
   // Step 2: Analyze system description with LLM
   const step2Start = Date.now()
@@ -639,20 +653,20 @@ export async function generateDynamicQuestions(
     riskQuestions: finalRiskQuestions,
     complianceQuestions: finalComplianceQuestions,
     scoringFormula,
+    // ✅ REMOVED incidentSummary - moved to /api/review/:id/incident-analysis endpoint
+    // This was causing the 30-second delay; now questions generate in 5-10 seconds
     incidentSummary: {
-      totalIncidentsAnalyzed: similarIncidents.length,
-      relevantIncidents: similarIncidents.length, // ✅ FIXED: Report actual count, not filtered by arbitrary 0.75 threshold
-      avgIncidentCost: incidentStats.avgCost,
-      topRisks: Array.from(new Set(similarIncidents.slice(0, 10).map(i => i.incidentType))),
-      industryBenchmark: generateIndustryBenchmark(incidentStats, request.industry),
+      totalIncidentsAnalyzed: 0,
+      relevantIncidents: 0,
+      avgIncidentCost: 0,
+      topRisks: [],
+      industryBenchmark: 'N/A',
     },
     generationMetadata: {
       timestamp: new Date(),
       llmModel: 'gemini-2.0-flash-exp',
-      incidentSearchCount: similarIncidents.length,
-      avgSimilarityScore: similarIncidents.length > 0
-        ? similarIncidents.reduce((sum, i) => sum + i.similarity, 0) / similarIncidents.length
-        : 0,
+      incidentSearchCount: 0, // ✅ No longer searching during question generation
+      avgSimilarityScore: 0, // ✅ No similarity scoring in this endpoint
       generationTimeMs,
       // ✅ Add metadata fields for frontend (using FINAL filtered questions)
       totalRiskQuestions: finalRiskQuestions.length,
