@@ -7,7 +7,6 @@ dist/
 coverage/
 .vscode/
 .idea/
-.vercel
 # Google Cloud credentials
 sengolvertexapi-*.json
 sengol-api-key.json
