@@ -114,6 +114,7 @@ export interface QuestionGenerationRequest {
 
   // Cache control
   forceRegenerate?: boolean // Force bypass all caches and regenerate from scratch (default: false)
+  skipIncidentSearch?: boolean // Skip incident search for faster generation (5-10s vs 30s) - moved to Step 3 (default: false)
 }
 
 export interface QuestionGenerationResult {

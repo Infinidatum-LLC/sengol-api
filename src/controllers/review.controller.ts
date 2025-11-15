@@ -163,7 +163,8 @@ export async function generateQuestionsController(
       jurisdictions,
       industry,
       techStack: [...(selectedTech || []), ...(customTech || [])],
-      questionIntensity: questionIntensity || 'high' // Default to high if not specified
+      questionIntensity: questionIntensity || 'high', // Default to high if not specified
+      skipIncidentSearch: skipIncidentSearch // Pass through the parameter to control incident search behavior
     })
 
     // Build response based on whether incidents were included
