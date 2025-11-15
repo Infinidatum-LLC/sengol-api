@@ -839,7 +839,7 @@ async function generateRiskQuestions(
   // ✅ RATE LIMITING: Batch requests to avoid quota exhaustion
   // Optimized for performance: Increased batch size and reduced delay
   const BATCH_SIZE = 8 // Process 8 questions at a time (increased from 5 for 37% speedup)
-  const DELAY_BETWEEN_BATCHES_MS = 8000 // 8 seconds between batches (reduced from 12s for 33% speedup)
+  const DELAY_BETWEEN_BATCHES_MS = 2000 // 2 seconds between batches (reduced from 8s for 75% speedup)
 
   const generatedQuestions: (DynamicQuestion | null)[] = []
 
