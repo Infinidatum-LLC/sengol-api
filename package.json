@@ -10,8 +10,7 @@
     "test": "vitest",
     "test:watch": "vitest --watch",
     "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "vercel-build": "prisma generate && tsc"
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "keywords": [
     "api",
@@ -46,7 +45,6 @@
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
     "@types/node": "^20.11.19",
-    "@vercel/node": "^5.5.4",
     "eslint": "^8.57.0",
     "prettier": "^3.2.5",
     "prisma": "^5.10.0",
