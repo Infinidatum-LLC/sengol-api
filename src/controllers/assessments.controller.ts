@@ -199,6 +199,7 @@ interface UpdateStep1Body {
   deployment?: string
   systemCriticality?: string
   dataTypes?: string[]
+  dataSources?: string[]
   techStack?: string[]
 }
 
@@ -208,7 +209,7 @@ export async function updateAssessmentStep1Controller(
 ) {
   try {
     const { id } = request.params
-    const { userId, systemDescription, selectedDomains, jurisdictions, industry, deployment, systemCriticality, dataTypes, techStack } = request.body
+    const { userId, systemDescription, selectedDomains, jurisdictions, industry, deployment, systemCriticality, dataTypes, dataSources, techStack } = request.body
 
     if (!userId || !systemDescription) {
       throw new ValidationError('userId and systemDescription are required')
@@ -237,6 +238,7 @@ export async function updateAssessmentStep1Controller(
         industry: industry || assessment.industry,
         systemCriticality: systemCriticality || assessment.systemCriticality,
         dataTypes: dataTypes || [],
+        dataSources: dataSources || [],
         techStack: techStack || [],
         ...(deployment && { deploymentEnv: deployment }),
       },

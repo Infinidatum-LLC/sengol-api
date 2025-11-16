@@ -32,6 +32,7 @@ model User {
   complianceControls     ComplianceControl[]
   complianceGaps         ComplianceGap[]
   emailVerifications     EmailVerification[]
+  eulas                  EULA[]
   evidenceArtifacts      EvidenceArtifact[]
   frameworks             Framework[]
   modelEndpoints         ModelEndpoint[]
@@ -110,6 +111,58 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([token])
+}
+
+model EULA {
+  id        String   @id @default(cuid())
+  userId    String
+  version   String   // EULA version accepted (e.g., "1.0", "2.0")
+  accepted  Boolean  @default(true)
+  acceptedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, version])
+  @@index([userId])
+}
+
+model SourceRegistry {
+  id                    String   @id @default(cuid())
+  sourceName            String?  @map("source_name") // Source name (e.g., "Federal Register", "AIAAIC")
+  sourceUrl             String?  @unique @map("source_url") // Unique source URL
+  sourceType            String?  @map("source_type") // 'rss', 'api', 'web', 'graphql', 'sitemap'
+  description           String?  // Description
+  discoveryMethod       String?  @map("discovery_method") // 'manual', 'auto_rss', 'auto_api', 'auto_sitemap'
+  discoveredAt          DateTime? @map("discovered_at") // When source was discovered
+  scheduleCron          String?  @map("schedule_cron") // Cron schedule for crawling
+  crawlerClass          String?  @map("crawler_class") // Python crawler class name
+  crawlConfig           Json?    @map("crawl_config") // Crawler configuration as JSONB
+  targetTable           String?  @map("target_table") // Target table for crawled data
+  consecutiveFailures   Int?     @map("consecutive_failures") // Failed crawl attempts
+  avgDurationSeconds    Float?   @map("avg_duration_seconds") // Average crawl duration
+  avgRecordsPerCrawl    Int?     @map("avg_records_per_crawl") // Average records per crawl
+  successRate           Decimal? @db.Decimal(5,2) @map("success_rate") // Success rate percentage
+  tags                  String?  // Tags for categorization
+  metadata              Json?    // Additional metadata
+  category              String?  // Category for source
+  priority              Int?     // Priority level
+  createdBy             String?  @map("created_by") // User who created this source
+  lastCrawledAt         DateTime? @map("last_crawled_at") // Last time this source was crawled
+  enabled               Boolean  @default(false)
+  verified              Boolean  @default(false)
+  verificationDate      DateTime? @map("verification_date") // Date when source was verified
+  nextScheduledCrawl    DateTime? @map("next_scheduled_crawl") // Next scheduled crawl time
+  lastErrorMessage      String?  @map("last_error_message") // Last error message from crawler
+  lastErrorAt           DateTime? @map("last_error_at") // Timestamp of last error
+  updatedBy             String?  @map("updated_by") // User who last updated this source
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime? @map("updated_at") // Made optional to accommodate existing data
+  qualityScore          Float?   @map("quality_score") // Quality score for the source
+
+  @@map("source_registry")
+  @@index([enabled])
+  @@index([sourceType])
 }
 
 model Project {
@@ -239,6 +292,7 @@ model RiskAssessment {
   systemDescription String?  @db.Text // Rich description of AI system for better analysis
   systemCriticality String? // High, Medium, Low
   dataTypes         String[] // PII, Financial, Health, Biometric, etc.
+  dataSources       String[] @default([]) // Data sources used (APIs, databases, etc.)
   techStack         String[] @default([]) // Technologies used (GPT-4, PostgreSQL, AWS, etc.)
 
   // Compliance & Regulatory Fields

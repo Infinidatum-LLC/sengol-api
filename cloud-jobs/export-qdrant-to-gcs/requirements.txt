@@ -1,0 +1,2 @@
+qdrant-client==1.15.1
+google-cloud-storage==2.10.0

@@ -1,6 +1,10 @@
 /**
  * SIMPLIFIED Qdrant Client - Rewritten from scratch
  * Based on successful Python tests that proved the data works
+ *
+ * Supports both:
+ * - Self-hosted Qdrant (HTTP, no auth)
+ * - Qdrant Cloud (HTTPS, API key auth)
  */
 
 import { QdrantClient } from '@qdrant/js-client-rest'
@@ -9,13 +13,21 @@ import { OpenAI } from 'openai'
 // Configuration
 const QDRANT_HOST = process.env.QDRANT_HOST || 'localhost'
 const QDRANT_PORT = parseInt(process.env.QDRANT_PORT || '6333')
+const QDRANT_API_KEY = process.env.QDRANT_API_KEY
+const QDRANT_USE_HTTPS = process.env.QDRANT_USE_HTTPS === 'true'
 const COLLECTION_NAME = 'sengol_incidents'
 const EMBEDDING_MODEL = 'text-embedding-3-small'
 const EMBEDDING_DIMENSIONS = 1536
 
+// Determine if using Qdrant Cloud or self-hosted
+const IS_QDRANT_CLOUD = !!QDRANT_API_KEY
+
 console.log(`[Qdrant] Configuration:`)
+console.log(`  Mode: ${IS_QDRANT_CLOUD ? 'QDRANT CLOUD (HTTPS + API Key)' : 'Self-Hosted (HTTP)'}`)
 console.log(`  Host: ${QDRANT_HOST}`)
-console.log(`  Port: ${QDRANT_PORT}`)
+if (!IS_QDRANT_CLOUD) {
+  console.log(`  Port: ${QDRANT_PORT}`)
+}
 console.log(`  Collection: ${COLLECTION_NAME}`)
 console.log(`  Model: ${EMBEDDING_MODEL}`)
 
@@ -25,12 +37,26 @@ let openaiClient: OpenAI | null = null
 
 /**
  * Get Qdrant client
+ * Automatically configures for Qdrant Cloud or self-hosted based on env vars
  */
 function getQdrantClient(): QdrantClient {
   if (!qdrantClient) {
-    qdrantClient = new QdrantClient({
-      url: `http://${QDRANT_HOST}:${QDRANT_PORT}`,
-    })
+    const clientConfig: any = {}
+
+    if (IS_QDRANT_CLOUD) {
+      // Qdrant Cloud: Use HTTPS with API key
+      // Host format: "xxxxx.qdrant.io" (already includes domain)
+      clientConfig.url = `https://${QDRANT_HOST}`
+      clientConfig.apiKey = QDRANT_API_KEY
+      console.log(`[Qdrant] Using Qdrant Cloud at: https://${QDRANT_HOST}`)
+    } else {
+      // Self-hosted: Use HTTP with host and port
+      const protocol = QDRANT_USE_HTTPS ? 'https' : 'http'
+      clientConfig.url = `${protocol}://${QDRANT_HOST}:${QDRANT_PORT}`
+      console.log(`[Qdrant] Using self-hosted at: ${protocol}://${QDRANT_HOST}:${QDRANT_PORT}`)
+    }
+
+    qdrantClient = new QdrantClient(clientConfig)
     console.log(`[Qdrant] Client initialized`)
   }
   return qdrantClient

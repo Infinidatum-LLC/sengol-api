@@ -1300,6 +1300,98 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
 // COMPLIANCE QUESTION GENERATION
 // ============================================================================
 
+/**
+ * Generate comprehensive fallback compliance question when LLM generation fails
+ * Creates fully-formed questions with context instead of just framework names
+ */
+function generateComplianceFallbackQuestion(
+  complianceArea: string,
+  request: QuestionGenerationRequest,
+  llmAnalysis: LLMAnalysis,
+  incidentCount: number,
+  avgSeverity: number
+): string {
+  // Map compliance areas to specific control questions
+  const controlMappings: Record<string, string[]> = {
+    'GDPR': [
+      'Has your organization implemented documented procedures for data subject rights requests (access, rectification, erasure) and can you demonstrate compliance with GDPR Article 12-22 response timelines?',
+      'Do you maintain detailed records of processing activities, data protection impact assessments, and processor contracts as required by GDPR Articles 5 and 28?',
+      'Has your organization appointed a Data Protection Officer, implemented privacy by design principles, and conducted privacy impact assessments for high-risk processing activities?'
+    ],
+    'PCI-DSS': [
+      'Has your organization implemented end-to-end encryption for payment card data in transit and at rest, and do you regularly test your cryptographic implementations to ensure compliance with PCI-DSS Requirements 3.2 and 4.1?',
+      'Do you maintain a robust system for monitoring and logging all access to cardholder data, with documented incident response procedures that have been tested in the past 12 months?',
+      'Has your organization implemented multi-factor authentication for all user access to card data environments, and do you maintain segregated networks with firewalls configured per PCI-DSS requirements?'
+    ],
+    'HIPAA': [
+      'Has your organization implemented comprehensive access controls, audit logging, and encryption for all protected health information (PHI) as required by HIPAA Technical Safeguards (45 CFR §164.312)?',
+      'Do you maintain a documented Business Associate Agreement (BAA) with all vendors processing PHI, and have you conducted a Security Risk Analysis in the past 12 months?',
+      'Has your organization implemented an incident response and reporting plan for HIPAA breaches, and do you maintain evidence of employee HIPAA training on an annual basis?'
+    ],
+    'SOC 2': [
+      'Has your organization documented and tested controls for security, availability, and processing integrity, and does your control environment support the operational objectives related to your system?',
+      'Do you maintain evidence that access to systems and data is restricted to authorized personnel, and that user activity is monitored and logged for audit purposes?',
+      'Has your organization implemented procedures to identify, record, and resolve security incidents, with documented evidence of incident response testing within the past year?'
+    ],
+    'ISO 27001': [
+      'Has your organization implemented an information security management system (ISMS) with documented policies, procedures, and controls aligned with ISO 27001 requirements?',
+      'Do you conduct annual risk assessments, maintain asset inventories, and implement access controls based on your information classification scheme?',
+      'Has your organization implemented an audit schedule, maintain records of management reviews, and demonstrate continuous improvement of your ISMS?'
+    ],
+    'Data Inventory': [
+      'Do you maintain a comprehensive data inventory documenting all personal data or sensitive information your system processes, including data types, sources, processing purposes, and storage locations?',
+      'Have you classified all data assets by sensitivity level, implemented appropriate retention policies, and documented all data flows within your system architecture?',
+      'Can you demonstrate that your data inventory is regularly updated, that data lineage is tracked, and that you have documented approval for each data processing activity?'
+    ],
+    'Security Measures': [
+      'Have you implemented multi-layered security controls including network segmentation, endpoint protection, intrusion detection, and vulnerability management programs?',
+      'Do you maintain documented evidence of regular security assessments, penetration testing, and remediation of identified vulnerabilities within defined timeframes?',
+      'Has your organization implemented secure development practices, including code review processes, security testing in CI/CD pipelines, and dependency scanning for known vulnerabilities?'
+    ],
+    'Consent Management': [
+      'Does your system implement granular consent management that clearly explains data processing purposes, allows users to grant or withdraw consent, and maintains audit trails of all consent decisions?',
+      'Have you documented your legal basis for each data processing activity, and do you distinguish between explicit consent, implied consent, and legitimate interest legal bases?',
+      'Can you demonstrate that consent is freely given, specific, informed, and unambiguous, and that users can easily withdraw consent through your system?'
+    ],
+    'Breach Response': [
+      'Has your organization documented an incident response plan that includes detection procedures, containment strategies, eradication steps, and recovery procedures for security breaches?',
+      'Do you maintain procedures for notifying affected individuals and regulators of personal data breaches within required timeframes, with documented evidence of past breach notifications?',
+      'Have you implemented procedures to preserve evidence from security incidents, conduct root cause analysis, and implement corrective actions to prevent recurrence?'
+    ]
+  }
+
+  // Get relevant questions for this compliance area (fallback to generic question if no mapping exists)
+  let baseQuestions = controlMappings[complianceArea] || [
+    `Has your organization implemented documented security controls and procedures to address ${complianceArea} regulatory requirements, and can you provide evidence of compliance testing?`,
+    `Do you maintain an audit trail of all access to systems subject to ${complianceArea} requirements, and have you conducted compliance assessments in the past 12 months?`,
+    `Has your organization implemented incident response procedures specific to ${complianceArea} requirements, with documented evidence of employee training and testing?`
+  ]
+
+  // Select the most appropriate question based on the system's characteristics
+  let selectedQuestion = baseQuestions[0]
+
+  // Customize based on system characteristics
+  if (request.techStack?.includes('kubernetes') || request.techStack?.includes('cloud')) {
+    // For cloud/containerized systems, emphasize cloud-specific controls
+    const cloudQuestions: Record<string, string> = {
+      'GDPR': 'Has your organization ensured that cloud service providers demonstrate GDPR compliance, and do you maintain data processing agreements with clear responsibilities for data protection in the cloud?',
+      'PCI-DSS': 'For card data processed in the cloud, do you have documented evidence of cloud provider PCI-DSS compliance, and have you implemented additional network security controls specific to cloud environments?',
+      'Security Measures': 'Has your cloud infrastructure been configured with encrypted data at rest and in transit, with proper identity and access management (IAM) policies, and network security groups/security groups properly configured?',
+      'SOC 2': 'Do your cloud service providers maintain current SOC 2 Type II reports, and have you reviewed their control effectiveness relevant to your compliance obligations?'
+    }
+    if (cloudQuestions[complianceArea]) {
+      selectedQuestion = cloudQuestions[complianceArea]
+    }
+  }
+
+  // Add evidence context if available
+  if (incidentCount > 0) {
+    selectedQuestion += ` (Based on ${incidentCount} real compliance violations with an average severity rating of ${avgSeverity.toFixed(1)}/10)`
+  }
+
+  return selectedQuestion
+}
+
 async function generateComplianceQuestions(
   request: QuestionGenerationRequest,
   incidents: IncidentMatch[],
@@ -1446,22 +1538,26 @@ ${relevantIncidents.slice(0, 3).map((ex, i) =>
       messages: [
         {
           role: 'system',
-          content: `You are a compliance and regulatory risk expert. Generate a formal, structured compliance assessment question based on real-world regulatory violations and system context.
+          content: `You are a compliance and regulatory risk expert. Generate a formal, comprehensive compliance assessment question based on real-world regulatory violations and system context.
 
-The question MUST:
-1. Be highly specific to the user's system and regulatory requirements:
-   - Technologies: ${(request.techStack || []).slice(0, 3).join(', ')}
-   - Data types: ${(request.dataTypes || []).slice(0, 3).join(', ')}
-   - Jurisdictions: ${(request.jurisdictions || []).slice(0, 3).join(', ')}
-2. Reference the compliance area: ${complianceArea}
-3. Incorporate evidence from ${relevantIncidents.length} real compliance violations with ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance
-4. Be clear and actionable (answerable with: "addressed", "partially addressed", "not addressed", or "not applicable")
-5. Focus on specific compliance controls or requirements
-6. Use formal, professional language
-7. Be concise (1-2 sentences max)
-8. Highlight connections to regulatory frameworks: ${(llmAnalysis.complianceRequirements || []).join(', ')}
+The question MUST be:
+1. **Specific & Contextual**: Directly reference the ${complianceArea} compliance area and the user's system (${request.industry || 'the stated industry'})
+2. **Evidence-Based**: Mention or reference that this is based on ${relevantIncidents.length} real compliance violations with average severity of ${avgSeverity.toFixed(1)}/10
+3. **Actionable**: Clearly answerable with "addressed", "partially addressed", "not addressed", or "not applicable"
+4. **Control-Focused**: Ask about specific security controls, procedures, or requirements (e.g., encryption, access controls, data retention, incident response)
+5. **Technology-Aware**: Reference the system's technologies: ${(request.techStack || []).slice(0, 3).join(', ')}
+6. **Data-Aware**: Consider the data types being processed: ${(request.dataTypes || []).slice(0, 3).join(', ')}
+7. **Professional**: Use formal, regulatory language appropriate for compliance documentation
+8. **Concise**: Keep to 2-3 sentences maximum
 
-Format: Return ONLY the question text, nothing else. Do not include any preamble or explanation.`
+CRITICAL: Do NOT simply repeat the framework name. Transform it into a complete, meaningful question about compliance practices.
+Do NOT use phrases like "Do you have..." without context. Instead, ask about specific controls or requirements.
+
+Example transformation:
+- BAD: "PCI-DSS compliance?"
+- GOOD: "Has your organization implemented end-to-end encryption for payment card data in transit and at rest, as required by PCI-DSS requirements 3.2 and 3.4?"
+
+Format: Return ONLY the question text, nothing else. No preamble, explanation, or question numbering.`
         },
         {
           role: 'user',
@@ -1469,7 +1565,7 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
         }
       ],
       temperature: 0.7,
-      maxTokens: 250
+      maxTokens: 300
     })
 
     // ✅ FIX #1: Properly extract and validate LLM response
@@ -1482,18 +1578,26 @@ Format: Return ONLY the question text, nothing else. Do not include any preamble
     console.log(`[LLM_COMPLIANCE] Generated: ${complianceQuestionText.substring(0, 80)}...`)
   } catch (error) {
     console.error(`[LLM_COMPLIANCE] Failed to generate compliance question for ${complianceArea}:`, error)
-    // Use fallback question generation
-    const regulations = (llmAnalysis.complianceRequirements || []).slice(0, 2).join(' and ')
-    const data = (request.dataTypes || [])[0] || 'data'
-    complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
+    // Use comprehensive fallback question generation
+    complianceQuestionText = generateComplianceFallbackQuestion(
+      complianceArea,
+      request,
+      llmAnalysis,
+      relevantIncidents.length,
+      avgSeverity
+    )
   }
 
   // ✅ FIX #1: Validate compliance question text with comprehensive checks
   if (!complianceQuestionText || complianceQuestionText.length < 20 || complianceQuestionText === complianceArea) {
     console.warn(`[VALIDATION] Invalid compliance question text ("${complianceQuestionText}"), using fallback for ${complianceArea}`)
-    const regulations = (llmAnalysis.complianceRequirements || []).slice(0, 2).join(' and ')
-    const data = (request.dataTypes || [])[0] || 'data'
-    complianceQuestionText = `Do you have documented procedures to comply with ${regulations} requirements for ${data} handling in your ${request.deployment || 'system'}?`
+    complianceQuestionText = generateComplianceFallbackQuestion(
+      complianceArea,
+      request,
+      llmAnalysis,
+      relevantIncidents.length,
+      avgSeverity
+    )
   }
 
   // Calculate weights for compliance
