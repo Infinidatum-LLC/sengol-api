@@ -1010,57 +1010,25 @@ const usedIncidentIds = new Set<string>()
 
 async function generateSingleRiskQuestion(
   priorityArea: { area: string; priority: number; reasoning: string },
-  relatedIncidents: IncidentMatch[], // Kept for backward compatibility but will perform dedicated search
+  relatedIncidents: IncidentMatch[], // Pre-filtered incidents from main function (normally empty for LLM-only phase)
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis,
   domain?: 'ai' | 'cyber' | 'cloud'
 ): Promise<DynamicQuestion> {
-  // 🔍 PER-QUESTION VECTOR SEARCH: Each question gets its own dedicated incident search
-  // This ensures each question has the most relevant incidents specific to its topic
-  // Trade-off: Slower generation time but significantly better accuracy
+  // ✅ OPTIMIZATION (2025-11-16): Removed per-question Qdrant search for performance
+  // The main generateDynamicQuestions() function already skips Qdrant for LLM-only generation
+  // This function now uses only the pre-filtered incidents passed in (normally empty array)
+  // Incident search is deferred to Step 3 endpoint for better UX and performance
+  // Expected generation time: 3-5 seconds for all questions (LLM only, no Qdrant calls)
 
-  console.log(`[VECTOR_SEARCH] Performing dedicated search for "${priorityArea.area}"`)
+  console.log(`[LLM_ONLY] Generating question for "${priorityArea.area}" (incident search deferred)`)
 
-  // Build question-specific search query
-  const searchQuery = `${priorityArea.area} security incident vulnerability breach attack ${request.systemDescription.substring(0, 200)}`
+  // Use the incidents passed from main function (normally empty for fast generation)
+  // When incidents are provided later (in step 3), they can be used for enhanced context
+  const relevantIncidents = relatedIncidents
 
-  // Perform dedicated vector search for this specific question
-  const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
-    limit: VECTOR_SEARCH_CONFIG.incidentsPerQuestion * 2, // Fetch 2x to account for deduplication
-    industry: request.industry,
-    minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity // ✅ PHASE 3: Use centralized threshold (0.3)
-  })
-
-  // ✅ Filter out incidents already used in previous questions
-  const newIncidents = questionSpecificIncidents.filter(incident => {
-    const incidentId = incident.incidentId || incident.embeddingText
-    return !usedIncidentIds.has(incidentId)
-  })
-
-  console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} total incidents, ${newIncidents.length} new for "${priorityArea.area}" (${questionSpecificIncidents.length - newIncidents.length} duplicates filtered)`)
-
-  // ✅ Calculate multi-factor relevance for question-specific incidents
-  // CRITICAL: Use newIncidents (filtered deduplicated list) instead of questionSpecificIncidents (unfiltered)
-  const incidentsWithRelevance = newIncidents.map(incident => ({
-    incident,
-    multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
-    technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
-    dataTypeScore: calculateDataTypeMatch(incident, request.dataTypes || []),
-    sourceScore: calculateDataSourceMatch(incident, request.dataSources || [])
-  }))
-
-  // Sort by relevance
-  const filteredIncidents = incidentsWithRelevance
-    .sort((a, b) => b.multiFactorRelevance - a.multiFactorRelevance)
-    .slice(0, 15) // Reduced from 20 to 15
-
-  // Use filtered incidents for this question
-  const relevantIncidents = filteredIncidents.map(i => i.incident)
-
-  // Calculate average multi-factor relevance
-  const avgMultiFactorRelevance = filteredIncidents.length > 0
-    ? filteredIncidents.reduce((sum, i) => sum + i.multiFactorRelevance, 0) / filteredIncidents.length
-    : 0
+  // Calculate average multi-factor relevance (will be 0 for empty incidents array during LLM-only phase)
+  const avgMultiFactorRelevance = relevantIncidents.length > 0 ? 0.5 : 0
 
   // ✅ NEW: Generate formalized question using LLM
   console.log(`[LLM_QUESTION] Generating formalized question for "${priorityArea.area}"...`)
