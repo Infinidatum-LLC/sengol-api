@@ -67,6 +67,7 @@ export async function createAssessmentController(
       async () => {
         return await prisma.riskAssessment.create({
           data: {
+            id: crypto.randomUUID(),
             name,
             userId,
             projectId,
@@ -78,6 +79,7 @@ export async function createAssessmentController(
             timeline: '1-3 months',
             teamSize: 1,
             overallRiskScore: 0,
+            updatedAt: new Date(),
           },
         })
       },
@@ -148,7 +150,7 @@ export async function getAssessmentController(
     const assessment = await prisma.riskAssessment.findUnique({
       where: { id },
       include: {
-        project: true,
+        Project: true,
       },
     })
 

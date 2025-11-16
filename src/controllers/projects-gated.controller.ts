@@ -2,6 +2,7 @@ import { FastifyRequest, FastifyReply } from 'fastify'
 import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError, NotFoundError, AuthorizationError } from '../lib/errors'
 import { checkProjectLimit } from '../services/feature-gates.service'
+import crypto from 'crypto'
 
 // Get raw Prisma client for operations (wrapped with resilient patterns)
 const prisma = resilientPrisma.getRawClient()
@@ -31,7 +32,7 @@ export async function listProjectsController(
       include: {
         _count: {
           select: {
-            riskAssessments: true,
+            RiskAssessment: true,
           },
         },
       },
@@ -41,7 +42,7 @@ export async function listProjectsController(
       success: true,
       data: projects.map(project => ({
         ...project,
-        assessmentCount: project._count.riskAssessments,
+        assessmentCount: project._count.RiskAssessment,
       })),
     })
   } catch (error) {
@@ -104,9 +105,11 @@ export async function createProjectController(
       async () => {
         return await prisma.project.create({
           data: {
+            id: crypto.randomUUID(),
             userId,
             name,
             description: description || null,
+            updatedAt: new Date(),
           },
         })
       },
@@ -177,7 +180,7 @@ export async function getProjectController(
     const project = await prisma.project.findUnique({
       where: { id },
       include: {
-        riskAssessments: {
+        RiskAssessment: {
           orderBy: { createdAt: 'desc' },
         },
       },
