@@ -14,7 +14,7 @@ SERVICE_NAME="sengol-api"
 
 # Get current git commit
 COMMIT_SHA=$(git rev-parse --short HEAD)
-BRANCH=$(git branch --show-current)
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
 
 echo "📦 Project: $PROJECT_ID"
 echo "🌍 Region: $REGION"
@@ -47,8 +47,8 @@ echo ""
   --timeout=300 \
   --max-instances=10 \
   --min-instances=0 \
-  --set-env-vars="NODE_ENV=production,PORT=4000" \
-  --update-secrets="DATABASE_URL=DATABASE_URL:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,JWT_SECRET=JWT_SECRET:latest,QDRANT_HOST=QDRANT_HOST:latest,QDRANT_PORT=QDRANT_PORT:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest,CACHE_ENABLED=CACHE_ENABLED:latest,CACHE_TTL=CACHE_TTL:latest,REQUEST_TIMEOUT=REQUEST_TIMEOUT:latest,OPENAI_TIMEOUT=OPENAI_TIMEOUT:latest" \
+  --set-env-vars="NODE_ENV=production" \
+  --update-secrets="/workspace/.env=sengol-env:latest" \
   --project=$PROJECT_ID
 
 echo ""
