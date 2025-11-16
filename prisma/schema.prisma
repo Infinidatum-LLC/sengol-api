@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
@@ -8,406 +8,8 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                     String                   @id @default(cuid())
-  name                   String?
-  email                  String                   @unique
-  emailVerified          DateTime?
-  image                  String?
-  password               String?
-  role                   String                   @default("user")
-  company                String?
-  jobTitle               String?
-  industry               String?
-  teamSize               String?
-  currentGeographyId     String? // Currently selected geography account
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
-  accounts               Account[]
-  auditReports           AuditReport[]
-  backlogs               Backlog[]
-  backlogActivities      BacklogActivity[]
-  calculations           Calculation[]
-  complianceAssessments  ComplianceAssessment[]
-  complianceControls     ComplianceControl[]
-  complianceGaps         ComplianceGap[]
-  emailVerifications     EmailVerification[]
-  eulas                  EULA[]
-  evidenceArtifacts      EvidenceArtifact[]
-  frameworks             Framework[]
-  modelEndpoints         ModelEndpoint[]
-  notificationChannels   NotificationChannel[]
-  productAccess          ProductAccess[]
-  projects               Project[]
-  purchases              Purchase[]
-  riskAssessments        RiskAssessment[]
-  rivalWatchSubscription RivalWatchSubscription[]
-  sessions               Session[]
-  toolSubscriptions      ToolSubscription[]
-  toolUsage              ToolUsage[]
-  continuousMonitoring   ContinuousMonitoring[]
-  geographyAccounts      GeographyAccount[]
-  geographyMemberships   GeographyAccountMember[]
-  pricingAnalyticsEvents PricingAnalyticsEvent[]
-  regulatoryProfile      UserRegulatoryProfile?
-  passwordResetTokens    PasswordResetToken[]
-  councilMemberships     CouncilMembership[]
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           String   @id @default(cuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model VerificationToken {
-  identifier String
-  token      String   @unique
-  expires    DateTime
-
-  @@unique([identifier, token])
-}
-
-model EmailVerification {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  expires   DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([token])
-}
-
-model PasswordResetToken {
-  id        String   @id @default(cuid())
-  userId    String
-  token     String   @unique
-  expires   DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([token])
-}
-
-model EULA {
-  id        String   @id @default(cuid())
-  userId    String
-  version   String   // EULA version accepted (e.g., "1.0", "2.0")
-  accepted  Boolean  @default(true)
-  acceptedAt DateTime @default(now())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, version])
-  @@index([userId])
-}
-
-model SourceRegistry {
-  id                    String   @id @default(cuid())
-  sourceName            String?  @map("source_name") // Source name (e.g., "Federal Register", "AIAAIC")
-  sourceUrl             String?  @unique @map("source_url") // Unique source URL
-  sourceType            String?  @map("source_type") // 'rss', 'api', 'web', 'graphql', 'sitemap'
-  description           String?  // Description
-  discoveryMethod       String?  @map("discovery_method") // 'manual', 'auto_rss', 'auto_api', 'auto_sitemap'
-  discoveredAt          DateTime? @map("discovered_at") // When source was discovered
-  scheduleCron          String?  @map("schedule_cron") // Cron schedule for crawling
-  crawlerClass          String?  @map("crawler_class") // Python crawler class name
-  crawlConfig           Json?    @map("crawl_config") // Crawler configuration as JSONB
-  targetTable           String?  @map("target_table") // Target table for crawled data
-  consecutiveFailures   Int?     @map("consecutive_failures") // Failed crawl attempts
-  avgDurationSeconds    Float?   @map("avg_duration_seconds") // Average crawl duration
-  avgRecordsPerCrawl    Int?     @map("avg_records_per_crawl") // Average records per crawl
-  successRate           Decimal? @db.Decimal(5,2) @map("success_rate") // Success rate percentage
-  tags                  String?  // Tags for categorization
-  metadata              Json?    // Additional metadata
-  category              String?  // Category for source
-  priority              Int?     // Priority level
-  createdBy             String?  @map("created_by") // User who created this source
-  lastCrawledAt         DateTime? @map("last_crawled_at") // Last time this source was crawled
-  enabled               Boolean  @default(false)
-  verified              Boolean  @default(false)
-  verificationDate      DateTime? @map("verification_date") // Date when source was verified
-  nextScheduledCrawl    DateTime? @map("next_scheduled_crawl") // Next scheduled crawl time
-  lastErrorMessage      String?  @map("last_error_message") // Last error message from crawler
-  lastErrorAt           DateTime? @map("last_error_at") // Timestamp of last error
-  updatedBy             String?  @map("updated_by") // User who last updated this source
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime? @map("updated_at") // Made optional to accommodate existing data
-  qualityScore          Float?   @map("quality_score") // Quality score for the source
-
-  @@map("source_registry")
-  @@index([enabled])
-  @@index([sourceType])
-}
-
-model Project {
-  id                    String                       @id @default(cuid())
-  userId                String
-  geographyAccountId    String?
-  name                  String
-  description           String?
-  status                String                       @default("active")
-  color                 String?
-  createdAt             DateTime                     @default(now())
-  updatedAt             DateTime                     @updatedAt
-  calculations          Calculation[]
-  complianceAssessments ComplianceAssessment[]
-  frameworks            Framework[]
-  user                  User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  geographyAccount      GeographyAccount?            @relation(fields: [geographyAccountId], references: [id])
-  riskAssessments       RiskAssessment[]
-  scoreHistory          SengolScoreHistory[]
-  playbookInstances     CompliancePlaybookInstance[]
-
-  @@index([userId])
-  @@index([geographyAccountId])
-  @@index([status])
-}
-
-model Calculation {
-  id        String   @id @default(cuid())
-  userId    String
-  projectId String?
-  name      String?
-  inputs    Json
-  results   Json
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  project   Project? @relation(fields: [projectId], references: [id])
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([projectId])
-}
-
-model Framework {
-  id             String   @id @default(cuid())
-  userId         String
-  projectId      String?
-  name           String?
-  answers        Json
-  recommendation Json
-  notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  project        Project? @relation(fields: [projectId], references: [id])
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([projectId])
-}
-
-model Domain {
-  id                String       @id @default(cuid())
-  slug              String       @unique
-  name              String
-  description       String?
-  isActive          Boolean      @default(true)
-  sortOrder         Int          @default(0)
-  icon              String?
-  color             String?
-  calculatorVersion String       @default("1.0")
-  riskCategories    Json
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  domainRisks       DomainRisk[]
-
-  @@index([slug])
-  @@index([isActive])
-}
-
-model RiskAssessment {
-  id                 String  @id @default(cuid())
-  userId             String
-  projectId          String?
-  geographyAccountId String?
-  name               String
-
-  // Shared fields (used by both old and new systems)
-  industry       String
-  companySize    String
-  businessImpact Json
-  budgetRange    String
-  timeline       String
-  teamSize       Int
-
-  // Legacy fields (old RiskLens system - now optional)
-  useCase          String?
-  aiMaturity       String?
-  modelType        Json?
-  deploymentEnv    String?
-  dataSensitivity  Json?
-  scaleMetrics     Json?
-  complianceReqs   Json?
-  securityConcerns Json?
-  performanceRisk  Float?
-  securityRisk     Float?
-  complianceRisk   Float?
-  operationalRisk  Float?
-  topRisks         Json?
-  recommendation   Json?
-  mitigationCost   Float?
-
-  // New multi-domain system fields
-  overallRiskScore      Float
-  aggregateTopRisks     Json?
-  overallRecommendation Json?
-
-  // Optional business context fields (for review & modify)
-  revenueAtRisk   Int?
-  usersAffected   Int?
-  brandImportance String?
-
-  // ============================================================
-  // UNIFIED AI REVIEW BOARD FIELDS (Added Oct 30, 2025)
-  // ============================================================
-
-  // System Description (for semantic search and context)
-  systemDescription String?  @db.Text // Rich description of AI system for better analysis
-  systemCriticality String? // High, Medium, Low
-  dataTypes         String[] // PII, Financial, Health, Biometric, etc.
-  dataSources       String[] @default([]) // Data sources used (APIs, databases, etc.)
-  techStack         String[] @default([]) // Technologies used (GPT-4, PostgreSQL, AWS, etc.)
-
-  // Compliance & Regulatory Fields
-  jurisdictions     String[] // EU, US, UK, CA, CN, etc.
-  regulationIds     String[] // GDPR, EU AI Act, CCPA, etc.
-  complianceScore   Int? // 0-100 (calculated from compliance profile)
-  complianceDetails Json? // Detailed compliance data
-
-  // Sengol Score (Unified Score)
-  sengolScore Int? // 0-100 overall score (Risk 60% + Compliance 40%)
-  letterGrade String? // A, B, C, D, F
-
-  // Sub-Scores Breakdown
-  selectedDomains String[] @default([]) // User-selected domains: ai, cyber, cloud
-  aiRiskScore    Int? // 0-100 for AI-specific risks
-  cyberRiskScore Int? // 0-100 for cybersecurity risks
-  cloudRiskScore Int? // 0-100 for cloud/infrastructure risks
-
-  // Analysis Metadata
-  evidenceCount       Int       @default(0) // Number of historical incidents found
-  analysisStatus      String    @default("draft") // draft, analyzing, complete, error
-  analysisCompletedAt DateTime? // When analysis finished
-
-  // ============================================================
-  // COVERAGE TRACKING & USER SCORING (Added Oct 31, 2025)
-  // ============================================================
-
-  // Risk Coverage Metrics
-  riskCoverageScore      Decimal? @db.Decimal(5, 2) // 0-100 percentage of risk areas covered
-  riskCoverageDetails    Json? // Breakdown: {ai: {covered: 5, total: 5, percentage: 100}}
-  riskQuestionResponses  Json? // {ai_bias: {status: "addressed", answer: "...", lastReviewed: "2025-10-01"}}
-  userRiskScores         Json? // User-assigned scores: {ai_bias: 75, cyber_access: 60}
-  riskNotes              Json? // Additional notes: {ai_bias: "Implemented fairness testing"}
-  additionalRiskElements Json? // Custom risk items: [{id: "custom_1", label: "...", score: 50}]
-
-  // ============================================================
-  // Compliance Coverage Metrics (for unified review flow)
-  complianceCoverageScore      Decimal? @db.Decimal(5, 2) // 0-100 percentage covered
-  complianceCoverageDetails    Json? // {byJurisdiction: {EU: {covered: 8, total: 10}}}
-  complianceQuestionResponses  Json? // {data_inventory: {status: "addressed", answer: "..."}}
-  complianceUserScores         Json? // User scores: {data_inventory: 90}
-  complianceNotes              Json? // Notes: {data_inventory: "Automated scanning"}
-  additionalComplianceElements Json? // Custom items: [{id: "custom_1", requirement: "..."}}]
-
-  // INTELLIGENT WEIGHTED SCORING SYSTEM (Added Nov 4, 2025)
-  // ============================================================
-  // System Context for Dynamic Question Generation
-  systemContext   Json? // {description: "...", industry: "...", deployment: "cloud|on-prem|hybrid"}
-  technologyStack String[] // ["LLM", "RAG", "Vector DB", etc.]
-  deploymentType  String? // "cloud", "on-prem", "hybrid"
-
-  // Dynamic Questions with Evidence-Based Weights
-  dynamicQuestions Json? // Array of generated questions with weights and incident evidence
-  // Structure: [{id, text, category, weight, evidence: {incidentCount, avgSeverity, recentExamples}, reasoning, aiGenerated}]
-
-  // Weighted Score Results
-  weightedScoreResults Json? // Results from weighted scoring calculation
-  // Structure: {overallScore, categoryBreakdown, topRisks, scoringMethod, metadata}
-
-  questionGeneratedAt DateTime? // When dynamic questions were generated
-  useWeightedScoring  Boolean   @default(false) // Whether to use weighted scoring
-  // ============================================================
-  // ============================================================
-
-  // Council Assignment (Added Nov 8, 2025)
-  councilId String? // Optional council assignment for governance review
-
-  createdAt            DateTime                @default(now())
-  updatedAt            DateTime                @updatedAt
-  domainRisks          DomainRisk[]
-  project              Project?                @relation(fields: [projectId], references: [id])
-  geographyAccount     GeographyAccount?       @relation(fields: [geographyAccountId], references: [id])
-  user                 User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  predictionOutcomes   RiskPredictionOutcome[]
-  continuousMonitoring ContinuousMonitoring[]
-  dynamicRiskQuestions DynamicRiskQuestion[]
-  weightedRiskScores   WeightedRiskScore[]
-  council              Council?                @relation(fields: [councilId], references: [id])
-  approvals            RiskApproval[]
-  ledgerEntries        EvidenceLedgerEntry[]
-
-  @@index([userId])
-  @@index([projectId])
-  @@index([geographyAccountId])
-  @@index([createdAt])
-  @@index([riskCoverageScore])
-  @@index([useWeightedScoring])
-  @@index([councilId])
-}
-
-model DomainRisk {
-  id                String            @id @default(cuid())
-  assessmentId      String
-  domainId          String
-  overallScore      Float
-  categoryScores    Json
-  topRisks          Json
-  recommendations   Json
-  mitigationCost    Float?
-  completedAt       DateTime          @default(now())
-  calculatorVersion String            @default("1.0")
-  aiDetails         AIRiskDetails?
-  cloudDetails      CloudRiskDetails?
-  cyberDetails      CyberRiskDetails?
-  assessment        RiskAssessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  domain            Domain            @relation(fields: [domainId], references: [id], onDelete: Cascade)
-  evidence          RiskEvidence[]
-
-  @@unique([assessmentId, domainId])
-  @@index([assessmentId])
-  @@index([domainId])
-}
-
 model AIRiskDetails {
-  id               String     @id @default(cuid())
+  id               String     @id
   domainRiskId     String     @unique
   useCase          String
   aiMaturity       String
@@ -422,37 +24,254 @@ model AIRiskDetails {
   complianceRisk   Float
   operationalRisk  Float
   createdAt        DateTime   @default(now())
-  updatedAt        DateTime   @updatedAt
-  domainRisk       DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
+  updatedAt        DateTime
+  DomainRisk       DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
 
   @@index([domainRiskId])
 }
 
-model CyberRiskDetails {
-  id                   String     @id @default(cuid())
-  domainRiskId         String     @unique
-  attackSurface        Json
-  authMethods          Json
-  encryptionAtRest     Boolean
-  encryptionInTransit  Boolean
-  mfaEnabled           Boolean
-  backupStrategy       String
-  incidentResponsePlan Boolean
-  securityTestingFreq  String
-  siem                 Boolean
-  attackSurfaceRisk    Float
-  identityAccessRisk   Float
-  dataProtectionRisk   Float
-  incidentResponseRisk Float
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
-  domainRisk           DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
+model Account {
+  id                String  @id
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  User              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([domainRiskId])
+  @@unique([provider, providerAccountId])
+}
+
+model AssessmentContext {
+  id                 String   @id
+  assessmentId       String   @unique
+  assessmentType     String
+  projectDescription String
+  technicalStack     String?
+  specificConcerns   String?
+  analysis           Json
+  confidence         Float    @default(0.0)
+  aiModel            String
+  tokensUsed         Int
+  processingTimeMs   Int
+  analysisVersion    String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime
+
+  @@index([assessmentId])
+  @@index([assessmentType])
+  @@index([createdAt])
+}
+
+model AuditReport {
+  id                       String             @id
+  userId                   String
+  framework                String
+  reportType               String             @default("readiness")
+  periodStart              DateTime
+  periodEnd                DateTime
+  status                   String             @default("draft")
+  generatedAt              DateTime?
+  approvedAt               DateTime?
+  approvedBy               String?
+  publishedAt              DateTime?
+  totalRequirements        Int
+  requirementsWithEvidence Int
+  coveragePercentage       Float
+  gapCount                 Int
+  executiveSummary         String?
+  findings                 Json?              @default("[]")
+  recommendations          Json?              @default("[]")
+  pdfUrl                   String?
+  excelUrl                 String?
+  htmlUrl                  String?
+  evidenceIds              String[]
+  metadata                 Json?              @default("{}")
+  createdAt                DateTime           @default(now())
+  updatedAt                DateTime           @default(now())
+  User                     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  EvidenceArtifact         EvidenceArtifact[] @relation("AuditReportEvidence")
+
+  @@index([coveragePercentage])
+  @@index([framework])
+  @@index([periodEnd])
+  @@index([status])
+  @@index([userId])
+}
+
+model Backlog {
+  id                   String    @id
+  featureCode          String    @unique
+  category             String
+  module               String?
+  title                String
+  description          String
+  status               String    @default("planned")
+  implementationStatus String    @default("not_started")
+  priority             String    @default("medium")
+  effort               String?
+  databaseTables       String[]
+  apiRoutes            String[]
+  uiComponents         String[]
+  dependencies         String[]
+  tags                 String[]
+  assignedTo           String?
+  version              String?
+  releaseDate          DateTime?
+  notes                String?
+  testingNotes         String?
+  documentationUrl     String?
+  issueUrl             String?
+  technicalDebt        String?
+  futureEnhancements   String?
+  startedAt            DateTime?
+  completedAt          DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime
+  userId               String?
+  User                 User?     @relation(fields: [userId], references: [id])
+
+  @@index([assignedTo])
+  @@index([category])
+  @@index([createdAt])
+  @@index([featureCode])
+  @@index([implementationStatus])
+  @@index([module])
+  @@index([priority])
+  @@index([status])
+}
+
+model BacklogActivity {
+  id           String   @id
+  backlogId    String
+  userId       String?
+  activityType String
+  oldValue     String?
+  newValue     String?
+  comment      String?
+  createdAt    DateTime @default(now())
+  User         User?    @relation(fields: [userId], references: [id])
+
+  @@index([activityType])
+  @@index([backlogId])
+  @@index([createdAt])
+  @@index([userId])
+}
+
+model BaselineReport {
+  id           String     @id
+  competitorId String
+  summary      String
+  sections     Json
+  generatedAt  DateTime   @default(now())
+  metadata     Json?
+  Competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([competitorId])
+  @@index([generatedAt])
+}
+
+model BlockedIP {
+  id              String    @id
+  ip              String    @unique
+  reason          String
+  blockedAt       DateTime  @default(now())
+  expiresAt       DateTime?
+  userAgent       String?
+  firstEventId    String?
+  requestCount    Int       @default(1)
+  permanent       Boolean   @default(false)
+  lastSeen        DateTime  @default(now())
+  unblockedAt     DateTime?
+  unblockedBy     String?
+  unblockedReason String?
+
+  @@index([blockedAt])
+  @@index([expiresAt])
+  @@index([ip])
+  @@index([permanent])
+}
+
+model Calculation {
+  id        String   @id
+  userId    String
+  projectId String?
+  name      String?
+  inputs    Json
+  results   Json
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+  Project   Project? @relation(fields: [projectId], references: [id])
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([userId])
+}
+
+model ChangePattern {
+  id                  String   @id
+  patternType         String
+  category            String
+  description         String
+  confidence          Float
+  frequency           String?
+  affectedCompetitors String[]
+  exampleChangeIds    String[]
+  firstDetected       DateTime @default(now())
+  lastDetected        DateTime @default(now())
+  occurrenceCount     Int      @default(1)
+
+  @@index([category])
+  @@index([patternType])
+}
+
+model ChecklistResponse {
+  id              String   @id
+  assessmentId    String
+  assessmentType  String
+  domain          String
+  itemId          String
+  response        String
+  notes           String?
+  confidenceLevel Int?
+  answeredAt      DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime
+
+  @@unique([assessmentId, assessmentType, domain, itemId])
+  @@index([answeredAt])
+  @@index([assessmentId, assessmentType])
+  @@index([assessmentId, domain])
+  @@index([itemId])
+}
+
+model ChecklistScore {
+  id                          String   @id
+  assessmentId                String   @unique
+  assessmentType              String
+  domain                      String
+  overallRiskScore            Float
+  overallCompliancePercentage Float
+  categoryScores              Json
+  topGaps                     Json
+  summary                     Json
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime
+
+  @@index([assessmentId])
+  @@index([assessmentType, domain])
+  @@index([createdAt])
 }
 
 model CloudRiskDetails {
-  id                   String     @id @default(cuid())
+  id                   String     @id
   domainRiskId         String     @unique
   cloudProvider        String
   architecture         String
@@ -468,152 +287,43 @@ model CloudRiskDetails {
   costRisk             Float
   vendorLockInRisk     Float
   createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
-  domainRisk           DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
+  updatedAt            DateTime
+  DomainRisk           DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
 
   @@index([domainRiskId])
 }
 
-model ComplianceAssessment {
-  id                 String  @id @default(cuid())
-  userId             String
-  projectId          String?
-  geographyAccountId String?
-  name               String  @default("Compliance Assessment")
-  answers            Json
-  score              Int
-  complianceLevel    String
-  recommendations    Json
-
-  // ============================================================
-  // COVERAGE TRACKING & USER SCORING (Added Oct 31, 2025)
-  // ============================================================
-
-  // Compliance Coverage Metrics
-  coverageScore                Decimal? @db.Decimal(5, 2) // 0-100 percentage covered
-  coverageDetails              Json? // {byJurisdiction: {EU: {covered: 8, total: 10}}}
-  questionResponses            Json? // {data_inventory: {status: "addressed", answer: "..."}}
-  userScores                   Json? // User scores: {data_inventory: 90}
-  complianceNotes              Json? // Notes: {data_inventory: "Automated scanning"}
-  additionalComplianceElements Json? // Custom items: [{id: "custom_1", requirement: "..."}}]
-  jurisdictions                String[] // Selected jurisdictions: ["EU", "US", "UK"]
-  regulationIds                String[] // Applicable regulations: ["GDPR", "CCPA"]
-
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  project          Project?          @relation(fields: [projectId], references: [id])
-  geographyAccount GeographyAccount? @relation(fields: [geographyAccountId], references: [id])
-  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([projectId])
-  @@index([geographyAccountId])
-  @@index([createdAt])
-  @@index([coverageScore])
-}
-
-model Purchase {
-  id               String   @id @default(cuid())
-  userId           String
-  productId        String
-  productName      String
-  productType      String
-  volume           String?
-  amount           Int
-  currency         String   @default("usd")
-  status           String
-  stripePaymentId  String?
-  stripeCustomerId String?
-  downloadUrl      String?
-  trackingNumber   String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([status])
-}
-
-model NewsletterSubscriber {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  source    String?
-  status    String   @default("active")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([email])
-}
-
-model RivalWatchWaitlist {
-  id          String   @id @default(cuid())
-  email       String   @unique
-  name        String?
-  company     String?
-  role        String?
-  competitors Int      @default(5)
-  source      String?
-  status      String   @default("pending")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([email])
-  @@index([status])
-}
-
-model RivalWatchSubscription {
-  id               String       @id @default(cuid())
-  userId           String
-  tier             String
-  status           String       @default("active")
-  competitorLimit  Int
-  stripeSubId      String?      @unique
-  stripeCustId     String?
-  currentPeriodEnd DateTime?
-  cancelAt         DateTime?
-  trialEnds        DateTime?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  competitors      Competitor[]
-  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([status])
-  @@index([stripeSubId])
-}
-
 model Competitor {
-  id               String                 @id @default(cuid())
-  subscriptionId   String
-  name             String
-  website          String
-  industry         String?
-  description      String?
-  monitorProduct   Boolean                @default(true)
-  monitorPricing   Boolean                @default(true)
-  monitorHiring    Boolean                @default(true)
-  monitorReviews   Boolean                @default(true)
-  monitorMarketing Boolean                @default(true)
-  addedAt          DateTime               @default(now())
-  lastChecked      DateTime?
-  lastScrapedAt    DateTime?
-  metadata         Json?
-  scrapingStatus   String?                @default("pending")
-  baselineReports  BaselineReport[]
-  subscription     RivalWatchSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  changes          CompetitorChange[]
-  contentSources   ContentSource[]
-  curatedChanges   CuratedChange[]
-  scrapedContents  ScrapedContent[]
+  id                     String                 @id
+  subscriptionId         String
+  name                   String
+  website                String
+  industry               String?
+  description            String?
+  monitorProduct         Boolean                @default(true)
+  monitorPricing         Boolean                @default(true)
+  monitorHiring          Boolean                @default(true)
+  monitorReviews         Boolean                @default(true)
+  monitorMarketing       Boolean                @default(true)
+  addedAt                DateTime               @default(now())
+  lastChecked            DateTime?
+  lastScrapedAt          DateTime?
+  metadata               Json?
+  scrapingStatus         String?                @default("pending")
+  BaselineReport         BaselineReport[]
+  RivalWatchSubscription RivalWatchSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  CompetitorChange       CompetitorChange[]
+  ContentSource          ContentSource[]
+  CuratedChange          CuratedChange[]
+  ScrapedContent         ScrapedContent[]
 
+  @@index([scrapingStatus])
   @@index([subscriptionId])
   @@index([website])
-  @@index([scrapingStatus])
 }
 
 model CompetitorChange {
-  id           String     @id @default(cuid())
+  id           String     @id
   competitorId String
   changeType   String
   title        String
@@ -628,40 +338,247 @@ model CompetitorChange {
   notes        String?
   detectedAt   DateTime   @default(now())
   createdAt    DateTime   @default(now())
-  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  Competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
 
-  @@index([competitorId])
   @@index([changeType])
+  @@index([competitorId])
   @@index([detectedAt])
   @@index([isRead])
 }
 
-model IntelligenceSource {
-  id             String          @id @default(cuid())
-  name           String          @unique
-  sourceType     String
-  baseUrl        String?
-  apiEndpoint    String?
-  requiresAuth   Boolean         @default(false)
-  authType       String?
-  scraperConfig  Json?
-  description    String?
-  isActive       Boolean         @default(true)
-  priority       Int             @default(5)
-  timesUsed      Int             @default(0)
-  lastUsed       DateTime?
-  successRate    Float?          @default(1.0)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  contentSources ContentSource[]
+model ComplianceAlert {
+  id                    String                @id
+  userId                String
+  regulationCode        String?
+  changeType            String?
+  alertType             String
+  severity              String
+  impactScore           Int
+  title                 String
+  summary               String
+  actionRequired        Boolean               @default(false)
+  recommendedActions    String[]
+  affectedProjectIds    String[]
+  affectedSystemTypes   String[]
+  deadline              DateTime?
+  expiresAt             DateTime?
+  status                String                @default("unread")
+  snoozedUntil          DateTime?
+  actionedAt            DateTime?
+  actionNotes           String?
+  deliveredVia          String[]
+  emailSentAt           DateTime?
+  smsSentAt             DateTime?
+  pushSentAt            DateTime?
+  metadata              Json?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime
+  UserRegulatoryProfile UserRegulatoryProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
 
-  @@index([sourceType])
-  @@index([isActive])
-  @@index([priority])
+  @@index([alertType])
+  @@index([createdAt])
+  @@index([deadline])
+  @@index([regulationCode])
+  @@index([severity])
+  @@index([status])
+  @@index([userId])
+}
+
+model ComplianceAssessment {
+  id                           String            @id
+  userId                       String
+  projectId                    String?
+  name                         String            @default("Compliance Assessment")
+  answers                      Json
+  score                        Int
+  complianceLevel              String
+  recommendations              Json
+  createdAt                    DateTime          @default(now())
+  updatedAt                    DateTime
+  geographyAccountId           String?
+  additionalComplianceElements Json?
+  complianceNotes              Json?
+  coverageDetails              Json?
+  coverageScore                Decimal?          @db.Decimal(5, 2)
+  jurisdictions                String[]
+  questionResponses            Json?
+  regulationIds                String[]
+  userScores                   Json?
+  GeographyAccount             GeographyAccount? @relation(fields: [geographyAccountId], references: [id])
+  Project                      Project?          @relation(fields: [projectId], references: [id])
+  User                         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([coverageScore])
+  @@index([createdAt])
+  @@index([geographyAccountId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+model ComplianceControl {
+  id                   String    @id
+  userId               String
+  framework            String
+  requirementId        String
+  controlId            String
+  title                String
+  description          String
+  implementationStatus String    @default("not_started")
+  ownerId              String?
+  assignedTo           String?
+  dueDate              DateTime?
+  startedAt            DateTime?
+  implementedAt        DateTime?
+  testedAt             DateTime?
+  lastReviewedAt       DateTime?
+  testProcedure        String?
+  testResults          String?
+  testFrequency        String?
+  nextTestDate         DateTime?
+  evidenceIds          String[]
+  effectiveness        String    @default("not_assessed")
+  effectivenessNotes   String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @default(now())
+  User                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, framework, controlId])
+  @@index([implementationStatus])
+  @@index([nextTestDate])
+  @@index([ownerId])
+  @@index([userId, framework])
+}
+
+model ComplianceGap {
+  id              String    @id
+  userId          String
+  framework       String
+  requirementId   String
+  title           String
+  description     String
+  severity        String    @default("medium")
+  impact          String
+  status          String    @default("open")
+  identifiedAt    DateTime  @default(now())
+  resolvedAt      DateTime?
+  remediationPlan String?
+  assignedTo      String?
+  targetDate      DateTime?
+  effort          String?
+  resolutionNotes String?
+  evidenceIds     String[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now())
+  User            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([severity])
+  @@index([status])
+  @@index([targetDate])
+  @@index([userId, framework])
+}
+
+model CompliancePlaybook {
+  id                         String                       @id
+  regulationCode             String?
+  title                      String
+  description                String
+  aiSystemType               String?
+  jurisdiction               String?
+  category                   String
+  difficulty                 String                       @default("medium")
+  estimatedHours             Int?
+  isPublic                   Boolean                      @default(false)
+  createdBy                  String
+  useCount                   Int                          @default(0)
+  completionRate             Float?
+  metadata                   Json?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  CompliancePlaybookInstance CompliancePlaybookInstance[]
+  CompliancePlaybookStep     CompliancePlaybookStep[]
+
+  @@index([aiSystemType])
+  @@index([category])
+  @@index([isPublic])
+  @@index([regulationCode])
+}
+
+model CompliancePlaybookInstance {
+  id                    String                @id
+  playbookId            String
+  userId                String
+  projectId             String?
+  status                String                @default("not-started")
+  progress              Float                 @default(0)
+  completedSteps        Int[]
+  evidenceArtifacts     Json?
+  startedAt             DateTime?
+  estimatedCompletion   DateTime?
+  completedAt           DateTime?
+  assignedToUserId      String?
+  notes                 String?
+  metadata              Json?
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime
+  CompliancePlaybook    CompliancePlaybook    @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+  Project               Project?              @relation(fields: [projectId], references: [id])
+  UserRegulatoryProfile UserRegulatoryProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([playbookId, userId, projectId])
+  @@index([projectId])
+  @@index([status])
+  @@index([userId])
+}
+
+model CompliancePlaybookStep {
+  id                 String             @id
+  playbookId         String
+  stepNumber         Int
+  title              String
+  description        String
+  instructions       String?
+  examples           Json?
+  templates          Json?
+  evidenceRequired   String[]
+  evidenceTemplates  Json?
+  estimatedMinutes   Int?
+  dependsOnSteps     Int[]
+  metadata           Json?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime
+  CompliancePlaybook CompliancePlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
+
+  @@index([playbookId])
+  @@index([stepNumber])
+}
+
+model ComplianceRequirement {
+  id                  String   @id
+  framework           String
+  requirementId       String
+  category            String
+  title               String
+  description         String
+  controlType         String
+  aiSpecific          Boolean  @default(false)
+  evidenceTypes       String[]
+  frequency           String?
+  implementationGuide String?
+  testingProcedure    String?
+  automationLevel     String   @default("manual")
+  priority            String   @default("medium")
+  externalLinks       Json?    @default("[]")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @default(now())
+
+  @@unique([framework, requirementId])
+  @@index([aiSpecific])
+  @@index([category])
+  @@index([framework])
 }
 
 model ContentSource {
-  id                   String              @id @default(cuid())
+  id                   String              @id
   competitorId         String
   sourceType           String
   sourceUrl            String?
@@ -670,50 +587,90 @@ model ContentSource {
   checkFrequency       String              @default("daily")
   lastChecked          DateTime?
   createdAt            DateTime            @default(now())
-  updatedAt            DateTime            @updatedAt
+  updatedAt            DateTime
   intelligenceSourceId String?
-  competitor           Competitor          @relation(fields: [competitorId], references: [id], onDelete: Cascade)
-  intelligenceSource   IntelligenceSource? @relation(fields: [intelligenceSourceId], references: [id])
+  Competitor           Competitor          @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  IntelligenceSource   IntelligenceSource? @relation(fields: [intelligenceSourceId], references: [id])
 
   @@index([competitorId])
   @@index([intelligenceSourceId])
+  @@index([isActive])
   @@index([sourceType])
+}
+
+model ContentTemplate {
+  id             String   @id
+  domain         String
+  pagePath       String?
+  selectors      Json
+  extractionType String
+  parseRules     Json
+  name           String
+  description    String?
+  isActive       Boolean  @default(true)
+  timesUsed      Int      @default(0)
+  successRate    Float?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+
+  @@index([domain])
+  @@index([extractionType])
   @@index([isActive])
 }
 
-model ScrapedContent {
-  id               String          @id @default(cuid())
-  competitorId     String
-  scrapeJobId      String?
-  url              String
-  rawHtml          String
-  rawText          String
-  rawMetadata      Json?
-  extractedData    Json?
-  contentHash      String
-  scrapedAt        DateTime        @default(now())
-  httpStatus       Int?
-  loadTime         Int?
-  screenshotUrl    String?
-  processingStatus String          @default("pending")
-  processedAt      DateTime?
-  errorMessage     String?
-  sourceName       String?
-  sourceType       String          @default("website")
-  sourceUrl        String?
-  findings         Json?
-  curatedChanges   CuratedChange[]
-  competitor       Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+model ContextAnalysisCache {
+  id                 String   @id
+  descriptionHash    String   @unique
+  projectDescription String
+  analysis           Json
+  hitCount           Int      @default(0)
+  lastAccessedAt     DateTime @default(now())
+  createdAt          DateTime @default(now())
 
-  @@index([competitorId])
-  @@index([sourceType])
-  @@index([contentHash])
-  @@index([scrapedAt])
-  @@index([processingStatus])
+  @@index([createdAt])
+  @@index([descriptionHash])
+}
+
+model ContextualizedQuestion {
+  id                  String    @id
+  assessmentContextId String
+  baseQuestionId      String
+  category            String
+  originalText        String
+  contextualizedText  String
+  contextReasoning    String
+  relevanceScore      Float
+  priority            Int       @default(0)
+  userAnswer          String?
+  answeredAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime
+
+  @@index([assessmentContextId])
+  @@index([category])
+  @@index([relevanceScore])
+}
+
+model ContinuousMonitoring {
+  id                  String                @id
+  assessmentId        String
+  userId              String
+  isActive            Boolean               @default(true)
+  frequency           String
+  lastScannedAt       DateTime?
+  nextScanAt          DateTime
+  alertThreshold      Float                 @default(0.5)
+  createdAt           DateTime              @default(now())
+  RiskAssessment      RiskAssessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  User                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  MonitoringRiskAlert MonitoringRiskAlert[]
+
+  @@index([nextScanAt])
+  @@index([userId, isActive])
 }
 
 model CuratedChange {
-  id                   String          @id @default(cuid())
+  id                   String          @id
   competitorId         String
   scrapedContentId     String?
   changeType           String
@@ -743,141 +700,275 @@ model CuratedChange {
   userTags             String[]
   detectedAt           DateTime        @default(now())
   createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
+  updatedAt            DateTime
   actionRecommendation String?
   actionType           String?
   contextMetadata      Json?
   sourceName           String?
   sourceType           String?
   sourceUrl            String?
-  competitor           Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
-  scrapedContent       ScrapedContent? @relation(fields: [scrapedContentId], references: [id])
+  Competitor           Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+  ScrapedContent       ScrapedContent? @relation(fields: [scrapedContentId], references: [id])
 
-  @@index([competitorId])
+  @@index([actionType])
   @@index([changeType])
+  @@index([competitorId])
   @@index([detectedAt])
-  @@index([isRead])
   @@index([isDuplicate])
+  @@index([isRead])
   @@index([qualityScore])
   @@index([similarityHash])
-  @@index([actionType])
 }
 
-model ContentTemplate {
-  id             String   @id @default(cuid())
-  domain         String
-  pagePath       String?
-  selectors      Json
-  extractionType String
-  parseRules     Json
-  name           String
-  description    String?
-  isActive       Boolean  @default(true)
-  timesUsed      Int      @default(0)
-  successRate    Float?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+model CyberRiskDetails {
+  id                   String     @id
+  domainRiskId         String     @unique
+  attackSurface        Json
+  authMethods          Json
+  encryptionAtRest     Boolean
+  encryptionInTransit  Boolean
+  mfaEnabled           Boolean
+  backupStrategy       String
+  incidentResponsePlan Boolean
+  securityTestingFreq  String
+  siem                 Boolean
+  attackSurfaceRisk    Float
+  identityAccessRisk   Float
+  dataProtectionRisk   Float
+  incidentResponseRisk Float
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime
+  DomainRisk           DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
 
-  @@index([domain])
-  @@index([extractionType])
+  @@index([domainRiskId])
+}
+
+model Domain {
+  id                String       @id
+  slug              String       @unique
+  name              String
+  description       String?
+  isActive          Boolean      @default(true)
+  sortOrder         Int          @default(0)
+  icon              String?
+  color             String?
+  calculatorVersion String       @default("1.0")
+  riskCategories    Json
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime
+  DomainRisk        DomainRisk[]
+
   @@index([isActive])
+  @@index([slug])
 }
 
-model ChangePattern {
-  id                  String   @id @default(cuid())
-  patternType         String
-  category            String
-  description         String
-  confidence          Float
-  frequency           String?
-  affectedCompetitors String[]
-  exampleChangeIds    String[]
-  firstDetected       DateTime @default(now())
-  lastDetected        DateTime @default(now())
-  occurrenceCount     Int      @default(1)
+model DomainRisk {
+  id                String            @id
+  assessmentId      String
+  domainId          String
+  overallScore      Float
+  categoryScores    Json
+  topRisks          Json
+  recommendations   Json
+  mitigationCost    Float?
+  completedAt       DateTime          @default(now())
+  calculatorVersion String            @default("1.0")
+  AIRiskDetails     AIRiskDetails?
+  CloudRiskDetails  CloudRiskDetails?
+  CyberRiskDetails  CyberRiskDetails?
+  RiskAssessment    RiskAssessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  Domain            Domain            @relation(fields: [domainId], references: [id], onDelete: Cascade)
+  RiskEvidence      RiskEvidence[]
 
-  @@index([patternType])
+  @@unique([assessmentId, domainId])
+  @@index([assessmentId])
+  @@index([domainId])
+}
+
+model DynamicRiskQuestion {
+  id                String         @id
+  assessmentId      String
+  questionText      String
+  category          String
+  weight            Decimal        @db.Decimal(3, 2)
+  incidentCount     Int
+  avgSeverity       Decimal        @db.Decimal(3, 2)
+  relevanceScore    Decimal        @db.Decimal(3, 2)
+  evidenceIncidents Json?
+  evidenceSummary   String?
+  reasoning         Json?
+  aiGenerated       Boolean        @default(true)
+  createdAt         DateTime       @default(now())
+  RiskAssessment    RiskAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([assessmentId])
   @@index([category])
+  @@index([weight])
 }
 
-model BaselineReport {
-  id           String     @id @default(cuid())
-  competitorId String
-  summary      String
-  sections     Json
-  generatedAt  DateTime   @default(now())
-  metadata     Json?
-  competitor   Competitor @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+model EmailVerification {
+  id        String   @id
+  userId    String
+  token     String   @unique
+  expires   DateTime
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([competitorId])
-  @@index([generatedAt])
+  @@index([token])
+  @@index([userId])
 }
 
-model ProductAccess {
-  id             String    @id @default(cuid())
+model EvidenceArtifact {
+  id                  String        @id
+  userId              String
+  artifactType        String
+  category            String
+  complianceFramework String
+  requirementId       String?
+  title               String
+  description         String
+  fileUrl             String?
+  sourceType          String?
+  sourceId            String?
+  metadata            Json?         @default("{}")
+  verifiedBy          String?
+  verifiedAt          DateTime?
+  reviewStatus        String        @default("pending")
+  reviewNotes         String?
+  collectedAt         DateTime
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @default(now())
+  User                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  AuditReport         AuditReport[] @relation("AuditReportEvidence")
+
+  @@index([artifactType])
+  @@index([collectedAt(sort: Desc)])
+  @@index([requirementId])
+  @@index([reviewStatus])
+  @@index([sourceType, sourceId])
+  @@index([userId, complianceFramework])
+}
+
+model Framework {
+  id             String   @id
   userId         String
-  productSlug    String
-  productName    String
-  accessType     String
-  status         String    @default("active")
-  expiresAt      DateTime?
-  grantedAt      DateTime  @default(now())
-  purchaseId     String?
-  subscriptionId String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId      String?
+  name           String?
+  answers        Json
+  recommendation Json
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime
+  Project        Project? @relation(fields: [projectId], references: [id])
+  User           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, productSlug])
+  @@index([projectId])
   @@index([userId])
-  @@index([productSlug])
-  @@index([status])
 }
 
-model ToolUsage {
-  id         String   @id @default(cuid())
-  userId     String?
-  email      String?
-  toolSlug   String
-  usageType  String
-  sessionId  String?
-  ipAddress  String?
-  inputData  Json?
-  resultData Json?
-  createdAt  DateTime @default(now())
-  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+model GeographyAccount {
+  id                     String                   @id
+  userId                 String
+  name                   String
+  jurisdiction           String
+  country                String?
+  region                 String?
+  regulatoryBody         String?
+  billingStatus          String                   @default("active")
+  stripeCustomerId       String?                  @unique
+  stripeSubId            String?                  @unique
+  billingEmail           String?
+  billingCurrency        String                   @default("USD")
+  tier                   String                   @default("free")
+  projectLimit           Int                      @default(3)
+  userLimit              Int                      @default(5)
+  currentPeriodEnd       DateTime?
+  trialEnds              DateTime?
+  dataResidency          String?
+  isActive               Boolean                  @default(true)
+  isPrimary              Boolean                  @default(false)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime
+  ComplianceAssessment   ComplianceAssessment[]
+  User                   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  GeographyAccountMember GeographyAccountMember[]
+  Project                Project[]
+  RiskAssessment         RiskAssessment[]
 
+  @@index([billingStatus])
+  @@index([isActive])
+  @@index([jurisdiction])
   @@index([userId])
-  @@index([email])
-  @@index([sessionId])
-  @@index([toolSlug])
-  @@index([createdAt])
 }
 
-model ToolSubscription {
-  id               String    @id @default(cuid())
-  userId           String
-  planId           String // Pricing tier: 'free', 'professional', 'enterprise'
-  status           String    @default("active")
-  amount           Int       @default(5000)
-  billingPeriod    String    @default("monthly")
-  stripeSubId      String?   @unique
-  stripeCustId     String?
-  currentPeriodEnd DateTime?
-  cancelAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model GeographyAccountMember {
+  id                 String           @id
+  geographyAccountId String
+  userId             String
+  role               String           @default("member")
+  permissions        Json?
+  invitedAt          DateTime         @default(now())
+  joinedAt           DateTime?
+  invitedBy          String?
+  GeographyAccount   GeographyAccount @relation(fields: [geographyAccountId], references: [id], onDelete: Cascade)
+  User               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, planId])
+  @@unique([geographyAccountId, userId])
+  @@index([geographyAccountId])
   @@index([userId])
-  @@index([planId])
-  @@index([status])
-  @@index([stripeSubId])
+}
+
+model IndustryBenchmark {
+  id                 String   @id
+  industry           String
+  aiSystemType       String
+  averageRiskScore   Float
+  medianRiskScore    Float
+  p25RiskScore       Float
+  p75RiskScore       Float
+  p90RiskScore       Float
+  sampleSize         Int
+  dataSource         String   @default("incident_analysis")
+  topRiskFactors     Json
+  avgComplianceScore Float?
+  commonViolations   Json?
+  avgIncidentCost    Float?
+  maxIncidentCost    Float?
+  lastUpdated        DateTime @default(now())
+  createdAt          DateTime @default(now())
+
+  @@unique([industry, aiSystemType])
+  @@index([aiSystemType])
+  @@index([industry])
+  @@index([lastUpdated])
+}
+
+model IntelligenceSource {
+  id            String          @id
+  name          String          @unique
+  sourceType    String
+  baseUrl       String?
+  apiEndpoint   String?
+  requiresAuth  Boolean         @default(false)
+  authType      String?
+  scraperConfig Json?
+  description   String?
+  isActive      Boolean         @default(true)
+  priority      Int             @default(5)
+  timesUsed     Int             @default(0)
+  lastUsed      DateTime?
+  successRate   Float?          @default(1.0)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime
+  ContentSource ContentSource[]
+
+  @@index([isActive])
+  @@index([priority])
+  @@index([sourceType])
 }
 
 model MarketingEvent {
-  id         String   @id @default(cuid())
+  id         String   @id
   event      String
   userId     String?
   email      String?
@@ -885,73 +976,14 @@ model MarketingEvent {
   timestamp  DateTime @default(now())
   createdAt  DateTime @default(now())
 
-  @@index([event])
-  @@index([userId])
   @@index([email])
+  @@index([event])
   @@index([timestamp])
-}
-
-model Backlog {
-  id                   String    @id @default(cuid())
-  featureCode          String    @unique
-  category             String
-  module               String?
-  title                String
-  description          String
-  status               String    @default("planned")
-  implementationStatus String    @default("not_started")
-  priority             String    @default("medium")
-  effort               String?
-  databaseTables       String[]
-  apiRoutes            String[]
-  uiComponents         String[]
-  dependencies         String[]
-  tags                 String[]
-  assignedTo           String?
-  version              String?
-  releaseDate          DateTime?
-  notes                String?
-  testingNotes         String?
-  documentationUrl     String?
-  issueUrl             String?
-  technicalDebt        String?
-  futureEnhancements   String?
-  startedAt            DateTime?
-  completedAt          DateTime?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @updatedAt
-  userId               String?
-  user                 User?     @relation(fields: [userId], references: [id])
-
-  @@index([featureCode])
-  @@index([category])
-  @@index([module])
-  @@index([status])
-  @@index([implementationStatus])
-  @@index([priority])
-  @@index([assignedTo])
-  @@index([createdAt])
-}
-
-model BacklogActivity {
-  id           String   @id @default(cuid())
-  backlogId    String
-  userId       String?
-  activityType String
-  oldValue     String?
-  newValue     String?
-  comment      String?
-  createdAt    DateTime @default(now())
-  user         User?    @relation(fields: [userId], references: [id])
-
-  @@index([backlogId])
   @@index([userId])
-  @@index([activityType])
-  @@index([createdAt])
 }
 
 model ModelEndpoint {
-  id                   String            @id @default(cuid())
+  id                   String            @id
   userId               String
   projectId            String?
   endpointUrl          String
@@ -966,19 +998,19 @@ model ModelEndpoint {
   metadata             Json?
   deletedAt            DateTime?
   createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
-  user                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  metrics              ModelMetric[]
-  alerts               MonitoringAlert[]
+  updatedAt            DateTime
+  User                 User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ModelMetric          ModelMetric[]
+  MonitoringAlert      MonitoringAlert[]
 
-  @@index([userId])
   @@index([apiKeyHash])
-  @@index([monitoringEnabled])
   @@index([deletedAt])
+  @@index([monitoringEnabled])
+  @@index([userId])
 }
 
 model ModelMetric {
-  id                   String        @id @default(cuid())
+  id                   String        @id
   endpointId           String
   timestamp            DateTime      @default(now())
   responseTimeMs       Int?
@@ -991,40 +1023,15 @@ model ModelMetric {
   errorMessage         String?
   metadata             Json?
   createdAt            DateTime      @default(now())
-  endpoint             ModelEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+  ModelEndpoint        ModelEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
 
+  @@index([endpointId, success])
   @@index([endpointId, timestamp(sort: Desc)])
   @@index([timestamp(sort: Desc)])
-  @@index([endpointId, success])
-}
-
-model MonitoringAlert {
-  id                String        @id @default(cuid())
-  endpointId        String
-  alertType         String
-  severity          String
-  title             String
-  message           String
-  thresholdValue    Float?
-  actualValue       Float?
-  metadata          Json?
-  resolved          Boolean       @default(false)
-  resolvedAt        DateTime?
-  resolvedBy        String?
-  resolutionNotes   String?
-  notificationsSent Json          @default("[]")
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  endpoint          ModelEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
-
-  @@index([endpointId])
-  @@index([resolved, createdAt(sort: Desc)])
-  @@index([severity, createdAt(sort: Desc)])
-  @@index([alertType])
 }
 
 model ModelMetricsHourly {
-  id                String   @id @default(cuid())
+  id                String   @id
   endpointId        String
   hourBucket        DateTime
   avgResponseTimeMs Int?
@@ -1042,8 +1049,66 @@ model ModelMetricsHourly {
   @@index([endpointId, hourBucket(sort: Desc)])
 }
 
+model MonitoringAlert {
+  id                String        @id
+  endpointId        String
+  alertType         String
+  severity          String
+  title             String
+  message           String
+  thresholdValue    Float?
+  actualValue       Float?
+  metadata          Json?
+  resolved          Boolean       @default(false)
+  resolvedAt        DateTime?
+  resolvedBy        String?
+  resolutionNotes   String?
+  notificationsSent Json          @default("[]")
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime
+  ModelEndpoint     ModelEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([alertType])
+  @@index([endpointId])
+  @@index([resolved, createdAt(sort: Desc)])
+  @@index([severity, createdAt(sort: Desc)])
+}
+
+model MonitoringRiskAlert {
+  id                   String               @id
+  monitoringId         String
+  alertType            String
+  severity             String
+  title                String
+  description          String
+  oldValue             Json?
+  newValue             Json?
+  triggerData          Json
+  isRead               Boolean              @default(false)
+  isAcknowledged       Boolean              @default(false)
+  acknowledgedAt       DateTime?
+  createdAt            DateTime             @default(now())
+  ContinuousMonitoring ContinuousMonitoring @relation(fields: [monitoringId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([monitoringId, isRead])
+  @@index([severity])
+}
+
+model NewsletterSubscriber {
+  id        String   @id
+  email     String   @unique
+  name      String?
+  source    String?
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime
+
+  @@index([email])
+}
+
 model NotificationChannel {
-  id                 String    @id @default(cuid())
+  id                 String    @id
   userId             String
   endpointId         String?
   channelType        String
@@ -1063,253 +1128,720 @@ model NotificationChannel {
   failureCount       Int       @default(0)
   lastError          String?
   createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  updatedAt          DateTime
+  User               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
-  @@index([endpointId])
   @@index([channelType])
+  @@index([endpointId])
   @@index([isEnabled])
+  @@index([userId])
 }
 
-model EvidenceArtifact {
-  id                  String        @id @default(cuid())
-  userId              String
-  artifactType        String
-  category            String
-  complianceFramework String
-  requirementId       String?
-  title               String
-  description         String
-  fileUrl             String?
-  sourceType          String?
-  sourceId            String?
-  metadata            Json?         @default("{}")
-  verifiedBy          String?
-  verifiedAt          DateTime?
-  reviewStatus        String        @default("pending")
-  reviewNotes         String?
-  collectedAt         DateTime
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @default(now()) @updatedAt
-  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  auditReports        AuditReport[] @relation("AuditReportEvidence")
+model PasswordResetToken {
+  id        String   @id
+  userId    String
+  token     String   @unique
+  expires   DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  User      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, complianceFramework])
-  @@index([artifactType])
-  @@index([requirementId])
-  @@index([collectedAt(sort: Desc)])
-  @@index([reviewStatus])
-  @@index([sourceType, sourceId])
+  @@index([token])
+  @@index([userId])
 }
 
-model ComplianceRequirement {
-  id                  String   @id @default(cuid())
-  framework           String
-  requirementId       String
-  category            String
-  title               String
-  description         String
-  controlType         String
-  aiSpecific          Boolean  @default(false)
-  evidenceTypes       String[]
-  frequency           String?
-  implementationGuide String?
-  testingProcedure    String?
-  automationLevel     String   @default("manual")
-  priority            String   @default("medium")
-  externalLinks       Json?    @default("[]")
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @default(now()) @updatedAt
+model PricingAnalyticsEvent {
+  id               String   @id
+  userId           String?
+  sessionId        String?
+  eventType        String
+  eventCategory    String
+  assessmentType   String?
+  currentTier      String?
+  targetTier       String?
+  subscriptionPlan String?
+  price            Float?
+  metadata         Json?
+  userAgent        String?
+  referrer         String?
+  createdAt        DateTime @default(now())
+  User             User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([framework, requirementId])
-  @@index([framework])
+  @@index([createdAt])
+  @@index([eventCategory])
+  @@index([eventType])
+  @@index([sessionId])
+  @@index([userId])
+}
+
+model PricingChangeLog {
+  id         String   @id
+  planId     String
+  changeType String
+  field      String?
+  oldValue   String?
+  newValue   String?
+  changedBy  String?
+  reason     String?
+  createdAt  DateTime @default(now())
+
+  @@index([changeType])
+  @@index([createdAt])
+  @@index([planId])
+}
+
+model PricingFeature {
+  id          String      @id
+  planId      String
+  name        String
+  description String?
+  category    String?
+  sortOrder   Int         @default(0)
+  highlighted Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime
+  PricingPlan PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@index([sortOrder])
+}
+
+model PricingLimit {
+  id          String      @id
+  planId      String
+  limitKey    String
+  limitValue  Int
+  featureKey  String?
+  enabled     Boolean     @default(false)
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime
+  PricingPlan PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@unique([planId, limitKey])
+  @@index([featureKey])
+  @@index([limitKey])
+  @@index([planId])
+}
+
+model PricingPlan {
+  id              String           @id
+  planId          String           @unique
+  name            String
+  description     String?
+  price           Int
+  interval        String
+  popular         Boolean          @default(false)
+  active          Boolean          @default(true)
+  sortOrder       Int              @default(0)
+  stripePriceId   String?
+  stripeProductId String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime
+  PricingFeature  PricingFeature[]
+  PricingLimit    PricingLimit[]
+
+  @@index([active])
+  @@index([planId])
+  @@index([sortOrder])
+}
+
+model ProductAccess {
+  id             String    @id
+  userId         String
+  productSlug    String
+  productName    String
+  accessType     String
+  status         String    @default("active")
+  expiresAt      DateTime?
+  grantedAt      DateTime  @default(now())
+  purchaseId     String?
+  subscriptionId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime
+  User           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productSlug])
+  @@index([productSlug])
+  @@index([status])
+  @@index([userId])
+}
+
+model Project {
+  id                         String                       @id
+  userId                     String
+  name                       String
+  description                String?
+  status                     String                       @default("active")
+  color                      String?
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  geographyAccountId         String?
+  Calculation                Calculation[]
+  ComplianceAssessment       ComplianceAssessment[]
+  CompliancePlaybookInstance CompliancePlaybookInstance[]
+  Framework                  Framework[]
+  GeographyAccount           GeographyAccount?            @relation(fields: [geographyAccountId], references: [id])
+  User                       User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  RiskAssessment             RiskAssessment[]
+  sengol_score_history       sengol_score_history[]
+
+  @@index([geographyAccountId])
+  @@index([status])
+  @@index([userId])
+}
+
+model Purchase {
+  id               String   @id
+  userId           String
+  productId        String
+  productName      String
+  productType      String
+  volume           String?
+  amount           Int
+  currency         String   @default("usd")
+  status           String
+  stripePaymentId  String?
+  stripeCustomerId String?
+  downloadUrl      String?
+  trackingNumber   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime
+  User             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([userId])
+}
+
+model RegulatoryEnforcement {
+  id               String    @id
+  enforcingBody    String
+  targetCompany    String
+  caseNumber       String?
+  regulationCode   String?
+  violationType    String
+  description      String
+  penalty          BigInt?
+  penaltyType      String?
+  outcome          String
+  aiSummary        String?
+  lessonsLearned   String[]
+  relevanceToUsers String[]
+  filedDate        DateTime?
+  settledDate      DateTime?
+  officialUrl      String?
+  pressRelease     String?
+  metadata         Json?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+
+  @@index([enforcingBody])
+  @@index([filedDate])
+  @@index([regulationCode])
+  @@index([settledDate])
+  @@index([violationType])
+}
+
+model RegulatoryJurisdiction {
+  id                           String                   @id
+  code                         String                   @unique
+  name                         String
+  parentId                     String?
+  level                        String
+  population                   BigInt?
+  gdpUsd                       BigInt?
+  isActive                     Boolean                  @default(true)
+  createdAt                    DateTime                 @default(now())
+  updatedAt                    DateTime
+  RegulatoryJurisdiction       RegulatoryJurisdiction?  @relation("RegulatoryJurisdictionToRegulatoryJurisdiction", fields: [parentId], references: [id])
+  other_RegulatoryJurisdiction RegulatoryJurisdiction[] @relation("RegulatoryJurisdictionToRegulatoryJurisdiction")
+  UserRegulatoryProfile        UserRegulatoryProfile[]
+
+  @@index([code])
+  @@index([isActive])
+  @@index([level])
+}
+
+model RiskAssessment {
+  id                           String                  @id
+  userId                       String
+  projectId                    String?
+  name                         String
+  industry                     String
+  useCase                      String?
+  companySize                  String
+  aiMaturity                   String?
+  modelType                    Json?
+  deploymentEnv                String?
+  dataSensitivity              Json?
+  scaleMetrics                 Json?
+  complianceReqs               Json?
+  securityConcerns             Json?
+  businessImpact               Json
+  budgetRange                  String
+  timeline                     String
+  teamSize                     Int
+  overallRiskScore             Float
+  performanceRisk              Float?
+  securityRisk                 Float?
+  complianceRisk               Float?
+  operationalRisk              Float?
+  topRisks                     Json?
+  recommendation               Json?
+  mitigationCost               Float?
+  createdAt                    DateTime                @default(now())
+  updatedAt                    DateTime
+  aggregateTopRisks            Json?
+  overallRecommendation        Json?
+  brandImportance              String?
+  geographyAccountId           String?
+  revenueAtRisk                Int?
+  usersAffected                Int?
+  additionalComplianceElements Json?
+  additionalRiskElements       Json?
+  aiRiskScore                  Int?
+  analysisCompletedAt          DateTime?
+  analysisStatus               String                  @default("draft")
+  cloudRiskScore               Int?
+  complianceCoverageDetails    Json?
+  complianceCoverageScore      Decimal?                @db.Decimal(5, 2)
+  complianceDetails            Json?
+  complianceNotes              Json?
+  complianceQuestionResponses  Json?
+  complianceScore              Int?
+  complianceUserScores         Json?
+  cyberRiskScore               Int?
+  dataTypes                    String[]
+  deploymentType               String?
+  dynamicQuestions             Json?
+  evidenceCount                Int                     @default(0)
+  jurisdictions                String[]
+  letterGrade                  String?
+  questionGeneratedAt          DateTime?
+  regulationIds                String[]
+  riskCoverageDetails          Json?
+  riskCoverageScore            Decimal?                @db.Decimal(5, 2)
+  riskNotes                    Json?
+  riskQuestionResponses        Json?
+  sengolScore                  Int?
+  systemContext                Json?
+  systemCriticality            String?
+  systemDescription            String?
+  techStack                    String[]                @default([])
+  technologyStack              String[]
+  useWeightedScoring           Boolean                 @default(false)
+  userRiskScores               Json?
+  weightedScoreResults         Json?
+  selectedDomains              String[]                @default([])
+  dataSources                  String[]                @default([])
+  councilId                    String?
+  ContinuousMonitoring         ContinuousMonitoring[]
+  DomainRisk                   DomainRisk[]
+  DynamicRiskQuestion          DynamicRiskQuestion[]
+  GeographyAccount             GeographyAccount?       @relation(fields: [geographyAccountId], references: [id])
+  Project                      Project?                @relation(fields: [projectId], references: [id])
+  User                         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  RiskPredictionOutcome        RiskPredictionOutcome[]
+  WeightedRiskScore            WeightedRiskScore[]
+
+  @@index([createdAt])
+  @@index([geographyAccountId])
+  @@index([projectId])
+  @@index([riskCoverageScore])
+  @@index([useWeightedScoring])
+  @@index([userId])
+}
+
+model RiskEvidence {
+  id               String     @id
+  domainRiskId     String
+  failurePatternId String     @db.Uuid
+  relevanceScore   Float
+  category         String
+  weight           Float
+  matchFactors     Json?
+  createdAt        DateTime   @default(now())
+  DomainRisk       DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
+
   @@index([category])
-  @@index([aiSpecific])
+  @@index([domainRiskId])
+  @@index([relevanceScore])
 }
 
-model AuditReport {
-  id                       String             @id @default(cuid())
-  userId                   String
-  framework                String
-  reportType               String             @default("readiness")
-  periodStart              DateTime
-  periodEnd                DateTime
-  status                   String             @default("draft")
-  generatedAt              DateTime?
-  approvedAt               DateTime?
-  approvedBy               String?
-  publishedAt              DateTime?
-  totalRequirements        Int
-  requirementsWithEvidence Int
-  coveragePercentage       Float
-  gapCount                 Int
-  executiveSummary         String?
-  findings                 Json?              @default("[]")
-  recommendations          Json?              @default("[]")
-  pdfUrl                   String?
-  excelUrl                 String?
-  htmlUrl                  String?
-  evidenceIds              String[]
-  metadata                 Json?              @default("{}")
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @default(now()) @updatedAt
-  user                     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  evidenceArtifacts        EvidenceArtifact[] @relation("AuditReportEvidence")
+model RiskPredictionOutcome {
+  id             String         @id
+  assessmentId   String
+  riskId         String
+  predictedScore Float
+  actualOutcome  String?
+  timeToEvent    Int?
+  verifiedAt     DateTime?
+  verifiedBy     String?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  RiskAssessment RiskAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+
+  @@index([actualOutcome])
+  @@index([assessmentId])
+}
+
+model RivalWatchSubscription {
+  id               String       @id
+  userId           String
+  tier             String
+  status           String       @default("active")
+  competitorLimit  Int
+  stripeSubId      String?      @unique
+  stripeCustId     String?
+  currentPeriodEnd DateTime?
+  cancelAt         DateTime?
+  trialEnds        DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime
+  Competitor       Competitor[]
+  User             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([stripeSubId])
+  @@index([userId])
+}
+
+model RivalWatchWaitlist {
+  id          String   @id
+  email       String   @unique
+  name        String?
+  company     String?
+  role        String?
+  competitors Int      @default(5)
+  source      String?
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime
+
+  @@index([email])
+  @@index([status])
+}
+
+model ScrapedContent {
+  id               String          @id
+  competitorId     String
+  scrapeJobId      String?
+  url              String
+  rawHtml          String
+  rawText          String
+  rawMetadata      Json?
+  extractedData    Json?
+  contentHash      String
+  scrapedAt        DateTime        @default(now())
+  httpStatus       Int?
+  loadTime         Int?
+  screenshotUrl    String?
+  processingStatus String          @default("pending")
+  processedAt      DateTime?
+  errorMessage     String?
+  sourceName       String?
+  sourceType       String          @default("website")
+  sourceUrl        String?
+  findings         Json?
+  CuratedChange    CuratedChange[]
+  Competitor       Competitor      @relation(fields: [competitorId], references: [id], onDelete: Cascade)
+
+  @@index([competitorId])
+  @@index([contentHash])
+  @@index([processingStatus])
+  @@index([scrapedAt])
+  @@index([sourceType])
+}
+
+model SecurityAlert {
+  id             String    @id
+  alertType      String
+  severity       String
+  title          String
+  description    String
+  ip             String?
+  userAgent      String?
+  eventCount     Int       @default(1)
+  firstEventAt   DateTime
+  lastEventAt    DateTime
+  acknowledged   Boolean   @default(false)
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  resolved       Boolean   @default(false)
+  resolvedAt     DateTime?
+  resolvedBy     String?
+  metadata       Json?
+  createdAt      DateTime  @default(now())
+  notes          String?
+
+  @@index([acknowledged])
+  @@index([alertType])
+  @@index([createdAt])
+  @@index([resolved])
+  @@index([severity])
+}
+
+model SecurityEvent {
+  id             String   @id
+  eventType      String
+  ip             String
+  userAgent      String
+  url            String
+  path           String
+  method         String
+  reason         String
+  severity       String
+  blocked        Boolean  @default(true)
+  referer        String?
+  origin         String?
+  acceptHeader   String?
+  acceptLanguage String?
+  acceptEncoding String?
+  isBot          Boolean  @default(false)
+  isSuspicious   Boolean  @default(false)
+  botType        String?
+  requestId      String?  @unique
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  city           String?
+  country        String?
+  region         String?
+
+  @@index([blocked])
+  @@index([createdAt])
+  @@index([eventType])
+  @@index([ip])
+  @@index([isBot])
+  @@index([severity])
+}
+
+model Session {
+  id           String   @id
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  User         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ToolSubscription {
+  id               String    @id
+  userId           String
+  planId           String
+  status           String    @default("active")
+  amount           Int       @default(5000)
+  billingPeriod    String    @default("monthly")
+  stripeSubId      String?   @unique
+  stripeCustId     String?
+  currentPeriodEnd DateTime?
+  cancelAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime
+  User             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, planId])
+  @@unique([userId, planId], map: "ToolSubscription_userId_toolSlug_key")
+  @@index([planId])
+  @@index([status])
+  @@index([stripeSubId])
+  @@index([userId])
+}
+
+model ToolUsage {
+  id         String   @id
+  userId     String?
+  email      String?
+  toolSlug   String
+  usageType  String
+  sessionId  String?
+  ipAddress  String?
+  inputData  Json?
+  resultData Json?
+  createdAt  DateTime @default(now())
+  User       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([email])
+  @@index([sessionId])
+  @@index([toolSlug])
+  @@index([userId])
+}
+
+model User {
+  id                     String                   @id
+  name                   String?
+  email                  String                   @unique
+  emailVerified          DateTime?
+  image                  String?
+  password               String?
+  role                   String                   @default("user")
+  company                String?
+  jobTitle               String?
+  industry               String?
+  teamSize               String?
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime
+  currentGeographyId     String?
+  Account                Account[]
+  AuditReport            AuditReport[]
+  Backlog                Backlog[]
+  BacklogActivity        BacklogActivity[]
+  Calculation            Calculation[]
+  ComplianceAssessment   ComplianceAssessment[]
+  ComplianceControl      ComplianceControl[]
+  ComplianceGap          ComplianceGap[]
+  ContinuousMonitoring   ContinuousMonitoring[]
+  EmailVerification      EmailVerification[]
+  EvidenceArtifact       EvidenceArtifact[]
+  Framework              Framework[]
+  GeographyAccount       GeographyAccount[]
+  GeographyAccountMember GeographyAccountMember[]
+  ModelEndpoint          ModelEndpoint[]
+  NotificationChannel    NotificationChannel[]
+  PasswordResetToken     PasswordResetToken[]
+  PricingAnalyticsEvent  PricingAnalyticsEvent[]
+  ProductAccess          ProductAccess[]
+  Project                Project[]
+  Purchase               Purchase[]
+  RiskAssessment         RiskAssessment[]
+  RivalWatchSubscription RivalWatchSubscription[]
+  Session                Session[]
+  ToolSubscription       ToolSubscription[]
+  ToolUsage              ToolUsage[]
+  UserRegulatoryProfile  UserRegulatoryProfile?
+}
+
+model UserRegulatoryProfile {
+  id                         String                       @id
+  userId                     String                       @unique
+  aiSystemTypes              String[]
+  industries                 String[]
+  companySize                String?
+  annualRevenue              String?
+  dataVolume                 String?
+  alertPreferences           Json
+  onboardingCompleted        Boolean                      @default(false)
+  onboardingStep             Int                          @default(0)
+  createdAt                  DateTime                     @default(now())
+  updatedAt                  DateTime
+  ComplianceAlert            ComplianceAlert[]
+  CompliancePlaybookInstance CompliancePlaybookInstance[]
+  User                       User                         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  RegulatoryJurisdiction     RegulatoryJurisdiction[]
 
   @@index([userId])
-  @@index([framework])
-  @@index([status])
-  @@index([periodEnd])
-  @@index([coveragePercentage])
 }
 
-model ComplianceControl {
-  id                   String    @id @default(cuid())
-  userId               String
-  framework            String
-  requirementId        String
-  controlId            String
-  title                String
-  description          String
-  implementationStatus String    @default("not_started")
-  ownerId              String?
-  assignedTo           String?
-  dueDate              DateTime?
-  startedAt            DateTime?
-  implementedAt        DateTime?
-  testedAt             DateTime?
-  lastReviewedAt       DateTime?
-  testProcedure        String?
-  testResults          String?
-  testFrequency        String?
-  nextTestDate         DateTime?
-  evidenceIds          String[]
-  effectiveness        String    @default("not_assessed")
-  effectivenessNotes   String?
-  createdAt            DateTime  @default(now())
-  updatedAt            DateTime  @default(now()) @updatedAt
-  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
 
-  @@unique([userId, framework, controlId])
-  @@index([userId, framework])
-  @@index([implementationStatus])
-  @@index([ownerId])
-  @@index([nextTestDate])
+  @@unique([identifier, token])
 }
 
-model ComplianceGap {
-  id              String    @id @default(cuid())
-  userId          String
-  framework       String
-  requirementId   String
-  title           String
-  description     String
-  severity        String    @default("medium")
-  impact          String
-  status          String    @default("open")
-  identifiedAt    DateTime  @default(now())
-  resolvedAt      DateTime?
-  remediationPlan String?
-  assignedTo      String?
-  targetDate      DateTime?
-  effort          String?
-  resolutionNotes String?
-  evidenceIds     String[]
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @default(now()) @updatedAt
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+model WeightedRiskScore {
+  id             String         @id
+  assessmentId   String
+  questionId     String?
+  status         String
+  rawScore       Int
+  weight         Decimal        @db.Decimal(3, 2)
+  weightedScore  Decimal        @db.Decimal(5, 2)
+  category       String?
+  createdAt      DateTime       @default(now())
+  RiskAssessment RiskAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 
-  @@index([userId, framework])
-  @@index([status])
-  @@index([severity])
-  @@index([targetDate])
+  @@index([assessmentId])
+  @@index([category])
 }
 
-model RegulatoryBody {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name            String
-  acronym         String?
-  country         String?
-  region          String?
-  industry        String[]
-  website_url     String    @unique
-  api_endpoint    String?
-  jurisdiction    String[]
-  authority_level String?
-  is_active       Boolean?  @default(true)
-  crawl_frequency String?   @default("daily")
-  last_crawled_at DateTime? @db.Timestamp(6)
+model cep_anomalies {
+  id                BigInt    @id @default(autoincrement())
+  domain            String    @db.VarChar(50)
+  signal_type       String?   @db.VarChar(100)
+  anomaly_type      String    @db.VarChar(50)
+  severity          String    @db.VarChar(20)
+  z_score           Decimal?  @db.Decimal(6, 2)
+  observed_value    Decimal   @db.Decimal(10, 2)
+  baseline_value    Decimal   @db.Decimal(10, 2)
+  baseline_stddev   Decimal?  @db.Decimal(10, 2)
+  deviation_pct     Decimal?  @db.Decimal(6, 2)
+  time_window_start DateTime  @db.Timestamptz(6)
+  time_window_end   DateTime  @db.Timestamptz(6)
+  description       String?
+  status            String?   @default("detected") @db.VarChar(50)
+  detected_at       DateTime? @default(now()) @db.Timestamptz(6)
+  resolved_at       DateTime? @db.Timestamptz(6)
+
+  @@index([domain, detected_at(sort: Desc)], map: "idx_cep_anomalies_domain_time")
+  @@index([severity, detected_at(sort: Desc)], map: "idx_cep_anomalies_severity")
+  @@index([status, detected_at(sort: Desc)], map: "idx_cep_anomalies_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cep_correlated_events {
+  id                 BigInt    @id @default(autoincrement())
+  pattern_id         Int
+  pattern_name       String    @db.VarChar(100)
+  confidence_score   Decimal   @db.Decimal(4, 3)
+  event_ids          String[]
+  time_window_start  DateTime  @db.Timestamptz(6)
+  time_window_end    DateTime  @db.Timestamptz(6)
+  impact_assessment  String?
+  recommended_action String?
+  metadata           Json?
+  status             String?   @default("detected") @db.VarChar(50)
+  detected_at        DateTime? @default(now()) @db.Timestamptz(6)
+  resolved_at        DateTime? @db.Timestamptz(6)
+
+  @@index([pattern_id, detected_at(sort: Desc)], map: "idx_cep_correlated_pattern")
+  @@index([status, detected_at(sort: Desc)], map: "idx_cep_correlated_status")
+  @@index([time_window_start, time_window_end], map: "idx_cep_correlated_time_window")
+}
+
+model cep_pattern_templates {
+  id                     Int       @id @default(autoincrement())
+  pattern_name           String    @unique @db.VarChar(100)
+  pattern_type           String    @db.VarChar(50)
+  description            String?
+  detection_window_hours Int
+  min_confidence         Decimal?  @default(0.7) @db.Decimal(3, 2)
+  config                 Json
+  is_active              Boolean?  @default(true)
+  created_at             DateTime? @default(now()) @db.Timestamptz(6)
+  updated_at             DateTime? @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cep_signal_correlations {
+  id                      Int       @id @default(autoincrement())
+  signal_type_a           String    @db.VarChar(100)
+  signal_type_b           String    @db.VarChar(100)
+  correlation_coefficient Decimal?  @db.Decimal(4, 3)
+  time_lag_hours          Int?      @default(0)
+  co_occurrence_count     Int?      @default(0)
+  total_observations      Int?      @default(0)
+  confidence              Decimal?  @db.Decimal(3, 2)
+  last_updated            DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@unique([signal_type_a, signal_type_b, time_lag_hours])
+  @@index([signal_type_a, signal_type_b], map: "idx_cep_correlations_types")
+}
+
+model cep_signal_events {
+  id              BigInt    @id @default(autoincrement())
+  event_id        String    @unique @db.VarChar(255)
+  domain          String    @db.VarChar(50)
+  signal_type     String    @db.VarChar(100)
+  signal_strength Decimal   @db.Decimal(3, 2)
+  event_timestamp DateTime  @db.Timestamptz(6)
+  source_id       String?   @db.VarChar(100)
   metadata        Json?
-  created_at      DateTime? @default(now()) @db.Timestamp(6)
-  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
 
-  @@index([is_active], map: "idx_regulatory_bodies_active")
-  @@index([country], map: "idx_regulatory_bodies_country")
-  @@map("regulatory_bodies")
-}
-
-model Regulation {
-  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name                String    @db.VarChar(255)
-  short_name          String?   @db.VarChar(100)
-  jurisdiction        String    @db.VarChar(100)
-  regulatory_body     String?   @db.VarChar(255)
-  effective_date      DateTime? @db.Date
-  last_updated_date   DateTime? @db.Date
-  version             String?   @db.VarChar(50)
-  status              String?   @default("active") @db.VarChar(50)
-  full_text           String?
-  summary             String?
-  url                 String
-  pdf_url             String?
-  source_language     String?   @default("en") @db.VarChar(10)
-  regulation_type     String?   @db.VarChar(50)
-  industry_scope      String[]
-  geographic_scope    String[]
-  created_at          DateTime? @default(now()) @db.Timestamp(6)
-  updated_at          DateTime? @default(now()) @db.Timestamp(6)
-  metadata            Json?
-  regulation_code     String?
-  title               String?
-  risk_score          Decimal?  @default(5.0) @db.Decimal
-  category            String?
-  industries          String[]
-  requirements        Json?
-  penalties           Json?
-  enforcement_actions Json?
-  source_crawl_id     String?   @db.Uuid
-  regulatory_body_id  String?   @db.Uuid
-
-  @@unique([name, jurisdiction, version])
-  @@index([regulation_code], map: "idx_regulations_code")
-  @@index([jurisdiction], map: "idx_regulations_jurisdiction")
-  @@index([risk_score(sort: Desc)], map: "idx_regulations_risk_score")
-  @@index([status], map: "idx_regulations_status")
-  @@index([regulation_type], map: "idx_regulations_type")
-  @@map("regulations")
-}
-
-model RiskSignal {
-  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  regulation_id         String?   @db.Uuid
-  update_id             String?   @db.Uuid
-  signal_type           String
-  severity              String
-  title                 String
-  description           String?
-  affected_industries   String[]
-  action_required       String?
-  deadline              DateTime? @db.Date
-  risk_score            Decimal?  @db.Decimal
-  sent_to_frontend      Boolean?  @default(false)
-  frontend_acknowledged Boolean?  @default(false)
-  acknowledged_at       DateTime? @db.Timestamp(6)
-  created_at            DateTime? @default(now()) @db.Timestamp(6)
-
-  @@index([sent_to_frontend, created_at(sort: Desc)], map: "idx_risk_signals_sent")
-  @@index([severity, created_at(sort: Desc)], map: "idx_risk_signals_severity")
-  @@map("risk_signals")
+  @@index([domain, event_timestamp(sort: Desc)], map: "idx_cep_signals_domain_time")
+  @@index([signal_type, event_timestamp(sort: Desc)], map: "idx_cep_signals_type_time")
 }
 
 model cloud_incident_staging {
@@ -1376,6 +1908,85 @@ model crawl_targets {
 
   @@index([company_identifier], map: "idx_targets_company")
   @@index([domain], map: "idx_targets_domain")
+}
+
+model crawler_performance {
+  id                    Int      @id @default(autoincrement())
+  date                  DateTime @db.Date
+  domain                String   @db.VarChar(20)
+  sources_crawled       Int      @default(0)
+  items_collected       Int      @default(0)
+  success_rate          Float    @default(0.0)
+  avg_items_per_source  Float    @default(0.0)
+  active_workers        Int      @default(0)
+  total_runtime_minutes Int      @default(0)
+  target_total          Int?
+  achievement_rate      Float?
+  variance_from_target  Float?
+  created_at            DateTime @default(now())
+
+  @@unique([date, domain])
+  @@index([date])
+}
+
+model crawler_sources {
+  id                    Int       @id @default(autoincrement())
+  source_id             String    @unique @db.VarChar(100)
+  domain                String    @db.VarChar(20)
+  source_type           String    @db.VarChar(50)
+  url                   String
+  name                  String    @db.VarChar(200)
+  is_active             Boolean   @default(true)
+  quality_score         Float     @default(0.5)
+  avg_items_per_run     Int       @default(0)
+  success_rate          Float     @default(1.0)
+  last_crawled_at       DateTime?
+  last_success_at       DateTime?
+  total_items_collected Int       @default(0)
+  consecutive_failures  Int       @default(0)
+  discovered_at         DateTime  @default(now())
+  discovered_by         String    @default("manual") @db.VarChar(50)
+  priority              Int       @default(5)
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @default(now())
+
+  @@index([domain, is_active])
+  @@index([priority])
+  @@index([quality_score])
+}
+
+model crawler_targets {
+  id               Int       @id @default(autoincrement())
+  date             DateTime  @db.Date
+  domain           String    @db.VarChar(20)
+  target_total     Int
+  target_min       Int
+  target_max       Int
+  actual_collected Int       @default(0)
+  achievement_rate Float     @default(0.0)
+  status           String    @default("pending") @db.VarChar(20)
+  created_at       DateTime  @default(now())
+  completed_at     DateTime?
+
+  @@unique([date, domain])
+  @@index([date, status])
+}
+
+model crawler_workers {
+  id                    Int       @id @default(autoincrement())
+  worker_id             String    @unique @db.VarChar(100)
+  domain                String    @db.VarChar(20)
+  status                String    @default("idle") @db.VarChar(20)
+  current_source_id     String?   @db.VarChar(100)
+  items_collected_today Int       @default(0)
+  last_run_at           DateTime?
+  last_success_at       DateTime?
+  assigned_sources      Json      @default("[]")
+  max_concurrent        Int       @default(1)
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @default(now())
+
+  @@index([domain, status])
 }
 
 model cyber_incident_staging {
@@ -1483,7 +2094,6 @@ model extraction_templates {
   @@index([domain_pattern], map: "idx_templates_domain")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model failure_patterns {
   id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   source_scrape_id     String?   @db.Uuid
@@ -1642,6 +2252,68 @@ model regulation_violations {
   @@index([requirement_id], map: "idx_violations_requirement")
 }
 
+model regulations {
+  id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                String    @db.VarChar(255)
+  short_name          String?   @db.VarChar(100)
+  jurisdiction        String    @db.VarChar(100)
+  regulatory_body     String?   @db.VarChar(255)
+  effective_date      DateTime? @db.Date
+  last_updated_date   DateTime? @db.Date
+  version             String?   @db.VarChar(50)
+  status              String?   @default("active") @db.VarChar(50)
+  full_text           String?
+  summary             String?
+  url                 String
+  pdf_url             String?
+  source_language     String?   @default("en") @db.VarChar(10)
+  regulation_type     String?   @db.VarChar(50)
+  industry_scope      String[]
+  geographic_scope    String[]
+  created_at          DateTime? @default(now()) @db.Timestamp(6)
+  updated_at          DateTime? @default(now()) @db.Timestamp(6)
+  metadata            Json?
+  regulation_code     String?
+  title               String?
+  risk_score          Decimal?  @default(5.0) @db.Decimal
+  category            String?
+  industries          String[]
+  requirements        Json?
+  penalties           Json?
+  enforcement_actions Json?
+  source_crawl_id     String?   @db.Uuid
+  regulatory_body_id  String?   @db.Uuid
+
+  @@unique([name, jurisdiction, version])
+  @@index([regulation_code], map: "idx_regulations_code")
+  @@index([jurisdiction], map: "idx_regulations_jurisdiction")
+  @@index([risk_score(sort: Desc)], map: "idx_regulations_risk_score")
+  @@index([status], map: "idx_regulations_status")
+  @@index([regulation_type], map: "idx_regulations_type")
+}
+
+model regulatory_bodies {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name            String
+  acronym         String?
+  country         String?
+  region          String?
+  industry        String[]
+  website_url     String    @unique
+  api_endpoint    String?
+  jurisdiction    String[]
+  authority_level String?
+  is_active       Boolean?  @default(true)
+  crawl_frequency String?   @default("daily")
+  last_crawled_at DateTime? @db.Timestamp(6)
+  metadata        Json?
+  created_at      DateTime? @default(now()) @db.Timestamp(6)
+  updated_at      DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([is_active], map: "idx_regulatory_bodies_active")
+  @@index([country], map: "idx_regulatory_bodies_country")
+}
+
 model regulatory_updates {
   id                  String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   regulation_id       String?   @db.Uuid
@@ -1721,6 +2393,27 @@ model risk_assessments {
   @@index([risk_level], map: "idx_risk_level")
   @@index([risk_score(sort: Desc)], map: "idx_risk_score")
   @@index([system_id], map: "idx_risk_system")
+}
+
+model risk_signals {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  regulation_id         String?   @db.Uuid
+  update_id             String?   @db.Uuid
+  signal_type           String
+  severity              String
+  title                 String
+  description           String?
+  affected_industries   String[]
+  action_required       String?
+  deadline              DateTime? @db.Date
+  risk_score            Decimal?  @db.Decimal
+  sent_to_frontend      Boolean?  @default(false)
+  frontend_acknowledged Boolean?  @default(false)
+  acknowledged_at       DateTime? @db.Timestamp(6)
+  created_at            DateTime? @default(now()) @db.Timestamp(6)
+
+  @@index([sent_to_frontend, created_at(sort: Desc)], map: "idx_risk_signals_sent")
+  @@index([severity, created_at(sort: Desc)], map: "idx_risk_signals_severity")
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -1975,6 +2668,7 @@ model scout_statistics {
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model scraped_financial_data {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   source             String
@@ -2007,12 +2701,15 @@ model scraped_financial_data {
   @@index([scraped_at(sort: Desc)], map: "idx_scraped_date")
   @@index([domain], map: "idx_scraped_domain")
   @@index([extracted_data], map: "idx_scraped_extracted_data", type: Gin)
+  @@index([company_identifier], map: "idx_scraped_financial_company")
+  @@index([scraped_at(sort: Desc)], map: "idx_scraped_financial_date")
+  @@index([raw_content_hash], map: "idx_scraped_financial_hash")
+  @@index([source], map: "idx_scraped_financial_source")
   @@index([raw_content_hash], map: "idx_scraped_hash")
   @@index([source], map: "idx_scraped_source")
   @@index([ticker_symbol], map: "idx_scraped_ticker")
 }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model security_vulnerabilities {
   id                        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   source_scrape_id          String?   @db.Uuid
@@ -2063,6 +2760,82 @@ model security_vulnerabilities {
   @@index([target_model_type], map: "idx_vuln_target")
 }
 
+model sengol_score_history {
+  id                      String   @id
+  projectId               String
+  score                   Float
+  grade                   String
+  trend                   String
+  trendDescription        String
+  riskPosture             Float
+  complianceHealth        Float
+  coverage                Float
+  recency                 Float
+  consistency             Float
+  daysSinceLastAssessment Int
+  insights                Json
+  recommendations         Json
+  createdAt               DateTime @default(now())
+  Project                 Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([projectId])
+  @@index([score])
+}
+
+model source_discovery_queue {
+  id                Int       @id @default(autoincrement())
+  potential_url     String
+  domain            String    @db.VarChar(20)
+  source_type       String?   @db.VarChar(50)
+  discovered_via    String?   @db.VarChar(100)
+  confidence_score  Float     @default(0.5)
+  validation_status String    @default("pending") @db.VarChar(20)
+  validation_notes  String?
+  created_at        DateTime  @default(now())
+  validated_at      DateTime?
+
+  @@index([created_at])
+  @@index([validation_status, domain])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model source_registry {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  source_name           String    @db.VarChar(255)
+  source_url            String    @unique
+  source_type           String    @db.VarChar(50)
+  category              String    @db.VarChar(50)
+  discovery_method      String?   @default("manual") @db.VarChar(50)
+  discovered_at         DateTime? @default(now()) @db.Timestamp(6)
+  quality_score         Int?
+  enabled               Boolean?  @default(false)
+  verified              Boolean?  @default(false)
+  verification_date     DateTime? @db.Timestamp(6)
+  priority              Int?      @default(10)
+  schedule_cron         String?   @default("0 2 * * *") @db.VarChar(50)
+  last_crawled_at       DateTime? @db.Timestamp(6)
+  next_scheduled_crawl  DateTime? @db.Timestamp(6)
+  crawler_class         String?   @db.VarChar(100)
+  crawl_config          Json?     @default("{}")
+  target_table          String?   @db.VarChar(100)
+  avg_records_per_crawl Int?      @default(0)
+  avg_duration_seconds  Int?      @default(0)
+  success_rate          Decimal?  @default(0.00) @db.Decimal(5, 2)
+  consecutive_failures  Int?      @default(0)
+  last_error_message    String?
+  last_error_at         DateTime? @db.Timestamp(6)
+  description           String?
+  tags                  Json?     @default("[]")
+  metadata              Json?     @default("{}")
+  created_at            DateTime? @default(now()) @db.Timestamp(6)
+  updated_at            DateTime? @default(now()) @db.Timestamp(6)
+  created_by            String?   @db.VarChar(100)
+  updated_by            String?   @db.VarChar(100)
+
+  @@index([enabled], map: "idx_source_registry_enabled")
+}
+
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model user_ai_systems {
   id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -2098,1148 +2871,11 @@ model user_ai_systems {
   @@index([user_id], map: "idx_user_systems_user")
 }
 
-// ================================================================================
-// EXECUTIVE PRODUCT ENHANCEMENTS - Evidence Attribution & Trust Building
-// ================================================================================
-
-/// Links risk assessments to real-world failure patterns for evidence-based scoring
-model RiskEvidence {
-  id               String   @id @default(cuid())
-  domainRiskId     String
-  failurePatternId String   @db.Uuid
-  relevanceScore   Float // 0-1, ML-calculated similarity to user's scenario
-  category         String // "direct_match", "similar_scenario", "related_pattern", "industry_match"
-  weight           Float // How much this incident influenced the risk score (0-1)
-  matchFactors     Json? // What matched: industry, use_case, model_type, severity, etc.
-  createdAt        DateTime @default(now())
-
-  domainRisk DomainRisk @relation(fields: [domainRiskId], references: [id], onDelete: Cascade)
-
-  @@index([domainRiskId])
-  @@index([relevanceScore])
-  @@index([category])
-}
-
-/// Track model accuracy and prediction outcomes for transparency metrics
-model RiskPredictionOutcome {
-  id             String    @id @default(cuid())
-  assessmentId   String
-  riskId         String
-  predictedScore Float
-  actualOutcome  String? // "occurred", "near_miss", "avoided", "unknown"
-  timeToEvent    Int? // days until incident (if occurred)
-  verifiedAt     DateTime?
-  verifiedBy     String? // user id or "system"
-  notes          String?
-  createdAt      DateTime  @default(now())
-
-  assessment RiskAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-
-  @@index([assessmentId])
-  @@index([actualOutcome])
-}
-
-/// Continuous monitoring configuration for real-time risk tracking
-model ContinuousMonitoring {
-  id             String    @id @default(cuid())
-  assessmentId   String
-  userId         String
-  isActive       Boolean   @default(true)
-  frequency      String // "daily", "weekly", "monthly"
-  lastScannedAt  DateTime?
-  nextScanAt     DateTime
-  alertThreshold Float     @default(0.5) // Alert if risk changes by >0.5 points
-  createdAt      DateTime  @default(now())
-
-  assessment RiskAssessment        @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  alerts     MonitoringRiskAlert[]
-
-  @@index([userId, isActive])
-  @@index([nextScanAt])
-}
-
-/// Alerts generated by continuous monitoring system
-model MonitoringRiskAlert {
-  id             String    @id @default(cuid())
-  monitoringId   String
-  alertType      String // "risk_increase", "new_incident", "regulation_change", "vulnerability"
-  severity       String // "low", "medium", "high", "critical"
-  title          String
-  description    String
-  oldValue       Json?
-  newValue       Json?
-  triggerData    Json // What caused the alert
-  isRead         Boolean   @default(false)
-  isAcknowledged Boolean   @default(false)
-  acknowledgedAt DateTime?
-  createdAt      DateTime  @default(now())
-
-  monitoring ContinuousMonitoring @relation(fields: [monitoringId], references: [id], onDelete: Cascade)
-
-  @@index([monitoringId, isRead])
-  @@index([createdAt])
-  @@index([severity])
-}
-
-// ================================================================================
-// CRAWLER ORCHESTRATION TABLES (VPS Data Collection System)
-// ================================================================================
-// These tables support the VPS Python crawler system that collects AI/Cyber/Cloud
-// incident data. Added to schema to prevent accidental drops during migrations.
-// System Location: root@178.156.192.155:/opt/sengol/data-scout
-// ================================================================================
-
-/// Registry of all data sources across AI, Cyber, and Cloud domains
-/// Managed by VPS crawler orchestrator for intelligent data collection
-model crawler_sources {
-  id                    Int       @id @default(autoincrement())
-  source_id             String    @unique @db.VarChar(100)
-  domain                String    @db.VarChar(20) // "ai", "cyber", "cloud"
-  source_type           String    @db.VarChar(50) // "api", "rss", "scraper"
-  url                   String    @db.Text
-  name                  String    @db.VarChar(200)
-  is_active             Boolean   @default(true)
-  quality_score         Float     @default(0.5) // 0.0-1.0, ML-calculated
-  avg_items_per_run     Int       @default(0)
-  success_rate          Float     @default(1.0) // 0.0-1.0
-  last_crawled_at       DateTime?
-  last_success_at       DateTime?
-  total_items_collected Int       @default(0)
-  consecutive_failures  Int       @default(0)
-  discovered_at         DateTime  @default(now())
-  discovered_by         String    @default("manual") @db.VarChar(50)
-  priority              Int       @default(5) // 1-10, where 1 is highest priority
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @default(now()) @updatedAt
-
-  @@index([domain, is_active])
-  @@index([quality_score])
-  @@index([priority])
-  @@map("crawler_sources")
-}
-
-/// Daily collection targets with variance tolerance (±20%)
-/// Orchestrator sets targets based on 7-day rolling average + 10% growth
-model crawler_targets {
-  id               Int       @id @default(autoincrement())
-  date             DateTime  @db.Date
-  domain           String    @db.VarChar(20) // "ai", "cyber", "cloud"
-  target_total     Int // Target for the day
-  target_min       Int // Minimum acceptable (target - 20%)
-  target_max       Int // Maximum acceptable (target + 20%)
-  actual_collected Int       @default(0)
-  achievement_rate Float     @default(0.0) // actual / target
-  status           String    @default("pending") @db.VarChar(20) // "pending", "in_progress", "completed", "failed"
-  created_at       DateTime  @default(now())
-  completed_at     DateTime?
-
-  @@unique([date, domain])
-  @@index([date, status])
-  @@map("crawler_targets")
-}
-
-/// Worker process management for each domain
-/// Tracks worker status, assigned sources, and collection progress
-model crawler_workers {
-  id                    Int       @id @default(autoincrement())
-  worker_id             String    @unique @db.VarChar(100)
-  domain                String    @db.VarChar(20) // "ai", "cyber", "cloud"
-  status                String    @default("idle") @db.VarChar(20) // "idle", "running", "error"
-  current_source_id     String?   @db.VarChar(100)
-  items_collected_today Int       @default(0)
-  last_run_at           DateTime?
-  last_success_at       DateTime?
-  assigned_sources      Json      @default("[]") // Array of source_ids
-  max_concurrent        Int       @default(1)
-  created_at            DateTime  @default(now())
-  updated_at            DateTime  @default(now()) @updatedAt
-
-  @@index([domain, status])
-  @@map("crawler_workers")
-}
-
-/// Historical performance tracking for analytics and optimization
-/// Aggregated daily metrics per domain
-model crawler_performance {
-  id                    Int      @id @default(autoincrement())
-  date                  DateTime @db.Date
-  domain                String   @db.VarChar(20) // "ai", "cyber", "cloud"
-  sources_crawled       Int      @default(0)
-  items_collected       Int      @default(0)
-  success_rate          Float    @default(0.0) // 0.0-1.0
-  avg_items_per_source  Float    @default(0.0)
-  active_workers        Int      @default(0)
-  total_runtime_minutes Int      @default(0)
-  target_total          Int?
-  achievement_rate      Float? // items_collected / target_total
-  variance_from_target  Float? // (actual - target) / target
-  created_at            DateTime @default(now())
-
-  @@unique([date, domain])
-  @@index([date])
-  @@map("crawler_performance")
-}
-
-/// Auto-discovered sources awaiting validation
-/// Discovery pipeline continuously finds new high-quality sources
-model source_discovery_queue {
-  id                Int       @id @default(autoincrement())
-  potential_url     String    @db.Text
-  domain            String    @db.VarChar(20) // "ai", "cyber", "cloud"
-  source_type       String?   @db.VarChar(50) // "api", "rss", "scraper"
-  discovered_via    String?   @db.VarChar(100) // How it was found
-  confidence_score  Float     @default(0.5) // 0.0-1.0, estimated quality
-  validation_status String    @default("pending") @db.VarChar(20) // "pending", "validated", "rejected"
-  validation_notes  String?   @db.Text
-  created_at        DateTime  @default(now())
-  validated_at      DateTime?
-
-  @@index([validation_status, domain])
-  @@index([created_at])
-  @@map("source_discovery_queue")
-}
-
-/// Sengol Score™ History Tracking
-/// Records score snapshots over time for trend analysis and alerting
-model SengolScoreHistory {
-  id               String @id @default(cuid())
-  projectId        String
-  score            Float // 0-100 overall score
-  grade            String // Excellent/Good/Fair/Poor/Critical
-  trend            String // improving/stable/declining
-  trendDescription String // Human-readable trend description
-
-  // Component scores (0-1 decimals)
-  riskPosture      Float
-  complianceHealth Float
-  coverage         Float
-  recency          Float
-  consistency      Float
-
-  // Additional metadata
-  daysSinceLastAssessment Int
-  insights                Json // Array of insights
-  recommendations         Json // Array of recommendations
-
-  createdAt DateTime @default(now())
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  @@index([projectId])
-  @@index([createdAt])
-  @@index([score]) // For finding projects by score range
-  @@map("sengol_score_history")
-}
-
-// ================================================================================
-// GEOGRAPHY-BASED MULTI-ACCOUNT SYSTEM
-// ================================================================================
-// Allows users to manage separate accounts for different jurisdictions
-// Each geography account has separate billing, projects, and compliance frameworks
-// ================================================================================
-
-/// Geography Account - Separate account per jurisdiction with independent billing
-model GeographyAccount {
-  id     String @id @default(cuid())
-  userId String // Owner of this geography account
-
-  // Geography details
-  name           String // "North America Operations", "EU Region", etc.
-  jurisdiction   String // "US", "EU", "UK", "APAC", "LATAM", "MENA", etc.
-  country        String? // Specific country if applicable
-  region         String? // State/province if applicable
-  regulatoryBody String? // Primary regulatory body (e.g., "SEC", "FCA", "GDPR DPA")
-
-  // Billing (each geography is separately billed)
-  billingStatus    String  @default("active") // "active", "suspended", "cancelled"
-  stripeCustomerId String? @unique
-  stripeSubId      String? @unique
-  billingEmail     String?
-  billingCurrency  String  @default("USD") // USD, EUR, GBP, etc.
-
-  // Subscription details
-  tier             String    @default("free") // "free", "professional", "enterprise"
-  projectLimit     Int       @default(3)
-  userLimit        Int       @default(5)
-  currentPeriodEnd DateTime?
-  trialEnds        DateTime?
-
-  // Data residency
-  dataResidency String? // "us-east-1", "eu-west-1", etc.
-
-  // Metadata
-  isActive  Boolean  @default(true)
-  isPrimary Boolean  @default(false) // One geography is primary (default view)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  user                  User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projects              Project[]
-  riskAssessments       RiskAssessment[]
-  complianceAssessments ComplianceAssessment[]
-  members               GeographyAccountMember[]
-
-  @@index([userId])
-  @@index([jurisdiction])
-  @@index([billingStatus])
-  @@index([isActive])
-}
-
-/// Geography Account Member - Team collaboration within a geography account
-model GeographyAccountMember {
-  id                 String    @id @default(cuid())
-  geographyAccountId String
-  userId             String
-  role               String    @default("member") // "owner", "admin", "member", "viewer"
-  permissions        Json? // Specific permissions
-  invitedAt          DateTime  @default(now())
-  joinedAt           DateTime?
-  invitedBy          String? // User ID who sent invite
-
-  geographyAccount GeographyAccount @relation(fields: [geographyAccountId], references: [id], onDelete: Cascade)
-  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([geographyAccountId, userId])
-  @@index([userId])
-  @@index([geographyAccountId])
-}
-
-/// Checklist Response - Stores user responses to evidence-based checklist items
-model ChecklistResponse {
-  id              String   @id @default(cuid())
-  assessmentId    String // Risk or Compliance Assessment ID
-  assessmentType  String // 'risk' or 'compliance'
-  domain          String // 'ai', 'cyber', 'cloud', or compliance framework name
-  itemId          String // Checklist item ID (e.g., 'ai-reg-001')
-  response        String // 'yes', 'partial', 'no', 'na'
-  notes           String?  @db.Text
-  confidenceLevel Int? // 1-5 scale
-  answeredAt      DateTime @default(now())
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@unique([assessmentId, assessmentType, domain, itemId])
-  @@index([assessmentId, domain])
-  @@index([assessmentId, assessmentType])
-  @@index([itemId])
-  @@index([answeredAt])
-}
-
-/// Checklist Score - Stores calculated scores from checklist assessments
-model ChecklistScore {
-  id                          String   @id @default(cuid())
-  assessmentId                String   @unique
-  assessmentType              String // 'risk' or 'compliance'
-  domain                      String // 'ai', 'cyber', 'cloud', or framework name
-  overallRiskScore            Float // 0-100 (higher = more risk)
-  overallCompliancePercentage Float // 0-100 (higher = better compliance)
-  categoryScores              Json // Breakdown by category
-  topGaps                     Json // Array of prioritized gaps
-  summary                     Json // Summary statistics
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
-
-  @@index([assessmentId])
-  @@index([assessmentType, domain])
-  @@index([createdAt])
-}
-
-// ============================================
-// CEP (Complex Event Processing) Tables
-// ============================================
-// These tables are managed outside Prisma migrations
-// Added to schema to prevent accidental deletion
-
-model cep_anomalies {
-  id                BigInt    @id @default(autoincrement())
-  domain            String    @db.VarChar(50)
-  signal_type       String?   @db.VarChar(100)
-  anomaly_type      String    @db.VarChar(50)
-  severity          String    @db.VarChar(20)
-  z_score           Decimal?  @db.Decimal(6, 2)
-  observed_value    Decimal   @db.Decimal(10, 2)
-  baseline_value    Decimal   @db.Decimal(10, 2)
-  baseline_stddev   Decimal?  @db.Decimal(10, 2)
-  deviation_pct     Decimal?  @db.Decimal(6, 2)
-  time_window_start DateTime  @db.Timestamptz(6)
-  time_window_end   DateTime  @db.Timestamptz(6)
-  description       String?
-  status            String?   @default("detected") @db.VarChar(50)
-  detected_at       DateTime? @default(now()) @db.Timestamptz(6)
-  resolved_at       DateTime? @db.Timestamptz(6)
-
-  @@index([domain, detected_at(sort: Desc)], map: "idx_cep_anomalies_domain_time")
-  @@index([severity, detected_at(sort: Desc)], map: "idx_cep_anomalies_severity")
-  @@index([status, detected_at(sort: Desc)], map: "idx_cep_anomalies_status")
-}
-
-model cep_pattern_templates {
-  id                     Int       @id @default(autoincrement())
-  pattern_name           String    @unique @db.VarChar(100)
-  pattern_type           String    @db.VarChar(50)
-  description            String?
-  detection_window_hours Int
-  min_confidence         Decimal?  @default(0.7) @db.Decimal(3, 2)
-  config                 Json
-  is_active              Boolean?  @default(true)
-  created_at             DateTime? @default(now()) @db.Timestamptz(6)
-  updated_at             DateTime? @default(now()) @db.Timestamptz(6)
-}
-
-model cep_signal_events {
-  id              BigInt    @id @default(autoincrement())
-  event_id        String    @unique @db.VarChar(255)
-  domain          String    @db.VarChar(50)
-  signal_type     String    @db.VarChar(100)
-  signal_strength Decimal   @db.Decimal(3, 2)
-  event_timestamp DateTime  @db.Timestamptz(6)
-  source_id       String?   @db.VarChar(100)
-  metadata        Json?
-  created_at      DateTime? @default(now()) @db.Timestamptz(6)
-
-  @@index([domain, event_timestamp(sort: Desc)], map: "idx_cep_signals_domain_time")
-  @@index([signal_type, event_timestamp(sort: Desc)], map: "idx_cep_signals_type_time")
-}
-
-model cep_correlated_events {
-  id                 BigInt    @id @default(autoincrement())
-  pattern_id         Int
-  pattern_name       String    @db.VarChar(100)
-  confidence_score   Decimal   @db.Decimal(4, 3)
-  event_ids          String[]
-  time_window_start  DateTime  @db.Timestamptz(6)
-  time_window_end    DateTime  @db.Timestamptz(6)
-  impact_assessment  String?
-  recommended_action String?
-  metadata           Json?
-  status             String?   @default("detected") @db.VarChar(50)
-  detected_at        DateTime? @default(now()) @db.Timestamptz(6)
-  resolved_at        DateTime? @db.Timestamptz(6)
-
-  @@index([pattern_id, detected_at(sort: Desc)], map: "idx_cep_correlated_pattern")
-  @@index([status, detected_at(sort: Desc)], map: "idx_cep_correlated_status")
-  @@index([time_window_start, time_window_end], map: "idx_cep_correlated_time_window")
-}
-
-model cep_signal_correlations {
-  id                      Int       @id @default(autoincrement())
-  signal_type_a           String    @db.VarChar(100)
-  signal_type_b           String    @db.VarChar(100)
-  correlation_coefficient Decimal?  @db.Decimal(4, 3)
-  time_lag_hours          Int?      @default(0)
-  co_occurrence_count     Int?      @default(0)
-  total_observations      Int?      @default(0)
-  confidence              Decimal?  @db.Decimal(3, 2)
-  last_updated            DateTime? @default(now()) @db.Timestamptz(6)
-
-  @@unique([signal_type_a, signal_type_b, time_lag_hours])
-  @@index([signal_type_a, signal_type_b], map: "idx_cep_correlations_types")
-}
-
-// ============================================
-// Pricing & Conversion Analytics
-// ============================================
-
-model PricingAnalyticsEvent {
-  id               String   @id @default(cuid())
-  userId           String?
-  sessionId        String? // For anonymous users
-  eventType        String // limit_reached, upgrade_clicked, pricing_viewed, subscription_created, etc.
-  eventCategory    String // conversion, engagement, revenue
-  assessmentType   String? // 'risk' or 'compliance'
-  currentTier      String? // 'free', 'paid', 'enterprise'
-  targetTier       String? // When upgrading
-  subscriptionPlan String? // 'bootstrapped', 'seeded-funded'
-  price            Float? // Amount if applicable
-  metadata         Json? // Additional event-specific data
-  userAgent        String?
-  referrer         String?
-  createdAt        DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([eventType])
-  @@index([eventCategory])
-  @@index([createdAt])
-  @@index([sessionId])
-}
-
-// Removed old PricingPlan and UserPricing models
-// New comprehensive pricing models are defined at the end of the schema
-
-// ============================================================
-// SECURITY LOGGING MODELS
-// ============================================================
-
-model SecurityEvent {
-  id        String  @id @default(cuid())
-  eventType String // 'bot_blocked', 'suspicious_activity', 'honeypot_triggered', 'auto_blocked', 'rate_limited'
-  ip        String
-  userAgent String  @db.Text
-  url       String  @db.Text
-  path      String
-  method    String // GET, POST, etc.
-  reason    String // Why it was blocked/flagged
-  severity  String // 'low', 'medium', 'high', 'critical'
-  blocked   Boolean @default(true)
-
-  // Request details
-  referer        String? @db.Text
-  origin         String?
-  acceptHeader   String?
-  acceptLanguage String?
-  acceptEncoding String?
-
-  // Bot detection details
-  isBot        Boolean @default(false)
-  isSuspicious Boolean @default(false)
-  botType      String? // 'ai_training', 'scraper', 'security_scanner', etc.
-
-  // Geolocation (if available)
-  country String?
-  region  String?
-  city    String?
-
-  // Additional metadata
-  requestId String? @unique
-  metadata  Json? // Additional flexible data
-
-  createdAt DateTime @default(now())
-
-  @@index([ip])
-  @@index([eventType])
-  @@index([createdAt])
-  @@index([severity])
-  @@index([blocked])
-  @@index([isBot])
-}
-
-model BlockedIP {
-  id           String    @id @default(cuid())
-  ip           String    @unique
-  reason       String    @db.Text
-  blockedAt    DateTime  @default(now())
-  expiresAt    DateTime? // null = permanent block
-  userAgent    String?   @db.Text
-  requestCount Int       @default(1)
-  lastSeen     DateTime  @default(now())
-  permanent    Boolean   @default(false)
-
-  // First event that triggered the block
-  firstEventId String?
-
-  // Unblock info
-  unblockedAt     DateTime?
-  unblockedBy     String? // Admin email who unblocked
-  unblockedReason String?
-
-  @@index([ip])
-  @@index([expiresAt])
-  @@index([blockedAt])
-  @@index([permanent])
-}
-
-model SecurityAlert {
-  id          String  @id @default(cuid())
-  alertType   String // 'sustained_attack', 'honeypot_trigger', 'rate_limit_exceeded', etc.
-  severity    String // 'low', 'medium', 'high', 'critical'
-  title       String
-  description String  @db.Text
-  ip          String?
-  userAgent   String? @db.Text
-
-  // Related events
-  eventCount   Int      @default(1)
-  firstEventAt DateTime
-  lastEventAt  DateTime
-
-  // Alert status
-  acknowledged   Boolean   @default(false)
-  acknowledgedAt DateTime?
-  acknowledgedBy String? // Admin email
-  resolved       Boolean   @default(false)
-  resolvedAt     DateTime?
-  resolvedBy     String?
-  notes          String?   @db.Text
-
-  metadata  Json?
-  createdAt DateTime @default(now())
-
-  @@index([alertType])
-  @@index([severity])
-  @@index([acknowledged])
-  @@index([resolved])
-  @@index([createdAt])
-}
-
-// ============================================
-// PRICING CONFIGURATION (Database-driven)
-// ============================================
-
-model PricingPlan {
-  id          String  @id @default(cuid())
-  planId      String  @unique // 'free', 'starter', 'professional', etc.
-  name        String // 'Free', 'Starter', 'Professional', etc.
-  description String? @db.Text
-  price       Int // Price in cents
-  interval    String // 'month', 'year'
-  popular     Boolean @default(false)
-  active      Boolean @default(true) // Enable/disable plans without deleting
-  sortOrder   Int     @default(0) // Display order
-
-  // Stripe integration
-  stripePriceId   String?
-  stripeProductId String?
-
-  features PricingFeature[]
-  limits   PricingLimit[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([planId])
-  @@index([active])
-  @@index([sortOrder])
-}
-
-model PricingFeature {
-  id     String      @id @default(cuid())
-  planId String
-  plan   PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-
-  name        String // Display name: '20 RiskLens assessments/month'
-  description String? @db.Text
-  category    String? // 'assessments', 'exports', 'support', 'team'
-  sortOrder   Int     @default(0)
-  highlighted Boolean @default(false) // Highlight key features
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([planId])
-  @@index([sortOrder])
-}
-
-model PricingLimit {
-  id     String      @id @default(cuid())
-  planId String
-  plan   PricingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
-
-  // Limit key matches lib/feature-gates.ts LimitKey type
-  limitKey   String // 'riskAssessmentsPerMonth', 'users', 'projects', etc.
-  limitValue Int // -1 for unlimited, otherwise numeric limit
-
-  // For feature flags (boolean limits)
-  featureKey String? // 'pdfExports', 'excelExports', 'apiAccess', etc.
-  enabled    Boolean @default(false)
-
-  metadata Json? // Additional config like apiRateLimit: 500
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([planId, limitKey])
-  @@unique([planId, featureKey])
-  @@index([planId])
-  @@index([limitKey])
-  @@index([featureKey])
-}
-
-// Pricing change history for analytics
-model PricingChangeLog {
-  id         String  @id @default(cuid())
-  planId     String
-  changeType String // 'price_change', 'limit_change', 'feature_change', 'plan_created'
-  field      String? // What changed: 'price', 'riskAssessmentsPerMonth', etc.
-  oldValue   String? @db.Text
-  newValue   String? @db.Text
-  changedBy  String? // Admin email
-  reason     String? @db.Text
-
-  createdAt DateTime @default(now())
-
-  @@index([planId])
-  @@index([changeType])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// COMPLY PRODUCT: REGULATORY MONITORING & INTELLIGENCE
-// ============================================================================
-// This file contains NEW models to add to schema.prisma
-// These integrate with existing Regulation model from VPS crawler
-// Date: October 27, 2025
-
-// ============================================================================
-// 1. REGULATORY JURISDICTIONS (Hierarchical)
-// ============================================================================
-
-model RegulatoryJurisdiction {
-  id         String                   @id @default(cuid())
-  code       String                   @unique // 'US', 'US-CA', 'EU', 'UK'
-  name       String // 'United States', 'California', 'European Union'
-  parentId   String? // For nested jurisdictions (CA → US)
-  parent     RegulatoryJurisdiction?  @relation("JurisdictionHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children   RegulatoryJurisdiction[] @relation("JurisdictionHierarchy")
-  level      String // 'federal', 'state', 'local', 'international'
-  population BigInt?
-  gdpUsd     BigInt?
-  isActive   Boolean                  @default(true)
-  createdAt  DateTime                 @default(now())
-  updatedAt  DateTime                 @updatedAt
-
-  // Relations
-  userProfiles UserRegulatoryProfile[]
-
-  @@index([code])
-  @@index([level])
-  @@index([isActive])
-}
-
-// ============================================================================
-// 2. USER REGULATORY PROFILE (Personalization)
-// ============================================================================
-
-model UserRegulatoryProfile {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // Jurisdiction preferences (many-to-many via implicit junction table)
-  jurisdictions RegulatoryJurisdiction[]
-
-  // AI System types user is building
-  aiSystemTypes String[] // ['chatbot', 'credit-scoring', 'facial-recognition', etc]
-
-  // Industry verticals
-  industries String[] // ['fintech', 'healthcare', 'ecommerce', etc]
-
-  // Company characteristics
-  companySize   String? // 'startup', 'smb', 'enterprise' (affects exemptions)
-  annualRevenue String? // '<1M', '1M-10M', '10M-100M', '100M+' (affects thresholds)
-  dataVolume    String? // 'low', 'medium', 'high' (affects GDPR/CCPA)
-
-  // Alert preferences
-  alertPreferences Json // {email: true, sms: true, push: true, digestFrequency: 'daily'}
-
-  // Onboarding status
-  onboardingCompleted Boolean @default(false)
-  onboardingStep      Int     @default(0)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  alerts    ComplianceAlert[]
-  playbooks CompliancePlaybookInstance[]
-
-  @@index([userId])
-}
-
-// ============================================================================
-// 3. COMPLIANCE ALERTS (Smart Notifications)
-// ============================================================================
-
-model ComplianceAlert {
-  id          String                @id @default(cuid())
-  userId      String
-  userProfile UserRegulatoryProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
-
-  // Alert source
-  regulationCode String? // Links to existing Regulation.regulation_code
-  changeType     String? // 'new-law', 'amendment', 'deadline', 'enforcement'
-
-  // Alert classification
-  alertType   String // 'new-law', 'amendment', 'deadline', 'violation-risk', 'enforcement'
-  severity    String // 'critical', 'high', 'medium', 'low'
-  impactScore Int // 0-100 (AI-calculated relevance to user)
-
-  // Content
-  title              String
-  summary            String   @db.Text
-  actionRequired     Boolean  @default(false)
-  recommendedActions String[] // List of suggested actions
-
-  // Affected entities
-  affectedProjectIds  String[] // Projects impacted by this alert
-  affectedSystemTypes String[] // AI system types affected
-
-  // Timing
-  deadline  DateTime? // Deadline for action (if applicable)
-  expiresAt DateTime? // When alert becomes irrelevant
-
-  // Status
-  status       String    @default("unread") // 'unread', 'read', 'actioned', 'snoozed', 'dismissed'
-  snoozedUntil DateTime?
-  actionedAt   DateTime?
-  actionNotes  String?   @db.Text
-
-  // Delivery
-  deliveredVia String[] // ['email', 'sms', 'push', 'dashboard']
-  emailSentAt  DateTime?
-  smsSentAt    DateTime?
-  pushSentAt   DateTime?
-
-  // Metadata
-  metadata  Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([regulationCode])
-  @@index([alertType])
-  @@index([severity])
-  @@index([status])
-  @@index([deadline])
-  @@index([createdAt])
-}
-
-// ============================================================================
-// 4. COMPLIANCE PLAYBOOKS (Step-by-Step Guides)
-// ============================================================================
-
-model CompliancePlaybook {
-  id             String  @id @default(cuid())
-  regulationCode String? // Links to Regulation.regulation_code
-
-  // Playbook info
-  title        String
-  description  String  @db.Text
-  aiSystemType String? // Specific to one AI system type, or null for general
-  jurisdiction String? // Specific jurisdiction, or null for general
-
-  // Scope
-  category       String // 'data-privacy', 'ai-ethics', 'consumer-protection', etc
-  difficulty     String @default("medium") // 'easy', 'medium', 'hard', 'expert'
-  estimatedHours Int? // Time estimate to complete
-
-  // Visibility
-  isPublic  Boolean @default(false)
-  createdBy String // 'sengol' or userId for custom playbooks
-
-  // Usage stats
-  useCount       Int    @default(0)
-  completionRate Float? // Average completion rate (0-1)
-
-  // Metadata
-  metadata  Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  steps     CompliancePlaybookStep[]
-  instances CompliancePlaybookInstance[]
-
-  @@index([aiSystemType])
-  @@index([category])
-  @@index([isPublic])
-  @@index([regulationCode])
-}
-
-// ============================================================================
-// 5. COMPLIANCE PLAYBOOK STEPS
-// ============================================================================
-
-model CompliancePlaybookStep {
-  id         String             @id @default(cuid())
-  playbookId String
-  playbook   CompliancePlaybook @relation(fields: [playbookId], references: [id], onDelete: Cascade)
-
-  // Step details
-  stepNumber  Int
-  title       String
-  description String @db.Text
-
-  // Guidance
-  instructions String? @db.Text
-  examples     Json?
-  templates    Json? // Document templates, code snippets
-
-  // Evidence
-  evidenceRequired  String[] // Types of evidence to collect
-  evidenceTemplates Json?
-
-  // Time estimate
-  estimatedMinutes Int?
-
-  // Dependencies
-  dependsOnSteps Int[] // Other step numbers this depends on
-
-  // Metadata
-  metadata  Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([playbookId])
-  @@index([stepNumber])
-}
-
-// ============================================================================
-// 6. COMPLIANCE PLAYBOOK INSTANCES (User Progress)
-// ============================================================================
-
-model CompliancePlaybookInstance {
-  id          String                @id @default(cuid())
-  playbookId  String
-  playbook    CompliancePlaybook    @relation(fields: [playbookId], references: [id], onDelete: Cascade)
-  userId      String
-  userProfile UserRegulatoryProfile @relation(fields: [userId], references: [userId], onDelete: Cascade)
-  projectId   String?
-  project     Project?              @relation(fields: [projectId], references: [id], onDelete: SetNull)
-
-  // Progress tracking
-  status         String @default("not-started") // 'not-started', 'in-progress', 'completed', 'abandoned'
-  progress       Float  @default(0) // 0-100
-  completedSteps Int[] // Array of step numbers completed
-
-  // Evidence collection
-  evidenceArtifacts Json? // Collected evidence keyed by step number
-
-  // Timeline
-  startedAt           DateTime?
-  estimatedCompletion DateTime?
-  completedAt         DateTime?
-
-  // Assignment
-  assignedToUserId String? // For team collaboration
-
-  // Notes
-  notes String? @db.Text
-
-  // Metadata
-  metadata  Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([playbookId, userId, projectId])
-  @@index([userId])
-  @@index([projectId])
-  @@index([status])
-}
-
-// ============================================================================
-// 7. REGULATORY ENFORCEMENT TRACKING
-// ============================================================================
-
-model RegulatoryEnforcement {
-  id String @id @default(cuid())
-
-  // Enforcement details
-  enforcingBody String // 'FTC', 'FCC', 'State AG', etc
-  targetCompany String
-  caseNumber    String?
-
-  // Violation
-  regulationCode String? // Links to Regulation.regulation_code
-  violationType  String // 'deceptive-practices', 'data-breach', 'bias', etc
-  description    String  @db.Text
-
-  // Outcome
-  penalty     BigInt? // Penalty amount in USD
-  penaltyType String? // 'fine', 'injunction', 'consent-decree', etc
-  outcome     String // 'settled', 'ongoing', 'dismissed', etc
-
-  // AI Analysis
-  aiSummary        String?  @db.Text
-  lessonsLearned   String[] // Key takeaways
-  relevanceToUsers String[] // Which AI system types should pay attention
-
-  // Dates
-  filedDate   DateTime?
-  settledDate DateTime?
-
-  // Source
-  officialUrl  String?
-  pressRelease String?
-
-  // Metadata
-  metadata  Json?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([enforcingBody])
-  @@index([violationType])
-  @@index([filedDate])
-  @@index([settledDate])
-  @@index([regulationCode])
-}
-
-// ============================================================================
-// CONTEXT-AWARE ASSESSMENTS
-// ============================================================================
-
-model AssessmentContext {
-  id             String @id @default(cuid())
-  assessmentId   String @unique
-  assessmentType String // 'risk' or 'compliance'
-
-  // User-provided context
-  projectDescription String  @db.Text
-  technicalStack     String? @db.Text
-  specificConcerns   String? @db.Text
-
-  // AI-generated analysis (JSON structure from ContextAnalysis type)
-  analysis Json
-
-  // Analysis metadata
-  confidence       Float  @default(0.0)
-  aiModel          String
-  tokensUsed       Int
-  processingTimeMs Int
-  analysisVersion  String
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([assessmentId])
-  @@index([assessmentType])
-  @@index([createdAt])
-}
-
-model ContextAnalysisCache {
-  id                 String   @id @default(cuid())
-  descriptionHash    String   @unique
-  projectDescription String   @db.Text
-  analysis           Json
-  hitCount           Int      @default(0)
-  lastAccessedAt     DateTime @default(now())
-  createdAt          DateTime @default(now())
-
-  @@index([descriptionHash])
-  @@index([createdAt])
-}
-
-model ContextualizedQuestion {
-  id                  String @id @default(cuid())
-  assessmentContextId String
-  baseQuestionId      String
-  category            String
-
-  // Original question
-  originalText String @db.Text
-
-  // Contextualized version
-  contextualizedText String @db.Text
-  contextReasoning   String @db.Text
-
-  // Relevance scoring
-  relevanceScore Float
-  priority       Int   @default(0)
-
-  // User response
-  userAnswer String?   @db.Text
-  answeredAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([assessmentContextId])
-  @@index([category])
-  @@index([relevanceScore])
-}
-
-// ============================================================================
-// P0 FEATURE: INDUSTRY BENCHMARKING
-// ============================================================================
-// Synthetic benchmark data based on 652+ incident analysis
-// Provides industry averages for risk comparison
-
-model IndustryBenchmark {
-  id           String @id @default(cuid())
-  industry     String
-  aiSystemType String
-
-  // Risk scores from incident analysis
-  averageRiskScore Float
-  medianRiskScore  Float
-  p25RiskScore     Float // 25th percentile
-  p75RiskScore     Float // 75th percentile
-  p90RiskScore     Float // 90th percentile
-
-  // Sample metadata
-  sampleSize Int // Number of incidents analyzed
-  dataSource String @default("incident_analysis") // "incident_analysis", "user_assessments", "hybrid"
-
-  // Top risk factors for this industry/system combination
-  topRiskFactors Json // Array of {category: string, avgScore: number, frequency: number}
-
-  // Compliance statistics
-  avgComplianceScore Float?
-  commonViolations   Json? // Array of {regulation: string, frequency: number}
-
-  // Cost statistics
-  avgIncidentCost Float?
-  maxIncidentCost Float?
-
-  lastUpdated DateTime @default(now())
-  createdAt   DateTime @default(now())
-
-  @@unique([industry, aiSystemType])
-  @@index([industry])
-  @@index([aiSystemType])
-  @@index([lastUpdated])
-}
-
-// ============================================================
-// INTELLIGENT WEIGHTED SCORING MODELS (Added Nov 4, 2025)
-// ============================================================
-
-model DynamicRiskQuestion {
-  id           String  @id @default(cuid())
-  assessmentId String
-  questionText String  @db.Text
-  category     String
-  weight       Decimal @db.Decimal(3, 2) // 0-10 scale
-
-  // Evidence from incident database
-  incidentCount  Int
-  avgSeverity    Decimal @db.Decimal(3, 2)
-  relevanceScore Decimal @db.Decimal(3, 2)
-
-  // Supporting evidence (JSON)
-  evidenceIncidents Json? // Array of incident IDs
-  evidenceSummary   String? @db.Text
-  reasoning         Json? // Reasoning details: {incidentFrequency, avgSeverity, techRelevance, regulatoryImpact}
-
-  aiGenerated Boolean  @default(true)
-  createdAt   DateTime @default(now())
-
-  assessment RiskAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-
-  @@index([assessmentId])
-  @@index([category])
-  @@index([weight])
-}
-
-model WeightedRiskScore {
-  id           String  @id @default(cuid())
-  assessmentId String
-  questionId   String? // Reference to DynamicRiskQuestion id (if applicable)
-
-  status        String // addressed, partially_addressed, not_addressed, not_applicable
-  rawScore      Int // 20, 50, or 80
-  weight        Decimal @db.Decimal(3, 2) // Question weight
-  weightedScore Decimal @db.Decimal(5, 2) // rawScore × weight
-
-  category  String? // Risk category
-  createdAt DateTime @default(now())
-
-  assessment RiskAssessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-
-  @@index([assessmentId])
-  @@index([category])
-}
-
-// ============================================================
-// AI RISK COUNCIL MODELS (Added 2025-11-08)
-// ============================================================
-
-enum CouncilStatus {
-  ACTIVE
-  ARCHIVED
-  SUSPENDED
+enum ApprovalStatus {
+  APPROVED
+  REJECTED
+  PENDING
+  CONDITIONAL
 }
 
 enum CouncilRole {
@@ -3248,17 +2884,10 @@ enum CouncilRole {
   OBSERVER
 }
 
-enum MembershipStatus {
+enum CouncilStatus {
   ACTIVE
-  REVOKED
+  ARCHIVED
   SUSPENDED
-}
-
-enum ApprovalStatus {
-  APPROVED
-  REJECTED
-  PENDING
-  CONDITIONAL
 }
 
 enum LedgerEntryType {
@@ -3272,130 +2901,8 @@ enum LedgerEntryType {
   SYSTEM_EVENT
 }
 
-// Council - Governance body for risk reviews
-model Council {
-  id          String        @id @default(cuid())
-  name        String
-  description String?       @db.Text
-  orgId       String? // Optional organization scope
-  status      CouncilStatus @default(ACTIVE)
-
-  // Approval policy configuration
-  approvalPolicy   Json? // Flexible policy definition
-  quorum           Int     @default(1) // Minimum required votes
-  requireUnanimous Boolean @default(false)
-  metadata         Json? // Additional configuration
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  memberships     CouncilMembership[]
-  approvals       RiskApproval[]
-  ledgerEntries   EvidenceLedgerEntry[]
-  riskAssessments RiskAssessment[] // Assessments assigned to this council
-
-  @@index([orgId])
-  @@index([status])
-}
-
-// CouncilMembership - Individual's role within a council
-model CouncilMembership {
-  id        String           @id @default(cuid())
-  councilId String
-  userId    String
-  role      CouncilRole
-  status    MembershipStatus @default(ACTIVE)
-
-  // Permission overrides
-  permissions Json? // { canApprove, canVote, canViewAll, etc }
-
-  // Assignment tracking
-  assignedBy String? // userId of admin who assigned
-  assignedAt DateTime  @default(now())
-  revokedAt  DateTime?
-  notes      String?   @db.Text
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relations
-  council       Council               @relation(fields: [councilId], references: [id], onDelete: Cascade)
-  user          User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  approvals     RiskApproval[]
-  ledgerEntries EvidenceLedgerEntry[]
-
-  @@unique([councilId, userId]) // One membership per user per council
-  @@index([userId])
-  @@index([councilId])
-  @@index([status])
-}
-
-// RiskApproval - Individual partner's decision on an assessment
-model RiskApproval {
-  id            String         @id @default(cuid())
-  assessmentId  String // Links to RiskAssessment
-  councilId     String
-  membershipId  String
-  partnerId     String // Denormalized for quick access
-  step          String // Workflow step (e.g., "final_review")
-  status        ApprovalStatus
-  decisionNotes String?        @db.Text
-  reasonCodes   String[]       @default([]) // Structured rejection/condition reasons
-
-  // Evidence snapshot reference
-  evidenceSnapshotId String? // Reference to frozen evidence state
-
-  // Attachments (metadata only, files stored separately)
-  attachments Json? // [{storageKey, filename, contentType, size}]
-
-  createdAt DateTime @default(now())
-  decidedAt DateTime @default(now())
-
-  // Relations
-  council     Council              @relation(fields: [councilId], references: [id], onDelete: Cascade)
-  membership  CouncilMembership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
-  assessment  RiskAssessment       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-  ledgerEntry EvidenceLedgerEntry? // Each approval creates a ledger entry
-
-  @@index([assessmentId])
-  @@index([councilId])
-  @@index([membershipId])
-  @@index([partnerId])
-  @@index([status])
-}
-
-// EvidenceLedgerEntry - Tamper-evident audit trail
-model EvidenceLedgerEntry {
-  id           String  @id @default(cuid())
-  assessmentId String // Links to RiskAssessment
-  councilId    String?
-  membershipId String?
-  approvalId   String? @unique // One-to-one with RiskApproval
-
-  // Actor information
-  actorId   String? // User who performed the action
-  actorRole String? // Role at time of action
-
-  // Entry metadata
-  entryType LedgerEntryType
-  payload   Json // Structured data (decision, notes, changes, etc)
-
-  // Hash chain for tamper detection
-  hash     String // SHA-256 hash of this entry
-  prevHash String? // Hash of previous entry (null for first entry)
-
-  createdAt DateTime @default(now())
-
-  // Relations
-  council    Council?           @relation(fields: [councilId], references: [id], onDelete: Cascade)
-  membership CouncilMembership? @relation(fields: [membershipId], references: [id], onDelete: SetNull)
-  approval   RiskApproval?      @relation(fields: [approvalId], references: [id], onDelete: Cascade)
-  assessment RiskAssessment     @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
-
-  @@index([assessmentId])
-  @@index([councilId])
-  @@index([entryType])
-  @@index([createdAt])
-  @@index([actorId])
+enum MembershipStatus {
+  ACTIVE
+  REVOKED
+  SUSPENDED
 }
