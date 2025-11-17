@@ -47,8 +47,7 @@ echo ""
   --timeout=300 \
   --max-instances=10 \
   --min-instances=0 \
-  --set-env-vars="NODE_ENV=production" \
-  --update-secrets="/workspace/.env=sengol-env:latest" \
+  --set-env-vars="NODE_ENV=production,DATABASE_URL=postgresql://neondb_owner:npg_Fs2e8aNIyRXG@ep-old-pine-adf68y6m-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require,OPENAI_API_KEY=sk-REDACTED-OPENAI-API-KEY,ANTHROPIC_API_KEY=sk-REDACTED-ANTHROPIC-API-KEY,JWT_SECRET=your-super-secret-jwt-key-change-in-production,DVECDB_HOST=99.213.88.59,DVECDB_PORT=40560,DVECDB_API_URL=http://99.213.88.59:40560" \
   --project=$PROJECT_ID
 
 echo ""

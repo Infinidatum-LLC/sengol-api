@@ -3,7 +3,6 @@ import { resilientPrisma, userTierCache as dbUserTierCache, userAdminCache as db
 import { resilientGeminiClient } from '../lib/gemini-resilient'
 import { vectorSearchCache, llmResponseCache } from '../lib/local-cache'
 import { config } from '../config/env'
-import { healthCheck as vertexAIHealthCheck, getStorageStats } from '../lib/vertex-ai-client'
 
 // Week 2 Optimization imports
 import { getLocalCacheMetrics, getLocalCacheMemoryUsage } from '../lib/local-cache'
@@ -69,31 +68,10 @@ export async function healthRoutes(fastify: FastifyInstance) {
       health.status = 'degraded'
     }
 
-    // Check Vertex AI and Cloud Storage
-    const vertexStart = Date.now()
-    try {
-      const vertexHealth = await vertexAIHealthCheck()
-
-      health.checks.vertexai = {
-        status: vertexHealth.configured && vertexHealth.vertexAIReachable && vertexHealth.storageReachable ? 'ok' : 'degraded',
-        responseTime: Date.now() - vertexStart,
-        configured: vertexHealth.configured,
-        vertexAIReachable: vertexHealth.vertexAIReachable,
-        storageReachable: vertexHealth.storageReachable,
-        bucketExists: vertexHealth.bucketExists,
-        error: vertexHealth.error,
-      }
-
-      if (!vertexHealth.configured || !vertexHealth.vertexAIReachable || !vertexHealth.storageReachable) {
-        health.status = 'degraded'
-      }
-    } catch (error) {
-      health.checks.vertexai = {
-        status: 'error',
-        error: (error as Error).message,
-        responseTime: Date.now() - vertexStart,
-      }
-      health.status = 'degraded'
+    // Vertex AI removed - no longer checking
+    health.checks.vertexai = {
+      status: 'removed',
+      message: 'Vertex AI integration has been removed from this system',
     }
 
     // Gemini stats (no actual check to avoid API costs)
@@ -131,20 +109,11 @@ export async function healthRoutes(fastify: FastifyInstance) {
     try {
       // Check critical dependencies only
       const dbHealthy = await resilientPrisma.healthCheck()
-      const vertexHealth = await vertexAIHealthCheck()
 
       if (!dbHealthy) {
         return reply.code(503).send({
           ready: false,
           reason: 'Database is not healthy',
-        })
-      }
-
-      if (!vertexHealth.configured || !vertexHealth.vertexAIReachable) {
-        return reply.code(503).send({
-          ready: false,
-          reason: 'Vertex AI is not healthy',
-          details: vertexHealth.error,
         })
       }
 

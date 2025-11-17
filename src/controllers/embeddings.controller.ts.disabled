@@ -1,6 +1,5 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { ValidationError } from '../lib/errors'
-import { generateEmbedding, generateBatchEmbeddings, searchByText } from '../lib/vertex-ai-client'
 
 // ============================================================================
 // POST /api/embeddings/generate

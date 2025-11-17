@@ -6,20 +6,20 @@ import { config } from './config/env'
 import { reviewRoutes } from './routes/review.routes'
 import { authRoutes } from './routes/auth.routes'
 import { healthRoutes } from './routes/health.routes'
-import { embeddingsRoutes } from './routes/embeddings.routes'
+// DISABLED: Embeddings and vector search depend on Vertex AI (removed)
+// import { embeddingsRoutes } from './routes/embeddings.routes'
+// import { vectorSearchRoutes } from './routes/vector-search.routes'
 import { projectsRoutes } from './routes/projects.routes'
 import { riskRoutes } from './routes/risk.routes'
 import { assessmentsRoutes } from './routes/assessments.routes'
 import { projectsGatedRoutes } from './routes/projects-gated.routes'
 import { userRoutes } from './routes/user.routes'
-import { vectorSearchRoutes } from './routes/vector-search.routes'
 import { questionsRoutes } from './routes/questions.routes'
 import { complianceRoutes } from './routes/compliance.routes'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
 import { prisma } from './lib/prisma'
-import { scheduleDailySync } from './services/incremental-sync.service'
 
 export async function build() {
   const fastify = Fastify({
@@ -77,13 +77,14 @@ export async function build() {
   await fastify.register(healthRoutes)
   await fastify.register(authRoutes)
   await fastify.register(reviewRoutes)
-  await fastify.register(embeddingsRoutes)
+  // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
+  // await fastify.register(embeddingsRoutes)
+  // await fastify.register(vectorSearchRoutes)
   await fastify.register(projectsRoutes)
   await fastify.register(riskRoutes)
   await fastify.register(assessmentsRoutes)
   await fastify.register(projectsGatedRoutes)
   await fastify.register(userRoutes)
-  await fastify.register(vectorSearchRoutes)
   await fastify.register(questionsRoutes)
   await fastify.register(complianceRoutes)
 
@@ -174,12 +175,10 @@ async function start() {
     console.log(`📊 Health check: http://localhost:${config.port}/health`)
     console.log(`🔍 Detailed health: http://localhost:${config.port}/health/detailed`)
 
-    // Start incremental sync for crawler data
-    console.log(`🔄 Starting incremental data sync...`)
-    const syncInterval = scheduleDailySync()
-
-    // Store sync interval for cleanup on shutdown
-    ;(fastify as any).syncInterval = syncInterval
+    // DISABLED: Incremental sync depends on Google Cloud Storage (removed)
+    // console.log(`🔄 Starting incremental data sync...`)
+    // const syncInterval = scheduleDailySync()
+    // ;(fastify as any).syncInterval = syncInterval
   } catch (err) {
     console.error('Error starting server:', err)
     process.exit(1)

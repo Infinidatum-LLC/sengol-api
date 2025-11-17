@@ -7,11 +7,13 @@
  * - Error recovery
  */
 
-import { gemini, GeminiMessage } from './gemini-client'
 import { config } from '../config/env'
 import { withRetry, withTimeout } from './retry'
 import { LLMError } from './errors'
 import { llmResponseCache, generateCacheKey } from './cache'
+
+// NOTE: Gemini integration has been removed - this file is kept for interface compatibility
+// All methods will throw errors indicating the service is not available
 
 class ResilientGeminiClient {
   private requestCount = 0
@@ -19,7 +21,7 @@ class ResilientGeminiClient {
   private lastRateLimitReset = Date.now()
 
   /**
-   * Generate chat completion with full resilience
+   * Generate chat completion - DISABLED (Gemini client removed)
    */
   async chatCompletion(
     messages: Array<{ role: 'user' | 'system' | 'assistant'; content: string }>,
@@ -32,88 +34,7 @@ class ResilientGeminiClient {
       cacheTtl?: number
     } = {}
   ): Promise<string> {
-    const {
-      model = 'gemini-2.0-flash-exp',
-      temperature = 0.3,
-      maxTokens,
-      responseFormat,
-      useCache = true,
-      cacheTtl = config.cacheTtl * 1000 * 2, // 2x default TTL for LLM
-    } = options
-
-    // Check cache if enabled
-    if (useCache) {
-      const cacheKey = generateCacheKey('llm-chat', messages, model, temperature)
-      const cached = llmResponseCache.get(cacheKey)
-      if (cached) {
-        console.log('[Gemini] Chat completion cache hit')
-        return cached
-      }
-    }
-
-    try {
-      this.requestCount++
-
-      const response = await withRetry(
-        async () => {
-          return await withTimeout(
-            gemini.chat.completions.create({
-              messages: messages as GeminiMessage[],
-              temperature,
-              maxTokens,
-              responseFormat,
-            }),
-            config.openaiTimeout, // Reuse OpenAI timeout config
-            'gemini-chat-completion'
-          )
-        },
-        {
-          maxRetries: config.openaiMaxRetries,
-          initialDelay: 2000,
-          maxDelay: 30000,
-          retryableErrors: ['ECONNRESET', 'ETIMEDOUT', 'rate_limit_exceeded', '429', '503'],
-          onRetry: (error, attempt) => {
-            console.warn(`[Gemini] Chat completion retry ${attempt}/${config.openaiMaxRetries}`, {
-              error: error.message,
-              model,
-            })
-
-            // If rate limited, wait longer
-            if (error.message.includes('rate_limit') || error.message.includes('429')) {
-              return Promise.resolve() // The retry logic will handle the delay
-            }
-          },
-        }
-      )
-
-      const content = response.choices[0]?.message?.content
-
-      if (!content) {
-        throw new LLMError('No content in Gemini response', {
-          model,
-          finishReason: response.choices[0]?.finishReason,
-        })
-      }
-
-      // Cache the result
-      if (useCache) {
-        const cacheKey = generateCacheKey('llm-chat', messages, model, temperature)
-        llmResponseCache.set(cacheKey, content, cacheTtl)
-      }
-
-      return content
-    } catch (error) {
-      this.errorCount++
-      throw new LLMError(
-        `Gemini chat completion failed: ${(error as Error).message}`,
-        {
-          model,
-          messageCount: messages.length,
-          requestCount: this.requestCount,
-          errorCount: this.errorCount,
-        }
-      )
-    }
+    throw new LLMError('Gemini integration has been removed from this system. Please use alternative LLM providers.')
   }
 
   /**
