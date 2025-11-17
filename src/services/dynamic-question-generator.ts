@@ -1222,7 +1222,7 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     label: shortLabel, // ✅ SHORT: For UI labels/headers
     text: questionText, // ✅ FULL QUESTION: What users see and answer
     question: questionText, // ✅ ALIAS: For backward compatibility
-    description: `Evidence from ${relevantIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance) with average severity ${avgSeverity.toFixed(1)}/10`,
+    description: priorityArea.area,
     priority: determinePriority(finalWeight),
 
     importance: `${relevantIncidents.length} incidents found (severity ${avgSeverity.toFixed(1)}/10, relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}%, avg cost $${(avgCost / 1000).toFixed(0)}K).`,
@@ -1622,7 +1622,7 @@ Format: Return ONLY the question text, nothing else. No preamble, explanation, o
     label: complianceShortLabel, // ✅ SHORT: For UI labels/headers
     text: complianceQuestionText, // ✅ FULL QUESTION: What users see and answer
     question: complianceQuestionText, // ✅ ALIAS: For backward compatibility
-    description: `Based on ${relevantIncidents.length} incidents (${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance)`,
+    description: complianceArea,
     priority: determinePriority(finalWeight),
 
     importance: `Required for ${(llmAnalysis.complianceRequirements || []).join(', ')}. Non-compliance fines average $${avgFine.toLocaleString()} based on ${relevantIncidents.length} incidents. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}% (considering technology stack, data types, and data sources).`,
