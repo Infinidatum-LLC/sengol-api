@@ -1413,49 +1413,19 @@ async function generateComplianceQuestions(
 
 async function generateSingleComplianceQuestion(
   complianceArea: string,
-  relatedIncidents: IncidentMatch[], // Kept for backward compatibility but will perform dedicated search
+  relatedIncidents: IncidentMatch[], // Kept for backward compatibility (will be empty for LLM-only phase)
   request: QuestionGenerationRequest,
   llmAnalysis: LLMAnalysis
 ): Promise<DynamicQuestion> {
-  // 🔍 PER-QUESTION VECTOR SEARCH: Each compliance question gets its own dedicated search
-  // This ensures each question has the most relevant compliance incidents specific to its area
-  // Trade-off: Slower generation time but significantly better accuracy
+  // ✅ OPTIMIZATION (2025-11-16): Removed per-question Qdrant search for performance
+  // Compliance incident search deferred to Step 3 for better UX
+  console.log(`[LLM_ONLY] Generating compliance question for "${complianceArea}" (incident search deferred)`)
 
-  console.log(`[VECTOR_SEARCH] Performing dedicated search for compliance area "${complianceArea}"`)
+  // Use incidents passed from main function (normally empty for LLM-only phase)
+  const relevantIncidents = relatedIncidents
 
-  // Build compliance-specific search query
-  const searchQuery = `${complianceArea} compliance violation regulatory breach incident ${request.systemDescription.substring(0, 200)}`
-
-  // Perform dedicated vector search for this specific compliance area
-  const questionSpecificIncidents = await findSimilarIncidents(searchQuery, {
-    limit: VECTOR_SEARCH_CONFIG.maxEvidenceIncidents, // ✅ PHASE 3: Use centralized config (15)
-    industry: request.industry,
-    minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity // ✅ PHASE 3: Use centralized threshold (0.3)
-  })
-
-  console.log(`[VECTOR_SEARCH] Found ${questionSpecificIncidents.length} question-specific incidents for compliance "${complianceArea}"`)
-
-  // ✅ Calculate multi-factor relevance for question-specific incidents
-  const incidentsWithRelevance = questionSpecificIncidents.map(incident => ({
-    incident,
-    multiFactorRelevance: calculateMultiFactorRelevance(incident, request),
-    technologyScore: calculateTechnologyMatch(incident, request.techStack || []),
-    dataTypeScore: calculateDataTypeMatch(incident, request.dataTypes || []),
-    sourceScore: calculateDataSourceMatch(incident, request.dataSources || [])
-  }))
-
-  // Sort by relevance
-  const filteredIncidents = incidentsWithRelevance
-    .sort((a, b) => b.multiFactorRelevance - a.multiFactorRelevance)
-    .slice(0, 10)
-
-  // Use filtered incidents for this compliance question
-  const relevantIncidents = filteredIncidents.map(i => i.incident)
-
-  // Calculate average multi-factor relevance
-  const avgMultiFactorRelevance = filteredIncidents.length > 0
-    ? filteredIncidents.reduce((sum, i) => sum + i.multiFactorRelevance, 0) / filteredIncidents.length
-    : 0
+  // Calculate average multi-factor relevance (will be 0 for empty incidents array)
+  const avgMultiFactorRelevance = relevantIncidents.length > 0 ? 0.5 : 0
 
   // ✅ NEW: Generate formalized compliance question using LLM
   console.log(`[LLM_COMPLIANCE] Generating formalized compliance question for "${complianceArea}"...`)
