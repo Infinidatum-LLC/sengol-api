@@ -34,7 +34,15 @@ fi
 echo "🔨 Building and deploying..."
 echo ""
 
+# Load environment variables from .env file (use for local reference only)
+# DO NOT commit secrets to version control - use Cloud Run UI or gcloud secret manager
+# Load secrets from environment (set these in Cloud Run or via Secret Manager)
+if [ -f .env ]; then
+  export $(cat .env | grep -v '^#' | xargs)
+fi
+
 # Deploy using Cloud Run source deployment
+# All sensitive values should come from environment variables
 /Users/durai/google-cloud-sdk/bin/gcloud run deploy $SERVICE_NAME \
   --source=. \
   --region=$REGION \
@@ -47,7 +55,7 @@ echo ""
   --timeout=300 \
   --max-instances=10 \
   --min-instances=0 \
-  --set-env-vars="NODE_ENV=production,DATABASE_URL=postgresql://neondb_owner:npg_Fs2e8aNIyRXG@ep-old-pine-adf68y6m-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require,OPENAI_API_KEY=sk-REDACTED-OPENAI-API-KEY,ANTHROPIC_API_KEY=sk-REDACTED-ANTHROPIC-API-KEY,JWT_SECRET=your-super-secret-jwt-key-change-in-production,DVECDB_HOST=99.213.88.59,DVECDB_PORT=40560,DVECDB_API_URL=http://99.213.88.59:40560" \
+  --set-env-vars="NODE_ENV=production,DATABASE_URL=${DATABASE_URL},OPENAI_API_KEY=${OPENAI_API_KEY},ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-},JWT_SECRET=${JWT_SECRET},DVECDB_HOST=${DVECDB_HOST:-},DVECDB_PORT=${DVECDB_PORT:-},DVECDB_API_URL=${DVECDB_API_URL:-}" \
   --project=$PROJECT_ID
 
 echo ""

@@ -16,6 +16,7 @@ import { projectsGatedRoutes } from './routes/projects-gated.routes'
 import { userRoutes } from './routes/user.routes'
 import { questionsRoutes } from './routes/questions.routes'
 import { complianceRoutes } from './routes/compliance.routes'
+import { registerCouncilRoutes } from './routes/council.routes'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
@@ -87,6 +88,7 @@ export async function build() {
   await fastify.register(userRoutes)
   await fastify.register(questionsRoutes)
   await fastify.register(complianceRoutes)
+  await fastify.register(registerCouncilRoutes)
 
   // Error handler with AppError support
   fastify.setErrorHandler((error, request, reply) => {
