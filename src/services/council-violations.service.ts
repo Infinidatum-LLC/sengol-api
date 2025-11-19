@@ -14,12 +14,16 @@ export class CouncilViolationsService {
     filters?: any
   ): Promise<any> {
     try {
+      console.log('[CouncilViolationsService] listViolations called with:', { geographyAccountId, limit, offset, filters })
+
       const where: any = { geographyAccountId }
       if (filters?.policyId) where.policyId = filters.policyId
       if (filters?.status) where.status = filters.status
       if (filters?.severity) where.severity = filters.severity
       if (filters?.vendorId) where.vendorId = filters.vendorId
       if (filters?.assessmentId) where.assessmentId = filters.assessmentId
+
+      console.log('[CouncilViolationsService] Query where clause:', where)
 
       const [violations, total] = await Promise.all([
         prisma.council_Violation.findMany({
@@ -36,12 +40,19 @@ export class CouncilViolationsService {
         prisma.council_Violation.count({ where }),
       ])
 
+      console.log('[CouncilViolationsService] Query result:', { violationsCount: violations.length, total })
+
       return {
         violations: violations.map((v) => this.formatViolation(v)),
         total,
         hasMore: offset + limit < total,
       }
     } catch (error) {
+      console.error('[CouncilViolationsService] Error in listViolations:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        error: error,
+      })
       throw new DatabaseError('Failed to list violations', { originalError: error })
     }
   }

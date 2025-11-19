@@ -103,13 +103,20 @@ export async function listViolations(request: FastifyRequest, reply: FastifyRepl
   try {
     const geographyAccountId = getGeographyAccountId(request)
     const { limit = 10, offset = 0 } = request.query as any
+    console.log('[listViolations controller] Calling service with:', { geographyAccountId, limit, offset })
     const result = await councilViolationsService.listViolations(geographyAccountId, limit, offset, request.query)
+    console.log('[listViolations controller] Service returned successfully')
     return reply.send({
       success: true,
       data: result.violations,
       pagination: { total: result.total, limit, offset, hasMore: result.hasMore },
     })
   } catch (error) {
+    console.error('[listViolations controller] Error caught:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+    })
     return reply.status(500).send({ success: false, error: 'Failed to list violations' })
   }
 }
