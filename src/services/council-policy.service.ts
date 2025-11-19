@@ -63,7 +63,7 @@ export class CouncilPolicyService {
       })
 
       if (!policy) {
-        throw new NotFoundError('Policy not found', { policyId })
+        throw new NotFoundError('Policy not found')
       }
 
       return this.formatPolicy(policy)
@@ -174,7 +174,7 @@ export class CouncilPolicyService {
       return this.compareValues(contextValue, cond.value, cond.operator)
     })
 
-    return operator === 'AND' ? results.every((r) => r) : results.some((r) => r)
+    return operator === 'AND' ? results.every((r: boolean) => r) : results.some((r: boolean) => r)
   }
 
   private compareValues(actual: any, expected: any, operator: string): boolean {

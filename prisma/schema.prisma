@@ -2878,6 +2878,139 @@ enum ApprovalStatus {
   CONDITIONAL
 }
 
+// ==================== AI Risk Council Models ====================
+
+model council_Policy {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  category         String
+  severity         String   @default("MEDIUM") // HIGH, MEDIUM, LOW
+  status           String   @default("DRAFT") // DRAFT, ACTIVE, ARCHIVED
+  version          Int      @default(1)
+  conditions       String   // JSON stringified PolicyConditionGroup
+  actions          String   // JSON stringified PolicyActions
+  geographyAccountId String
+  createdBy        String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  violations       council_Violation[]
+
+  @@index([geographyAccountId])
+  @@index([status])
+}
+
+model council_Violation {
+  id               String   @id @default(cuid())
+  policyId         String
+  assessmentId     String?
+  vendorId         String?
+  status           String   @default("OPEN") // OPEN, RESOLVED, WONT_FIX
+  severity         String
+  detectedAt       DateTime @default(now())
+  resolvedAt       DateTime?
+  description      String
+  evidence         String?  // JSON stringified evidence
+  geographyAccountId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  policy           council_Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId])
+  @@index([geographyAccountId])
+  @@index([status])
+}
+
+model council_Vendor {
+  id               String   @id @default(cuid())
+  name             String
+  type             String
+  status           String   @default("ACTIVE") // ACTIVE, INACTIVE, BLACKLISTED
+  riskLevel        String   @default("MEDIUM") // HIGH, MEDIUM, LOW
+  lastAssessmentDate DateTime?
+  metadata         String?  // JSON stringified vendor metadata
+  geographyAccountId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  assessments      council_VendorAssessment[]
+  scorecards       council_VendorScorecard[]
+
+  @@index([geographyAccountId])
+  @@index([status])
+}
+
+model council_VendorAssessment {
+  id               String   @id @default(cuid())
+  vendorId         String
+  type             String   // SECURITY, COMPLIANCE, OPERATIONAL
+  status           String   @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, FAILED
+  questions        String   // JSON stringified assessment questions
+  results          String   // JSON stringified assessment results
+  overallScore     Float    @default(0.0)
+  geographyAccountId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  vendor           council_Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([geographyAccountId])
+}
+
+model council_VendorScorecard {
+  id               String   @id @default(cuid())
+  vendorId         String
+  assessmentPeriod String
+  overallScore     Float
+  securityScore    Float    @default(0.0)
+  complianceScore  Float    @default(0.0)
+  operationalScore Float    @default(0.0)
+  metadata         String?  // JSON stringified scorecard metadata
+  geographyAccountId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  vendor           council_Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([geographyAccountId])
+}
+
+model council_Schedule {
+  id               String   @id @default(cuid())
+  name             String
+  description      String?
+  frequency        String   // DAILY, WEEKLY, BIWEEKLY, MONTHLY, QUARTERLY, ANNUALLY
+  assessmentType   String
+  policyIds        String   // JSON stringified array of policy IDs
+  isActive         Boolean  @default(true)
+  nextRunAt        DateTime
+  geographyAccountId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  metadata         String?  // JSON stringified schedule metadata
+  runs             council_ScheduleRun[]
+
+  @@index([geographyAccountId])
+  @@index([isActive])
+}
+
+model council_ScheduleRun {
+  id               String   @id @default(cuid())
+  scheduleId       String
+  status           String   // IN_PROGRESS, COMPLETED, FAILED
+  startedAt        DateTime @default(now())
+  completedAt      DateTime?
+  results          String   // JSON stringified run results
+  geographyAccountId String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @db.Timestamp(6)
+  schedule         council_Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId])
+  @@index([geographyAccountId])
+}
+
+// ==================== Enums ====================
+
 enum CouncilRole {
   CHAIR
   PARTNER

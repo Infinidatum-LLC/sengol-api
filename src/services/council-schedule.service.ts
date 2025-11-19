@@ -56,7 +56,7 @@ export class CouncilScheduleService {
       })
 
       if (!schedule) {
-        throw new NotFoundError('Schedule not found', { scheduleId })
+        throw new NotFoundError('Schedule not found')
       }
 
       return this.formatSchedule(schedule)

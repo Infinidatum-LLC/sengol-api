@@ -54,7 +54,7 @@ export class CouncilVendorService {
       })
 
       if (!vendor) {
-        throw new NotFoundError('Vendor not found', { vendorId })
+        throw new NotFoundError('Vendor not found')
       }
 
       return this.formatVendor(vendor)
