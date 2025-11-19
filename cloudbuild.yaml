@@ -9,17 +9,17 @@ steps:
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sengol-api/sengol-api:$COMMIT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/sengol-api:latest'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sengol-api/sengol-api:latest'
       - '.'
 
-  # Step 2: Push the Docker image to Google Container Registry
+  # Step 2: Push the Docker image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     id: 'push-image'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sengol-api/sengol-api:$COMMIT_SHA'
     waitFor: ['build-image']
 
   # Step 3: Deploy to Cloud Run
@@ -31,7 +31,7 @@ steps:
       - 'deploy'
       - 'sengol-api'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sengol-api/sengol-api:$COMMIT_SHA'
       - '--region'
       - 'us-central1'
       - '--platform'
@@ -58,10 +58,10 @@ steps:
       - 'DATABASE_URL=DATABASE_URL:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,JWT_SECRET=JWT_SECRET:latest,QDRANT_HOST=QDRANT_HOST:latest,QDRANT_PORT=QDRANT_PORT:latest,ALLOWED_ORIGINS=ALLOWED_ORIGINS:latest'
     waitFor: ['push-image']
 
-# Store images in Google Container Registry
+# Store images in Artifact Registry
 images:
-  - 'gcr.io/$PROJECT_ID/sengol-api:$COMMIT_SHA'
-  - 'gcr.io/$PROJECT_ID/sengol-api:latest'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/sengol-api/sengol-api:$COMMIT_SHA'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/sengol-api/sengol-api:latest'
 
 # Options
 options:
