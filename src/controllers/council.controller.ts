@@ -388,11 +388,14 @@ export async function councilStatus(request: FastifyRequest, reply: FastifyReply
         }
       })
 
+      // Type for ProductAccess items
+      type ProductAccessItem = typeof productAccess[0]
+
       // Build licenses object from actual database records
-      const hasPolicy = productAccess.some(p => p.productSlug === 'policy-engine')
-      const hasVendor = productAccess.some(p => p.productSlug === 'vendor-governance')
-      const hasSchedule = productAccess.some(p => p.productSlug === 'automated-assessment')
-      const hasComplete = productAccess.some(p => p.productSlug === 'ai-council-complete')
+      const hasPolicy = productAccess.some((p: ProductAccessItem) => p.productSlug === 'policy-engine')
+      const hasVendor = productAccess.some((p: ProductAccessItem) => p.productSlug === 'vendor-governance')
+      const hasSchedule = productAccess.some((p: ProductAccessItem) => p.productSlug === 'automated-assessment')
+      const hasComplete = productAccess.some((p: ProductAccessItem) => p.productSlug === 'ai-council-complete')
 
       // Determine current tier based on licenses
       let currentTier = licenseTiers.free
@@ -449,22 +452,22 @@ export async function councilStatus(request: FastifyRequest, reply: FastifyReply
             policyEngine: {
               hasAccess: hasPolicy || hasComplete,
               productSlug: 'policy-engine',
-              expiresAt: productAccess.find(p => p.productSlug === 'policy-engine')?.expiresAt || null
+              expiresAt: productAccess.find((p: ProductAccessItem) => p.productSlug === 'policy-engine')?.expiresAt || null
             },
             vendorGovernance: {
               hasAccess: hasVendor || hasComplete,
               productSlug: 'vendor-governance',
-              expiresAt: productAccess.find(p => p.productSlug === 'vendor-governance')?.expiresAt || null
+              expiresAt: productAccess.find((p: ProductAccessItem) => p.productSlug === 'vendor-governance')?.expiresAt || null
             },
             automatedAssessment: {
               hasAccess: hasSchedule || hasComplete,
               productSlug: 'automated-assessment',
-              expiresAt: productAccess.find(p => p.productSlug === 'automated-assessment')?.expiresAt || null
+              expiresAt: productAccess.find((p: ProductAccessItem) => p.productSlug === 'automated-assessment')?.expiresAt || null
             },
             completeBundle: {
               hasAccess: hasComplete,
               productSlug: 'ai-council-complete',
-              expiresAt: productAccess.find(p => p.productSlug === 'ai-council-complete')?.expiresAt || null
+              expiresAt: productAccess.find((p: ProductAccessItem) => p.productSlug === 'ai-council-complete')?.expiresAt || null
             },
           },
         },
