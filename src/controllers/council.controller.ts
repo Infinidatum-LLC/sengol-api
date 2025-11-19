@@ -359,39 +359,121 @@ export async function councilHealth(request: FastifyRequest, reply: FastifyReply
 export async function councilStatus(request: FastifyRequest, reply: FastifyReply) {
   try {
     const geographyAccountId = getGeographyAccountId(request)
+    const userId = request.headers['x-user-id'] as string
 
-    // License tiers mapping
-    const licenseTiers = {
-      free: { policies: 10, vendors: 0, schedules: 0 },
-      'policy-engine': { policies: 50, vendors: 0, schedules: 0 },
-      'vendor-governance': { policies: 0, vendors: 25, schedules: 0 },
-      'automated-assessment': { policies: 0, vendors: 0, schedules: 50 },
-      'ai-council-complete': { policies: 50, vendors: 25, schedules: 50 },
-    }
+    // Import Prisma client
+    const { PrismaClient } = require('@prisma/client')
+    const prisma = new PrismaClient()
 
-    // Default to free tier for now
-    const currentTier = licenseTiers.free
-    const limits = {
-      policies: { allowed: true, limit: currentTier.policies, current: 12, remaining: currentTier.policies - 12, upgradeRequired: false, upgradeUrl: '/products/ai-council/policy-engine' },
-      vendors: { allowed: false, limit: currentTier.vendors, current: 0, remaining: currentTier.vendors, upgradeRequired: true, upgradeUrl: '/products/ai-council/vendor-governance' },
-      schedules: { allowed: false, limit: currentTier.schedules, current: 0, remaining: currentTier.schedules, upgradeRequired: true, upgradeUrl: '/products/ai-council/automated-assessment' },
-    }
+    try {
+      // License tiers mapping
+      const licenseTiers = {
+        free: { policies: 10, vendors: 0, schedules: 0 },
+        'policy-engine': { policies: 50, vendors: 0, schedules: 0 },
+        'vendor-governance': { policies: 0, vendors: 25, schedules: 0 },
+        'automated-assessment': { policies: 0, vendors: 0, schedules: 50 },
+        'ai-council-complete': { policies: 50, vendors: 25, schedules: 50 },
+      }
 
-    return reply.send({
-      success: true,
-      data: {
-        policies: limits.policies,
-        vendors: limits.vendors,
-        schedules: limits.schedules,
-        licenses: {
-          policyEngine: { hasAccess: true, productSlug: 'policy-engine', expiresAt: null },
-          vendorGovernance: { hasAccess: false, productSlug: 'vendor-governance', expiresAt: null },
-          automatedAssessment: { hasAccess: false, productSlug: 'automated-assessment', expiresAt: null },
-          completeBundle: { hasAccess: false, productSlug: 'ai-council-complete', expiresAt: null },
+      // Query actual ProductAccess from database
+      const productAccess = await prisma.productAccess.findMany({
+        where: {
+          userId: userId,
+          status: 'ACTIVE'
         },
-      },
-    })
+        select: {
+          productSlug: true,
+          expiresAt: true,
+          accessType: true
+        }
+      })
+
+      // Build licenses object from actual database records
+      const hasPolicy = productAccess.some(p => p.productSlug === 'policy-engine')
+      const hasVendor = productAccess.some(p => p.productSlug === 'vendor-governance')
+      const hasSchedule = productAccess.some(p => p.productSlug === 'automated-assessment')
+      const hasComplete = productAccess.some(p => p.productSlug === 'ai-council-complete')
+
+      // Determine current tier based on licenses
+      let currentTier = licenseTiers.free
+      if (hasComplete) {
+        currentTier = licenseTiers['ai-council-complete']
+      } else {
+        // Merge limits from individual products
+        currentTier = {
+          policies: hasPolicy ? licenseTiers['policy-engine'].policies : licenseTiers.free.policies,
+          vendors: hasVendor ? licenseTiers['vendor-governance'].vendors : licenseTiers.free.vendors,
+          schedules: hasSchedule ? licenseTiers['automated-assessment'].schedules : licenseTiers.free.schedules,
+        }
+      }
+
+      // Get actual counts from database
+      const policyCount = await prisma.councilPolicy.count({ where: { geographyAccountId } })
+      const vendorCount = await prisma.councilVendor.count({ where: { geographyAccountId } })
+      const scheduleCount = await prisma.councilSchedule.count({ where: { geographyAccountId } })
+
+      const limits = {
+        policies: {
+          allowed: hasPolicy || hasComplete || policyCount < currentTier.policies,
+          limit: currentTier.policies,
+          current: policyCount,
+          remaining: currentTier.policies - policyCount,
+          upgradeRequired: !hasPolicy && !hasComplete,
+          upgradeUrl: '/products/ai-council/policy-engine'
+        },
+        vendors: {
+          allowed: hasVendor || hasComplete,
+          limit: currentTier.vendors,
+          current: vendorCount,
+          remaining: currentTier.vendors - vendorCount,
+          upgradeRequired: !hasVendor && !hasComplete,
+          upgradeUrl: '/products/ai-council/vendor-governance'
+        },
+        schedules: {
+          allowed: hasSchedule || hasComplete,
+          limit: currentTier.schedules,
+          current: scheduleCount,
+          remaining: currentTier.schedules - scheduleCount,
+          upgradeRequired: !hasSchedule && !hasComplete,
+          upgradeUrl: '/products/ai-council/automated-assessment'
+        },
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          policies: limits.policies,
+          vendors: limits.vendors,
+          schedules: limits.schedules,
+          licenses: {
+            policyEngine: {
+              hasAccess: hasPolicy || hasComplete,
+              productSlug: 'policy-engine',
+              expiresAt: productAccess.find(p => p.productSlug === 'policy-engine')?.expiresAt || null
+            },
+            vendorGovernance: {
+              hasAccess: hasVendor || hasComplete,
+              productSlug: 'vendor-governance',
+              expiresAt: productAccess.find(p => p.productSlug === 'vendor-governance')?.expiresAt || null
+            },
+            automatedAssessment: {
+              hasAccess: hasSchedule || hasComplete,
+              productSlug: 'automated-assessment',
+              expiresAt: productAccess.find(p => p.productSlug === 'automated-assessment')?.expiresAt || null
+            },
+            completeBundle: {
+              hasAccess: hasComplete,
+              productSlug: 'ai-council-complete',
+              expiresAt: productAccess.find(p => p.productSlug === 'ai-council-complete')?.expiresAt || null
+            },
+          },
+        },
+      })
+    } finally {
+      await prisma.$disconnect()
+    }
   } catch (error) {
+    console.error('[councilStatus] Error:', error)
     return reply.status(500).send({ success: false, error: 'Failed to get council status' })
   }
 }
