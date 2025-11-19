@@ -27,15 +27,24 @@ export async function createPolicy(request: FastifyRequest, reply: FastifyReply)
 
     return reply.status(201).send({ success: true, data: policy })
   } catch (error) {
-    console.error('[createPolicy controller] Error caught:', {
+    const errorDetails = {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       name: error instanceof Error ? error.name : undefined,
-      details: error instanceof Error && 'meta' in error ? (error as any).meta : undefined,
-    })
+      meta: error instanceof Error && 'meta' in error ? (error as any).meta : undefined,
+      originalError: error instanceof Error && 'originalError' in error ? (error as any).originalError : undefined,
+    }
+
+    console.error('[createPolicy controller] Error caught:', errorDetails)
 
     if (error instanceof AppError) {
-      return reply.status(error.statusCode).send({ success: false, error: error.message })
+      // For AppError, also expose the underlying cause if available
+      const cause = (error as any).originalError
+      return reply.status(error.statusCode).send({
+        success: false,
+        error: error.message,
+        details: cause ? (cause instanceof Error ? cause.message : String(cause)) : undefined
+      })
     }
 
     // Return detailed error for debugging
