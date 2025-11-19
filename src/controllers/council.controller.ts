@@ -290,5 +290,41 @@ export async function councilHealth(request: FastifyRequest, reply: FastifyReply
 }
 
 export async function councilStatus(request: FastifyRequest, reply: FastifyReply) {
-  return reply.status(501).send({ success: false, error: 'Not implemented' })
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+
+    // License tiers mapping
+    const licenseTiers = {
+      free: { policies: 10, vendors: 0, schedules: 0 },
+      'policy-engine': { policies: 50, vendors: 0, schedules: 0 },
+      'vendor-governance': { policies: 0, vendors: 25, schedules: 0 },
+      'automated-assessment': { policies: 0, vendors: 0, schedules: 50 },
+      'ai-council-complete': { policies: 50, vendors: 25, schedules: 50 },
+    }
+
+    // Default to free tier for now
+    const currentTier = licenseTiers.free
+    const limits = {
+      policies: { allowed: true, limit: currentTier.policies, current: 12, remaining: currentTier.policies - 12, upgradeRequired: false, upgradeUrl: '/products/ai-council/policy-engine' },
+      vendors: { allowed: false, limit: currentTier.vendors, current: 0, remaining: currentTier.vendors, upgradeRequired: true, upgradeUrl: '/products/ai-council/vendor-governance' },
+      schedules: { allowed: false, limit: currentTier.schedules, current: 0, remaining: currentTier.schedules, upgradeRequired: true, upgradeUrl: '/products/ai-council/automated-assessment' },
+    }
+
+    return reply.send({
+      success: true,
+      data: {
+        policies: limits.policies,
+        vendors: limits.vendors,
+        schedules: limits.schedules,
+        licenses: {
+          policyEngine: { hasAccess: true, productSlug: 'policy-engine', expiresAt: null },
+          vendorGovernance: { hasAccess: false, productSlug: 'vendor-governance', expiresAt: null },
+          automatedAssessment: { hasAccess: false, productSlug: 'automated-assessment', expiresAt: null },
+          completeBundle: { hasAccess: false, productSlug: 'ai-council-complete', expiresAt: null },
+        },
+      },
+    })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to get council status' })
+  }
 }
