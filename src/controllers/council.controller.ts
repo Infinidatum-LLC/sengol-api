@@ -1,0 +1,294 @@
+/**
+ * AI Risk Council - Main Controllers
+ * Routes requests to appropriate services
+ */
+
+import { FastifyRequest, FastifyReply } from 'fastify'
+import { councilPolicyService } from '../services/council-policy.service'
+import { councilVendorService } from '../services/council-vendor.service'
+import { councilScheduleService } from '../services/council-schedule.service'
+import { ValidationError, AppError } from '../lib/errors'
+
+// Get geographyAccountId from request context or headers
+function getGeographyAccountId(request: FastifyRequest): string {
+  return request.headers['x-geography-account-id'] as string || 'default-account'
+}
+
+// ==================== Policy Engine Controllers ====================
+
+export async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const policy = await councilPolicyService.createPolicy(geographyAccountId, request.body as any)
+    return reply.status(201).send({ success: true, data: policy })
+  } catch (error) {
+    if (error instanceof AppError) {
+      return reply.status(error.statusCode).send({ success: false, error: error.message })
+    }
+    return reply.status(500).send({ success: false, error: 'Failed to create policy' })
+  }
+}
+
+export async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { limit = 10, offset = 0 } = request.query as any
+    const result = await councilPolicyService.listPolicies(geographyAccountId, limit, offset)
+    return reply.send({
+      success: true,
+      data: result.policies,
+      pagination: { total: result.total, limit, offset, hasMore: result.hasMore },
+    })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to list policies' })
+  }
+}
+
+export async function getPolicyById(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const policy = await councilPolicyService.getPolicyById(geographyAccountId, id)
+    return reply.send({ success: true, data: policy })
+  } catch (error) {
+    return reply.status(404).send({ success: false, error: 'Policy not found' })
+  }
+}
+
+export async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const policy = await councilPolicyService.updatePolicy(geographyAccountId, id, request.body)
+    return reply.send({ success: true, data: policy })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to update policy' })
+  }
+}
+
+export async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    await councilPolicyService.deletePolicy(geographyAccountId, id)
+    return reply.send({ success: true, data: { id } })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to delete policy' })
+  }
+}
+
+export async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const result = await councilPolicyService.evaluatePolicy(geographyAccountId, id, request.body as any)
+    return reply.send({ success: true, data: result })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to evaluate policy' })
+  }
+}
+
+export async function bulkEvaluatePolicies(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const result = await councilPolicyService.bulkEvaluate(geographyAccountId, request.body as any)
+    return reply.send({ success: true, data: result })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to bulk evaluate policies' })
+  }
+}
+
+export async function listViolations(request: FastifyRequest, reply: FastifyReply) {
+  return reply.status(501).send({ success: false, error: 'Not implemented' })
+}
+
+export async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
+  return reply.status(501).send({ success: false, error: 'Not implemented' })
+}
+
+// ==================== Vendor Governance Controllers ====================
+
+export async function createVendor(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const vendor = await councilVendorService.createVendor(geographyAccountId, request.body as any)
+    return reply.status(201).send({ success: true, data: vendor })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to create vendor' })
+  }
+}
+
+export async function listVendors(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { limit = 10, offset = 0 } = request.query as any
+    const result = await councilVendorService.listVendors(geographyAccountId, limit, offset)
+    return reply.send({
+      success: true,
+      data: result.vendors,
+      pagination: { total: result.total, limit, offset, hasMore: result.hasMore },
+    })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to list vendors' })
+  }
+}
+
+export async function getVendorById(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const vendor = await councilVendorService.getVendorById(geographyAccountId, id)
+    return reply.send({ success: true, data: vendor })
+  } catch (error) {
+    return reply.status(404).send({ success: false, error: 'Vendor not found' })
+  }
+}
+
+export async function updateVendor(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const vendor = await councilVendorService.updateVendor(geographyAccountId, id, request.body)
+    return reply.send({ success: true, data: vendor })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to update vendor' })
+  }
+}
+
+export async function deleteVendor(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    await councilVendorService.deleteVendor(geographyAccountId, id)
+    return reply.send({ success: true, data: { id } })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to delete vendor' })
+  }
+}
+
+export async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const assessment = await councilVendorService.assessVendor(geographyAccountId, id, request.body as any)
+    return reply.send({ success: true, data: assessment })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to assess vendor' })
+  }
+}
+
+export async function getVendorAssessment(request: FastifyRequest, reply: FastifyReply) {
+  return reply.status(501).send({ success: false, error: 'Not implemented' })
+}
+
+export async function createScorecard(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const scorecard = await councilVendorService.createScorecard(geographyAccountId, id, request.body as any)
+    return reply.status(201).send({ success: true, data: scorecard })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to create scorecard' })
+  }
+}
+
+export async function listScorecards(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const { limit = 10, offset = 0 } = request.query as any
+    const result = await councilVendorService.listScorecards(geographyAccountId, id, limit, offset)
+    return reply.send({
+      success: true,
+      data: result.scorecards,
+      pagination: { total: result.total, limit, offset, hasMore: result.hasMore },
+    })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to list scorecards' })
+  }
+}
+
+// ==================== Automated Assessment Controllers ====================
+
+export async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const schedule = await councilScheduleService.createSchedule(geographyAccountId, request.body as any)
+    return reply.status(201).send({ success: true, data: schedule })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to create schedule' })
+  }
+}
+
+export async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { limit = 10, offset = 0 } = request.query as any
+    const result = await councilScheduleService.listSchedules(geographyAccountId, limit, offset)
+    return reply.send({
+      success: true,
+      data: result.schedules,
+      pagination: { total: result.total, limit, offset, hasMore: result.hasMore },
+    })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to list schedules' })
+  }
+}
+
+export async function getScheduleById(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const schedule = await councilScheduleService.getScheduleById(geographyAccountId, id)
+    return reply.send({ success: true, data: schedule })
+  } catch (error) {
+    return reply.status(404).send({ success: false, error: 'Schedule not found' })
+  }
+}
+
+export async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const schedule = await councilScheduleService.updateSchedule(geographyAccountId, id, request.body)
+    return reply.send({ success: true, data: schedule })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to update schedule' })
+  }
+}
+
+export async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    await councilScheduleService.deleteSchedule(geographyAccountId, id)
+    return reply.send({ success: true, data: { id } })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to delete schedule' })
+  }
+}
+
+export async function executeSchedule(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const result = await councilScheduleService.executeSchedule(geographyAccountId, id)
+    return reply.send({ success: true, data: result })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to execute schedule' })
+  }
+}
+
+// ==================== Health & Status Controllers ====================
+
+export async function councilHealth(request: FastifyRequest, reply: FastifyReply) {
+  return reply.send({
+    status: 'healthy',
+    module: 'ai-council',
+    timestamp: new Date().toISOString(),
+  })
+}
+
+export async function councilStatus(request: FastifyRequest, reply: FastifyReply) {
+  return reply.status(501).send({ success: false, error: 'Not implemented' })
+}

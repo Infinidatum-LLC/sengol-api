@@ -3,274 +3,61 @@
  * All Council API endpoints
  */
 
-import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { FastifyInstance } from 'fastify'
+import * as controller from '../controllers/council.controller'
 
 export async function registerCouncilRoutes(fastify: FastifyInstance) {
-  // TODO: All endpoint implementations coming soon
+  // ==================== Policy Engine Routes ====================
 
   // Health check for Council API
-  fastify.get<{ Params: {} }>(
-    '/api/council/health',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return {
-        status: 'healthy',
-        module: 'ai-council',
-        timestamp: new Date().toISOString(),
-      }
-    }
-  )
+  fastify.get('/api/council/health', controller.councilHealth)
 
-  // Placeholder endpoints - to be implemented
-  fastify.post<{ Body: any; Params: {} }>(
-    '/api/council/policies',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // Policy CRUD endpoints
+  fastify.post('/api/council/policies', controller.createPolicy)
+  fastify.get('/api/council/policies', controller.listPolicies)
+  fastify.get('/api/council/policies/:id', controller.getPolicyById)
+  fastify.put('/api/council/policies/:id', controller.updatePolicy)
+  fastify.delete('/api/council/policies/:id', controller.deletePolicy)
 
-  fastify.get<{ Querystring: any; Params: {} }>(
-    '/api/council/policies',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // Policy evaluation endpoints
+  fastify.post('/api/council/policies/:id/evaluate', controller.evaluatePolicy)
+  fastify.post('/api/council/policies/evaluate-all', controller.bulkEvaluatePolicies)
 
-  fastify.get<{ Params: { id: string } }>(
-    '/api/council/policies/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // Violation endpoints
+  fastify.get('/api/council/violations', controller.listViolations)
+  fastify.put('/api/council/violations/:id', controller.updateViolation)
 
-  fastify.put<{ Body: any; Params: { id: string } }>(
-    '/api/council/policies/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // ==================== Vendor Governance Routes ====================
 
-  fastify.delete<{ Params: { id: string } }>(
-    '/api/council/policies/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // Vendor CRUD endpoints
+  fastify.post('/api/council/vendors', controller.createVendor)
+  fastify.get('/api/council/vendors', controller.listVendors)
+  fastify.get('/api/council/vendors/:id', controller.getVendorById)
+  fastify.put('/api/council/vendors/:id', controller.updateVendor)
+  fastify.delete('/api/council/vendors/:id', controller.deleteVendor)
 
-  fastify.post<{ Body: any; Params: { id: string } }>(
-    '/api/council/policies/:id/evaluate',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // Vendor assessment endpoints
+  fastify.post('/api/council/vendors/:id/assess', controller.assessVendor)
+  fastify.get('/api/council/vendors/:vendorId/assessments/:assessmentId', controller.getVendorAssessment)
 
-  fastify.post<{ Body: any; Params: {} }>(
-    '/api/council/policies/evaluate-all',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Policy Engine endpoints coming soon',
-      })
-    }
-  )
+  // Vendor scorecard endpoints
+  fastify.post('/api/council/vendors/:id/scorecard', controller.createScorecard)
+  fastify.get('/api/council/vendors/:id/scorecards', controller.listScorecards)
 
-  fastify.get<{ Querystring: any; Params: {} }>(
-    '/api/council/violations',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Violation tracking coming soon',
-      })
-    }
-  )
+  // ==================== Automated Assessment Routes ====================
 
-  fastify.put<{ Body: any; Params: { id: string } }>(
-    '/api/council/violations/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Violation tracking coming soon',
-      })
-    }
-  )
+  // Schedule CRUD endpoints
+  fastify.post('/api/council/schedules', controller.createSchedule)
+  fastify.get('/api/council/schedules', controller.listSchedules)
+  fastify.get('/api/council/schedules/:id', controller.getScheduleById)
+  fastify.put('/api/council/schedules/:id', controller.updateSchedule)
+  fastify.delete('/api/council/schedules/:id', controller.deleteSchedule)
 
-  // Vendor Governance endpoints
-  fastify.post<{ Body: any; Params: {} }>(
-    '/api/council/vendors',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
+  // Schedule execution endpoint
+  fastify.post('/api/council/schedules/:id/run-now', controller.executeSchedule)
 
-  fastify.get<{ Querystring: any; Params: {} }>(
-    '/api/council/vendors',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
+  // ==================== Cross-Module Routes ====================
 
-  fastify.get<{ Params: { id: string } }>(
-    '/api/council/vendors/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.put<{ Body: any; Params: { id: string } }>(
-    '/api/council/vendors/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.delete<{ Params: { id: string } }>(
-    '/api/council/vendors/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.post<{ Body: any; Params: { id: string } }>(
-    '/api/council/vendors/:id/assess',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.get<{ Params: { vendorId: string; assessmentId: string } }>(
-    '/api/council/vendors/:vendorId/assessments/:assessmentId',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.post<{ Body: any; Params: { id: string } }>(
-    '/api/council/vendors/:id/scorecard',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.get<{ Params: { id: string } }>(
-    '/api/council/vendors/:id/scorecards',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Vendor Governance endpoints coming soon',
-      })
-    }
-  )
-
-  // Automated Assessment endpoints
-  fastify.post<{ Body: any; Params: {} }>(
-    '/api/council/schedules',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Automated Assessment endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.get<{ Querystring: any; Params: {} }>(
-    '/api/council/schedules',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Automated Assessment endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.get<{ Params: { id: string } }>(
-    '/api/council/schedules/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Automated Assessment endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.put<{ Body: any; Params: { id: string } }>(
-    '/api/council/schedules/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Automated Assessment endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.delete<{ Params: { id: string } }>(
-    '/api/council/schedules/:id',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Automated Assessment endpoints coming soon',
-      })
-    }
-  )
-
-  fastify.post<{ Body: any; Params: { id: string } }>(
-    '/api/council/schedules/:id/run-now',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Automated Assessment endpoints coming soon',
-      })
-    }
-  )
-
-  // Cross-module endpoint
-  fastify.get<{ Params: {} }>(
-    '/api/council/status',
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      return reply.status(501).send({
-        error: 'Not Implemented',
-        details: 'Status endpoint coming soon',
-      })
-    }
-  )
+  // Status endpoint
+  fastify.get('/api/council/status', controller.councilStatus)
 }
