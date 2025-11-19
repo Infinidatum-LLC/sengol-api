@@ -20,13 +20,30 @@ function getGeographyAccountId(request: FastifyRequest): string {
 export async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
     const geographyAccountId = getGeographyAccountId(request)
+    console.log('[createPolicy controller] Request body:', JSON.stringify(request.body))
+
     const policy = await councilPolicyService.createPolicy(geographyAccountId, request.body as any)
+    console.log('[createPolicy controller] Policy created successfully:', policy.id)
+
     return reply.status(201).send({ success: true, data: policy })
   } catch (error) {
+    console.error('[createPolicy controller] Error caught:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined,
+      details: error instanceof Error && 'meta' in error ? (error as any).meta : undefined,
+    })
+
     if (error instanceof AppError) {
       return reply.status(error.statusCode).send({ success: false, error: error.message })
     }
-    return reply.status(500).send({ success: false, error: 'Failed to create policy' })
+
+    // Return detailed error for debugging
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to create policy',
+      details: error instanceof Error ? error.message : String(error),
+    })
   }
 }
 
