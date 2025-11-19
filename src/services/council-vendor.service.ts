@@ -119,6 +119,23 @@ export class CouncilVendorService {
     }
   }
 
+  async getAssessmentById(geographyAccountId: string, vendorId: string, assessmentId: string): Promise<any> {
+    try {
+      const assessment = await prisma.council_VendorAssessment.findFirst({
+        where: { id: assessmentId, vendorId, geographyAccountId },
+      })
+
+      if (!assessment) {
+        throw new NotFoundError('Assessment not found')
+      }
+
+      return this.formatAssessment(assessment)
+    } catch (error) {
+      if (error instanceof NotFoundError) throw error
+      throw new DatabaseError('Failed to get assessment', { originalError: error })
+    }
+  }
+
   async createScorecard(geographyAccountId: string, vendorId: string, scorecardData: any): Promise<any> {
     try {
       const scorecard = await prisma.council_VendorScorecard.create({

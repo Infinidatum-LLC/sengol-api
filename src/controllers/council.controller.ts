@@ -7,6 +7,7 @@ import { FastifyRequest, FastifyReply } from 'fastify'
 import { councilPolicyService } from '../services/council-policy.service'
 import { councilVendorService } from '../services/council-vendor.service'
 import { councilScheduleService } from '../services/council-schedule.service'
+import { councilViolationsService } from '../services/council-violations.service'
 import { ValidationError, AppError } from '../lib/errors'
 
 // Get geographyAccountId from request context or headers
@@ -99,11 +100,29 @@ export async function bulkEvaluatePolicies(request: FastifyRequest, reply: Fasti
 }
 
 export async function listViolations(request: FastifyRequest, reply: FastifyReply) {
-  return reply.status(501).send({ success: false, error: 'Not implemented' })
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { limit = 10, offset = 0 } = request.query as any
+    const result = await councilViolationsService.listViolations(geographyAccountId, limit, offset, request.query)
+    return reply.send({
+      success: true,
+      data: result.violations,
+      pagination: { total: result.total, limit, offset, hasMore: result.hasMore },
+    })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to list violations' })
+  }
 }
 
 export async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
-  return reply.status(501).send({ success: false, error: 'Not implemented' })
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { id } = request.params as any
+    const violation = await councilViolationsService.updateViolation(geographyAccountId, id, request.body)
+    return reply.send({ success: true, data: violation })
+  } catch (error) {
+    return reply.status(500).send({ success: false, error: 'Failed to update violation' })
+  }
 }
 
 // ==================== Vendor Governance Controllers ====================
@@ -178,7 +197,22 @@ export async function assessVendor(request: FastifyRequest, reply: FastifyReply)
 }
 
 export async function getVendorAssessment(request: FastifyRequest, reply: FastifyReply) {
-  return reply.status(501).send({ success: false, error: 'Not implemented' })
+  try {
+    const geographyAccountId = getGeographyAccountId(request)
+    const { vendorId, assessmentId } = request.params as any
+
+    // Verify vendor exists first
+    await councilVendorService.getVendorById(geographyAccountId, vendorId)
+
+    // Get the assessment
+    const assessment = await councilVendorService.getAssessmentById(geographyAccountId, vendorId, assessmentId)
+    return reply.send({ success: true, data: assessment })
+  } catch (error) {
+    if (error instanceof AppError) {
+      return reply.status(error.statusCode).send({ success: false, error: error.message })
+    }
+    return reply.status(500).send({ success: false, error: 'Failed to get vendor assessment' })
+  }
 }
 
 export async function createScorecard(request: FastifyRequest, reply: FastifyReply) {
