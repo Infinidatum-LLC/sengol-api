@@ -33,8 +33,8 @@ export async function createPolicy(request: FastifyRequest, reply: FastifyReply)
 export async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
   try {
     const geographyAccountId = getGeographyAccountId(request)
-    const { limit = 10, offset = 0 } = request.query as any
-    const result = await councilPolicyService.listPolicies(geographyAccountId, limit, offset)
+    const { limit = '10', offset = '0' } = request.query as any
+    const result = await councilPolicyService.listPolicies(geographyAccountId, parseInt(limit as string, 10), parseInt(offset as string, 10))
     return reply.send({
       success: true,
       data: result.policies,
@@ -147,8 +147,8 @@ export async function createVendor(request: FastifyRequest, reply: FastifyReply)
 export async function listVendors(request: FastifyRequest, reply: FastifyReply) {
   try {
     const geographyAccountId = getGeographyAccountId(request)
-    const { limit = 10, offset = 0 } = request.query as any
-    const result = await councilVendorService.listVendors(geographyAccountId, limit, offset)
+    const { limit = '10', offset = '0' } = request.query as any
+    const result = await councilVendorService.listVendors(geographyAccountId, parseInt(limit as string, 10), parseInt(offset as string, 10))
     return reply.send({
       success: true,
       data: result.vendors,
@@ -264,8 +264,8 @@ export async function createSchedule(request: FastifyRequest, reply: FastifyRepl
 export async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
   try {
     const geographyAccountId = getGeographyAccountId(request)
-    const { limit = 10, offset = 0 } = request.query as any
-    const result = await councilScheduleService.listSchedules(geographyAccountId, limit, offset)
+    const { limit = '10', offset = '0' } = request.query as any
+    const result = await councilScheduleService.listSchedules(geographyAccountId, parseInt(limit as string, 10), parseInt(offset as string, 10))
     return reply.send({
       success: true,
       data: result.schedules,
