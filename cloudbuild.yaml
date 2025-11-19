@@ -70,8 +70,3 @@ options:
 
 # Timeout for entire build (15 minutes)
 timeout: '900s'
-
-# Substitutions (can be overridden when trigger is created)
-substitutions:
-  _SERVICE_NAME: sengol-api
-  _REGION: us-central1
