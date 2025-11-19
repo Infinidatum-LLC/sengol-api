@@ -28,6 +28,8 @@ export class CouncilVendorService {
 
   async listVendors(geographyAccountId: string, limit: number = 10, offset: number = 0): Promise<any> {
     try {
+      console.log('[CouncilVendorService] listVendors called with:', { geographyAccountId, limit, offset })
+
       const [vendors, total] = await Promise.all([
         prisma.council_Vendor.findMany({
           where: { geographyAccountId },
@@ -37,12 +39,19 @@ export class CouncilVendorService {
         prisma.council_Vendor.count({ where: { geographyAccountId } }),
       ])
 
+      console.log('[CouncilVendorService] Query result:', { vendorsCount: vendors.length, total })
+
       return {
         vendors: vendors.map((v) => this.formatVendor(v)),
         total,
         hasMore: offset + limit < total,
       }
     } catch (error) {
+      console.error('[CouncilVendorService] Error in listVendors:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        error: error,
+      })
       throw new DatabaseError('Failed to list vendors', { originalError: error })
     }
   }

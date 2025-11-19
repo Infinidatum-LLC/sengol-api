@@ -30,6 +30,8 @@ export class CouncilScheduleService {
 
   async listSchedules(geographyAccountId: string, limit: number = 10, offset: number = 0): Promise<any> {
     try {
+      console.log('[CouncilScheduleService] listSchedules called with:', { geographyAccountId, limit, offset })
+
       const [schedules, total] = await Promise.all([
         prisma.council_Schedule.findMany({
           where: { geographyAccountId },
@@ -39,12 +41,19 @@ export class CouncilScheduleService {
         prisma.council_Schedule.count({ where: { geographyAccountId } }),
       ])
 
+      console.log('[CouncilScheduleService] Query result:', { schedulesCount: schedules.length, total })
+
       return {
         schedules: schedules.map((s) => this.formatSchedule(s)),
         total,
         hasMore: offset + limit < total,
       }
     } catch (error) {
+      console.error('[CouncilScheduleService] Error in listSchedules:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        error: error,
+      })
       throw new DatabaseError('Failed to list schedules', { originalError: error })
     }
   }

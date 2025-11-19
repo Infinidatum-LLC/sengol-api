@@ -36,15 +36,21 @@ export class CouncilPolicyService {
     filters?: any
   ): Promise<{ policies: Policy[]; total: number; hasMore: boolean }> {
     try {
+      console.log('[CouncilPolicyService] listPolicies called with:', { geographyAccountId, limit, offset, filters })
+
       const where: any = { geographyAccountId }
       if (filters?.status) where.status = filters.status
       if (filters?.category) where.category = filters.category
       if (filters?.severity) where.severity = filters.severity
 
+      console.log('[CouncilPolicyService] Query where clause:', where)
+
       const [policies, total] = await Promise.all([
         prisma.council_Policy.findMany({ where, skip: offset, take: limit }),
         prisma.council_Policy.count({ where }),
       ])
+
+      console.log('[CouncilPolicyService] Query result:', { policiesCount: policies.length, total })
 
       return {
         policies: policies.map((p) => this.formatPolicy(p)),
@@ -52,6 +58,11 @@ export class CouncilPolicyService {
         hasMore: offset + limit < total,
       }
     } catch (error) {
+      console.error('[CouncilPolicyService] Error in listPolicies:', {
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        error: error,
+      })
       throw new DatabaseError('Failed to list policies', { originalError: error })
     }
   }
