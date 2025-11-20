@@ -76,18 +76,22 @@ export async function build() {
 
   // Register routes
   await fastify.register(healthRoutes)
-  await fastify.register(authRoutes)
-  await fastify.register(reviewRoutes)
-  // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
-  // await fastify.register(embeddingsRoutes)
-  // await fastify.register(vectorSearchRoutes)
-  await fastify.register(projectsRoutes)
-  await fastify.register(riskRoutes)
-  await fastify.register(assessmentsRoutes)
-  await fastify.register(projectsGatedRoutes)
-  await fastify.register(userRoutes)
-  await fastify.register(questionsRoutes)
-  await fastify.register(complianceRoutes)
+
+  // Register API routes with /api prefix
+  await fastify.register(async (fastify) => {
+    await fastify.register(authRoutes)
+    await fastify.register(reviewRoutes)
+    // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
+    // await fastify.register(embeddingsRoutes)
+    // await fastify.register(vectorSearchRoutes)
+    await fastify.register(projectsRoutes)
+    await fastify.register(riskRoutes)
+    await fastify.register(assessmentsRoutes)
+    await fastify.register(projectsGatedRoutes)
+    await fastify.register(userRoutes)
+    await fastify.register(questionsRoutes)
+    await fastify.register(complianceRoutes)
+  }, { prefix: '/api' })
 
   // Trial system routes - disabled pending build fixes
   // Cloud Build currently fails due to pre-existing TypeScript errors in codebase
