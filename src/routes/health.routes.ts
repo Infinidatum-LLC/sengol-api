@@ -21,13 +21,13 @@ export async function healthRoutes(fastify: FastifyInstance) {
       description: 'Evidence-based risk assessment and compliance API',
       status: 'running',
       timestamp: new Date().toISOString(),
-      health: 'https://api.sengol.ai/health',
+      health: 'https://api.sengol.ai/api/health',
       uptime: process.uptime(),
     })
   })
 
-  // Basic health check - fast response
-  fastify.get('/health', async (request, reply) => {
+  // Basic health check - fast response at /api/health
+  fastify.get('/api/health', async (request, reply) => {
     return reply.send({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -36,8 +36,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
     })
   })
 
-  // Detailed health check with dependency checks
-  fastify.get('/health/detailed', async (request, reply) => {
+  // Detailed health check with dependency checks at /api/health/detailed
+  fastify.get('/api/health/detailed', async (request, reply) => {
     const startTime = Date.now()
     const health: any = {
       status: 'ok',
@@ -117,8 +117,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
     return reply.code(statusCode).send(health)
   })
 
-  // Readiness check for Kubernetes/orchestration
-  fastify.get('/health/ready', async (request, reply) => {
+  // Readiness check for Kubernetes/orchestration at /api/health/ready
+  fastify.get('/api/health/ready', async (request, reply) => {
     try {
       // Check critical dependencies only
       const dbHealthy = await resilientPrisma.healthCheck()
@@ -139,8 +139,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
     }
   })
 
-  // Liveness check for Kubernetes/orchestration
-  fastify.get('/health/live', async (request, reply) => {
+  // Liveness check for Kubernetes/orchestration at /api/health/live
+  fastify.get('/api/health/live', async (request, reply) => {
     // Simple check that the process is running
     return reply.send({
       alive: true,
@@ -149,8 +149,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
     })
   })
 
-  // Cache statistics endpoint
-  fastify.get('/health/cache', async (request, reply) => {
+  // Cache statistics endpoint at /api/health/cache
+  fastify.get('/api/health/cache', async (request, reply) => {
     const localCacheMetrics = getLocalCacheMetrics()
     return reply.send({
       local: localCacheMetrics,
@@ -162,8 +162,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
     })
   })
 
-  // Circuit breaker status endpoint
-  fastify.get('/health/circuit-breakers', async (request, reply) => {
+  // Circuit breaker status endpoint at /api/health/circuit-breakers
+  fastify.get('/api/health/circuit-breakers', async (request, reply) => {
     return reply.send({
       database: resilientPrisma.getStats(),
       vertexai: {
@@ -177,9 +177,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
   // ========================================================================
 
   /**
-   * GET /health/optimizations - Complete optimization metrics
+   * GET /api/health/optimizations - Complete optimization metrics
    */
-  fastify.get('/health/optimizations', async (request, reply) => {
+  fastify.get('/api/health/optimizations', async (request, reply) => {
     // Redis health check
     const redisHealth = await checkRedisHealth()
 
@@ -214,9 +214,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
   })
 
   /**
-   * GET /health/cache/local - Local memory cache details
+   * GET /api/health/cache/local - Local memory cache details
    */
-  fastify.get('/health/cache/local', async (request, reply) => {
+  fastify.get('/api/health/cache/local', async (request, reply) => {
     return reply.send({
       metrics: getLocalCacheMetrics(),
       memory: getLocalCacheMemoryUsage(),
@@ -225,9 +225,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
   })
 
   /**
-   * GET /health/cache/redis - Redis cache details
+   * GET /api/health/cache/redis - Redis cache details
    */
-  fastify.get('/health/cache/redis', async (request, reply) => {
+  fastify.get('/api/health/cache/redis', async (request, reply) => {
     const health = await checkRedisHealth()
     const metrics = getRedisMetrics()
 
@@ -239,9 +239,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
   })
 
   /**
-   * GET /health/deduplication - Request deduplication stats
+   * GET /api/health/deduplication - Request deduplication stats
    */
-  fastify.get('/health/deduplication', async (request, reply) => {
+  fastify.get('/api/health/deduplication', async (request, reply) => {
     const metrics = requestDeduplicator.getMetrics()
     const activeKeys = requestDeduplicator.getActiveKeys()
 
@@ -254,9 +254,9 @@ export async function healthRoutes(fastify: FastifyInstance) {
   })
 
   /**
-   * GET /health/performance - Overall performance metrics
+   * GET /api/health/performance - Overall performance metrics
    */
-  fastify.get('/health/performance', async (request, reply) => {
+  fastify.get('/api/health/performance', async (request, reply) => {
     const localCacheMetrics = getLocalCacheMetrics()
     const redisMetrics = getRedisMetrics()
     const dedupMetrics = requestDeduplicator.getMetrics()
