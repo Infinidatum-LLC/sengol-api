@@ -13,6 +13,19 @@ import { requestDeduplicator } from '../lib/request-deduplicator'
 const prisma = resilientPrisma.getRawClient()
 
 export async function healthRoutes(fastify: FastifyInstance) {
+  // Root endpoint - API information
+  fastify.get('/', async (request, reply) => {
+    return reply.send({
+      name: 'Sengol API',
+      version: config.apiVersion,
+      description: 'Evidence-based risk assessment and compliance API',
+      status: 'running',
+      timestamp: new Date().toISOString(),
+      health: 'https://api.sengol.ai/health',
+      uptime: process.uptime(),
+    })
+  })
+
   // Basic health check - fast response
   fastify.get('/health', async (request, reply) => {
     return reply.send({

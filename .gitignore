@@ -20,3 +20,4 @@ DEPLOY_NOW.md
 FINAL_DEPLOYMENT_INSTRUCTIONS.md
 GCP_CONSOLE_DEPLOYMENT_GUIDE.md
 .claude/settings.local.json
+.vercel
