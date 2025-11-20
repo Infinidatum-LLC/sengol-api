@@ -329,12 +329,6 @@ async function handlePaymentFailed(invoice: Stripe.Invoice) {
 export async function registerStripeWebhookRoutes(fastifyApp: FastifyInstance) {
   fastifyApp.post(
     '/api/webhooks/stripe',
-    {
-      schema: {
-        description: 'Stripe webhook endpoint',
-        tags: ['webhooks'],
-      },
-    },
     handleStripeWebhook
   )
 

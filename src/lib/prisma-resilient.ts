@@ -69,11 +69,11 @@ class SimplePrismaWrapper {
     return false
   }
 
-  async countAssessmentsThisMonth(userId: string): Promise<number> {
+  async countAssessmentsThisMonth(userId: string, useCache: boolean = true): Promise<number> {
     return 0
   }
 
-  async countUserProjects(userId: string): Promise<number> {
+  async countUserProjects(userId: string, useCache: boolean = true): Promise<number> {
     return 0
   }
 }
