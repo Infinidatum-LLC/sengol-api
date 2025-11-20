@@ -1,41 +1,43 @@
 /**
- * In-Memory Cache with LRU Eviction
+ * Simple In-Memory Cache with TTL
  *
- * Provides caching for expensive operations like d-vecDB searches and LLM calls.
- * Uses LRU (Least Recently Used) eviction policy to manage memory.
+ * Provides LRU cache for subscription and trial data.
+ * Automatically invalidates entries after TTL expires.
  */
-
-import crypto from 'crypto'
-import { config } from '../config/env'
 
 interface CacheEntry<T> {
   value: T
   expiresAt: number
-  lastAccessed: number
-  size: number
+  hits: number
+  created: number
 }
 
-export class Cache<T = any> {
-  private cache = new Map<string, CacheEntry<T>>()
-  private accessOrder: string[] = [] // For LRU tracking
-  private currentSize = 0
+interface CacheStats {
+  size: number
+  hits: number
+  misses: number
+  hitRate: number
+  entries: Array<{
+    key: string
+    age: number
+    ttl: number
+    hits: number
+  }>
+}
+
+export class Cache<T = unknown> {
+  private store = new Map<string, CacheEntry<T>>()
   private hits = 0
   private misses = 0
 
-  constructor(
-    private readonly maxSize: number = config.cacheMaxSize,
-    private readonly defaultTtl: number = config.cacheTtl * 1000 // Convert to ms
-  ) {}
+  constructor(private maxSize: number = 1000) {}
 
   /**
-   * Get item from cache
+   * Get value from cache
+   * Returns undefined if not found or expired
    */
   get(key: string): T | undefined {
-    if (!config.cacheEnabled) {
-      return undefined
-    }
-
-    const entry = this.cache.get(key)
+    const entry = this.store.get(key)
 
     if (!entry) {
       this.misses++
@@ -44,215 +46,141 @@ export class Cache<T = any> {
 
     // Check if expired
     if (Date.now() > entry.expiresAt) {
-      this.delete(key)
+      this.store.delete(key)
       this.misses++
       return undefined
     }
 
-    // Update access time and order for LRU
-    entry.lastAccessed = Date.now()
-    this.updateAccessOrder(key)
+    entry.hits++
     this.hits++
-
     return entry.value
   }
 
   /**
-   * Set item in cache
+   * Set value in cache with TTL (milliseconds)
    */
-  set(key: string, value: T, ttl?: number): void {
-    if (!config.cacheEnabled) {
-      return
+  set(key: string, value: T, ttlMs: number): void {
+    // Remove oldest entry if at capacity
+    if (this.store.size >= this.maxSize && !this.store.has(key)) {
+      let oldestKey: string | null = null
+      let oldestTime = Infinity
+
+      for (const [k, entry] of this.store.entries()) {
+        if (entry.created < oldestTime) {
+          oldestTime = entry.created
+          oldestKey = k
+        }
+      }
+
+      if (oldestKey) {
+        this.store.delete(oldestKey)
+      }
     }
 
-    const size = this.estimateSize(value)
-    const expiresAt = Date.now() + (ttl || this.defaultTtl)
-
-    // If item already exists, remove it first
-    if (this.cache.has(key)) {
-      this.delete(key)
-    }
-
-    // Evict items if necessary
-    while (this.currentSize + size > this.maxSize && this.cache.size > 0) {
-      this.evictLRU()
-    }
-
-    // Add new entry
-    const entry: CacheEntry<T> = {
+    this.store.set(key, {
       value,
-      expiresAt,
-      lastAccessed: Date.now(),
-      size,
-    }
-
-    this.cache.set(key, entry)
-    this.accessOrder.push(key)
-    this.currentSize += size
+      expiresAt: Date.now() + ttlMs,
+      hits: 0,
+      created: Date.now(),
+    })
   }
 
   /**
-   * Delete item from cache
+   * Delete specific key
    */
   delete(key: string): boolean {
-    const entry = this.cache.get(key)
-    if (!entry) {
-      return false
+    return this.store.delete(key)
+  }
+
+  /**
+   * Clear all entries matching pattern
+   */
+  deletePattern(pattern: RegExp | string): number {
+    const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern
+    let deleted = 0
+
+    for (const key of this.store.keys()) {
+      if (regex.test(key)) {
+        this.store.delete(key)
+        deleted++
+      }
     }
 
-    this.cache.delete(key)
-    this.currentSize -= entry.size
-    this.accessOrder = this.accessOrder.filter(k => k !== key)
-    return true
+    return deleted
   }
 
   /**
-   * Check if key exists and is not expired
-   */
-  has(key: string): boolean {
-    return this.get(key) !== undefined
-  }
-
-  /**
-   * Clear all cache entries
+   * Clear entire cache
    */
   clear(): void {
-    this.cache.clear()
-    this.accessOrder = []
-    this.currentSize = 0
+    this.store.clear()
+    this.hits = 0
+    this.misses = 0
   }
 
   /**
    * Get cache statistics
    */
-  getStats() {
+  getStats(): CacheStats {
+    const now = Date.now()
+    const entries = Array.from(this.store.entries()).map(([key, entry]) => ({
+      key,
+      age: now - entry.created,
+      ttl: entry.expiresAt - now,
+      hits: entry.hits,
+    }))
+
     const total = this.hits + this.misses
-    const hitRate = total > 0 ? (this.hits / total) * 100 : 0
+    const hitRate = total === 0 ? 0 : (this.hits / total) * 100
 
     return {
-      size: this.cache.size,
-      currentSize: this.currentSize,
-      maxSize: this.maxSize,
+      size: this.store.size,
       hits: this.hits,
       misses: this.misses,
-      hitRate: hitRate.toFixed(2) + '%',
-      enabled: config.cacheEnabled,
+      hitRate,
+      entries,
     }
   }
 
   /**
-   * Clean up expired entries
+   * Get hit rate percentage
    */
-  cleanup(): number {
-    const now = Date.now()
-    let cleaned = 0
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (now > entry.expiresAt) {
-        this.delete(key)
-        cleaned++
-      }
-    }
-
-    return cleaned
-  }
-
-  /**
-   * Evict least recently used item
-   */
-  private evictLRU(): void {
-    if (this.accessOrder.length === 0) {
-      return
-    }
-
-    const oldestKey = this.accessOrder[0]
-    this.delete(oldestKey)
-  }
-
-  /**
-   * Update access order for LRU tracking
-   */
-  private updateAccessOrder(key: string): void {
-    this.accessOrder = this.accessOrder.filter(k => k !== key)
-    this.accessOrder.push(key)
-  }
-
-  /**
-   * Estimate size of value in bytes (rough estimate)
-   */
-  private estimateSize(value: any): number {
-    const json = JSON.stringify(value)
-    return json.length * 2 // Rough estimate: 2 bytes per char
+  getHitRate(): number {
+    const total = this.hits + this.misses
+    return total === 0 ? 0 : (this.hits / total) * 100
   }
 }
 
 /**
- * Generate cache key from arguments
+ * Global cache instances
  */
-export function generateCacheKey(prefix: string, ...args: any[]): string {
-  const data = JSON.stringify(args)
-  const hash = crypto.createHash('md5').update(data).digest('hex')
-  return `${prefix}:${hash}`
+export const subscriptionCache = new Cache<{ tier: string; status: string }>(1000)
+export const trialStatusCache = new Cache<any>(1000)
+export const featureUsageCache = new Cache<{ used: number; limit: number }>(2000)
+
+/**
+ * Cache key builders
+ */
+export const cacheKeys = {
+  subscription: (userId: string) => `sub:${userId}`,
+  trialStatus: (userId: string) => `trial:${userId}`,
+  featureUsage: (userId: string, feature: string) => `usage:${userId}:${feature}`,
 }
 
 /**
- * Decorator for caching function results
+ * Invalidate user's cached data
  */
-export function cached<T>(
-  cache: Cache<T>,
-  keyPrefix: string,
-  ttl?: number
-) {
-  return function (
-    target: any,
-    propertyKey: string,
-    descriptor: PropertyDescriptor
-  ) {
-    const originalMethod = descriptor.value
-
-    descriptor.value = async function (...args: any[]) {
-      const cacheKey = generateCacheKey(keyPrefix, ...args)
-
-      // Try to get from cache
-      const cachedResult = cache.get(cacheKey)
-      if (cachedResult !== undefined) {
-        console.log(`[Cache] HIT: ${keyPrefix}`)
-        return cachedResult
-      }
-
-      console.log(`[Cache] MISS: ${keyPrefix}`)
-
-      // Execute original method
-      const result = await originalMethod.apply(this, args)
-
-      // Store in cache
-      cache.set(cacheKey, result, ttl)
-
-      return result
-    }
-
-    return descriptor
-  }
+export function invalidateUserCache(userId: string): void {
+  subscriptionCache.delete(cacheKeys.subscription(userId))
+  trialStatusCache.delete(cacheKeys.trialStatus(userId))
+  featureUsageCache.deletePattern(new RegExp(`^usage:${userId}:`))
 }
 
-// Global cache instances
-export const vectorSearchCache = new Cache(
-  config.cacheMaxSize,
-  config.cacheTtl * 1000
-)
-
-export const llmResponseCache = new Cache(
-  Math.floor(config.cacheMaxSize / 2), // Smaller cache for LLM responses
-  config.cacheTtl * 1000 * 2 // Longer TTL for LLM (2x)
-)
-
-// Start periodic cleanup (every 5 minutes)
-setInterval(() => {
-  const vectorCleaned = vectorSearchCache.cleanup()
-  const llmCleaned = llmResponseCache.cleanup()
-  if (vectorCleaned > 0 || llmCleaned > 0) {
-    console.log(
-      `[Cache] Cleanup: ${vectorCleaned} vector entries, ${llmCleaned} LLM entries`
-    )
-  }
-}, 5 * 60 * 1000)
+/**
+ * Clear all caches
+ */
+export function clearAllCaches(): void {
+  subscriptionCache.clear()
+  trialStatusCache.clear()
+  featureUsageCache.clear()
+}
