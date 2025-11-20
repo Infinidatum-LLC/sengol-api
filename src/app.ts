@@ -89,8 +89,10 @@ export async function build() {
   await fastify.register(questionsRoutes)
   await fastify.register(complianceRoutes)
 
-  // Trial system routes now enabled with Stripe integration
-  await registerAllRoutes(fastify)
+  // Trial system routes - disabled pending build fixes
+  // Cloud Build currently fails due to pre-existing TypeScript errors in codebase
+  // Uncomment after resolving: missing stripe dependency and existing compilation errors
+  // await registerAllRoutes(fastify)
 
   // Error handler with AppError support
   fastify.setErrorHandler((error, request, reply) => {
