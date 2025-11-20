@@ -16,10 +16,8 @@ import { projectsGatedRoutes } from './routes/projects-gated.routes'
 import { userRoutes } from './routes/user.routes'
 import { questionsRoutes } from './routes/questions.routes'
 import { complianceRoutes } from './routes/compliance.routes'
-// DISABLED: Trial system routes require Stripe and have integration issues
-// import { registerAllRoutes } from './routes/index'
-// DISABLED: Request timeout middleware has integration issues
-// import { requestTimeoutMiddleware } from './middleware/request-timeout'
+import { registerAllRoutes } from './routes/index'
+import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
 import { prisma } from './lib/prisma'
@@ -74,8 +72,7 @@ export async function build() {
 
   // Global middleware
   fastify.addHook('onRequest', requestLoggingMiddleware)
-  // DISABLED: Request timeout middleware has integration issues
-  // fastify.addHook('onRequest', requestTimeoutMiddleware)
+  fastify.addHook('onRequest', requestTimeoutMiddleware)
 
   // Register routes
   await fastify.register(healthRoutes)
@@ -92,8 +89,8 @@ export async function build() {
   await fastify.register(questionsRoutes)
   await fastify.register(complianceRoutes)
 
-  // DISABLED: Trial system routes require Stripe integration
-  // await registerAllRoutes(fastify)
+  // Trial system routes now enabled with Stripe integration
+  await registerAllRoutes(fastify)
 
   // Error handler with AppError support
   fastify.setErrorHandler((error, request, reply) => {
