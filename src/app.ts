@@ -79,6 +79,8 @@ export async function build() {
 
   // Register API routes with /api prefix
   await fastify.register(async (fastify) => {
+    // Health check routes available at /api/health
+    await fastify.register(healthRoutes)
     await fastify.register(authRoutes)
     await fastify.register(reviewRoutes)
     // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
