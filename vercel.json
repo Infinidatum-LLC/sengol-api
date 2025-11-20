@@ -4,11 +4,5 @@
   "outputDirectory": "dist",
   "env": {
     "NODE_ENV": "production"
-  },
-  "functions": {
-    "src/app.ts": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
   }
 }
