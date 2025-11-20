@@ -12,7 +12,7 @@ interface CacheEntry<T> {
   created: number
 }
 
-interface CacheStats {
+export interface CacheStats {
   size: number
   hits: number
   misses: number
@@ -183,4 +183,24 @@ export function clearAllCaches(): void {
   subscriptionCache.clear()
   trialStatusCache.clear()
   featureUsageCache.clear()
+}
+
+/**
+ * LLM Response Cache - for caching expensive LLM calls
+ */
+export const llmResponseCache = new Cache<any>(500)
+
+/**
+ * Generate cache key for LLM responses
+ * Combines model, prompt hash, and parameters
+ */
+export function generateCacheKey(
+  model: string,
+  input: string,
+  params?: Record<string, unknown>
+): string {
+  const paramsStr = params ? JSON.stringify(params) : ''
+  // Simple hash-like key based on input content
+  const inputHash = input.substring(0, 50).replace(/\s+/g, '_')
+  return `llm:${model}:${inputHash}:${paramsStr.length}`
 }

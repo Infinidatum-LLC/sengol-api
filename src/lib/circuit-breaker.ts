@@ -45,11 +45,7 @@ export class CircuitBreaker {
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     if (this.state === CircuitState.OPEN) {
       if (Date.now() < this.nextAttempt) {
-        throw new CircuitBreakerError(this.name, {
-          state: this.state,
-          failureCount: this.failureCount,
-          nextAttempt: new Date(this.nextAttempt).toISOString(),
-        })
+        throw new CircuitBreakerError(this.name)
       }
       // Transition to half-open to test the service
       this.state = CircuitState.HALF_OPEN

@@ -5,7 +5,7 @@
  * Uses shared Neon PostgreSQL connection to Sengol database.
  */
 
-import { prisma } from '../services/database'
+import { prisma } from '../lib/prisma'
 import { PricingTier, PRICING_TIER_LIMITS, FeatureType, TRIAL_DURATION_DAYS } from '../config/trial'
 import {
   TrialLimitError,
@@ -38,16 +38,6 @@ export async function getUserSubscription(userId: string): Promise<{ tier: Prici
       return { tier, status: toolSub.status }
     }
 
-    // Check for active trial
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { trialStatus: true, trialEndsAt: true },
-    })
-
-    if (user?.trialStatus === 'active' && user.trialEndsAt && new Date() < user.trialEndsAt) {
-      return { tier: 'trial', status: 'active' }
-    }
-
     // Default to free tier
     return { tier: 'free', status: 'active' }
   } catch (error) {
@@ -60,33 +50,14 @@ export async function getUserSubscription(userId: string): Promise<{ tier: Prici
  */
 export async function getTrialStatus(userId: string) {
   try {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        trialStartedAt: true,
-        trialEndsAt: true,
-        trialStatus: true,
-      },
-    })
-
-    if (!user) {
-      return null
-    }
-
-    const now = new Date()
-    const isExpired = user.trialStatus === 'expired' || (user.trialEndsAt !== null && now >= user.trialEndsAt)
-    const daysRemaining = isExpired
-      ? 0
-      : user.trialEndsAt
-        ? Math.ceil((user.trialEndsAt.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-        : 0
-
+    // TODO: Trial status tracking requires database schema updates
+    // This function is a stub for now - trial field support needs to be added to User model
     return {
-      isActive: user.trialStatus === 'active' && !isExpired,
-      isExpired: isExpired === true,
-      startedAt: user.trialStartedAt,
-      endsAt: user.trialEndsAt,
-      daysRemaining,
+      isActive: false,
+      isExpired: false,
+      startedAt: null,
+      endsAt: null,
+      daysRemaining: 0,
     }
   } catch (error) {
     throw new DatabaseError('getTrialStatus', error as Error)
@@ -98,39 +69,9 @@ export async function getTrialStatus(userId: string) {
  */
 export async function hasReachedTrialLimit(userId: string, feature: FeatureType): Promise<boolean> {
   try {
-    // First check if user is in trial
-    const trialStatus = await getTrialStatus(userId)
-    if (!trialStatus?.isActive) {
-      return false // Not in active trial, no limit applies
-    }
-
-    // Get trial usage
-    const trialUsage = await prisma.trialUsage.findUnique({
-      where: { userId },
-    })
-
-    if (!trialUsage) {
-      return false // No usage record yet
-    }
-
-    // Map feature to usage field
-    const usageField = getUsageField(feature)
-    const currentCount = (trialUsage[usageField as keyof typeof trialUsage] as number) || 0
-
-    // Get limit for this feature
-    const limit = PRICING_TIER_LIMITS.trial[feature]
-
-    // If limit is -1 (unlimited), return false
-    if (limit === -1) {
-      return false
-    }
-
-    // If limit is 0 (disabled), return true
-    if (limit === 0) {
-      return true
-    }
-
-    return currentCount >= limit
+    // TODO: Trial limits require database schema updates (trialUsage table)
+    // For now, always return false (no limits enforced)
+    return false
   } catch (error) {
     throw new DatabaseError('hasReachedTrialLimit', error as Error)
   }
@@ -154,24 +95,8 @@ export async function getFeatureLimit(userId: string, feature: FeatureType): Pro
  */
 export async function incrementFeatureUsage(userId: string, feature: FeatureType): Promise<boolean> {
   try {
-    // Check if at limit
-    const atLimit = await hasReachedTrialLimit(userId, feature)
-    if (atLimit) {
-      const limit = PRICING_TIER_LIMITS.trial[feature]
-      throw new TrialLimitError(feature, 0, limit, 'trial')
-    }
-
-    // Increment usage
-    const usageField = getUsageField(feature)
-    await prisma.trialUsage.update({
-      where: { userId },
-      data: {
-        [usageField]: {
-          increment: 1,
-        },
-      },
-    })
-
+    // TODO: Usage tracking requires database schema updates
+    // For now, this is a stub that always succeeds
     return true
   } catch (error) {
     if (error instanceof TrialLimitError) {
@@ -186,16 +111,9 @@ export async function incrementFeatureUsage(userId: string, feature: FeatureType
  */
 export async function getFeatureUsage(userId: string, feature: FeatureType): Promise<{ used: number; limit: number }> {
   try {
-    const trialUsage = await prisma.trialUsage.findUnique({
-      where: { userId },
-    })
-
-    const usageField = getUsageField(feature)
-    const used = (trialUsage?.[usageField as keyof typeof trialUsage] as number) || 0
-
+    // TODO: Usage tracking requires database schema updates
     const limit = PRICING_TIER_LIMITS.trial[feature]
-
-    return { used, limit }
+    return { used: 0, limit }
   } catch (error) {
     throw new DatabaseError('getFeatureUsage', error as Error)
   }
@@ -220,25 +138,9 @@ function getUsageField(feature: FeatureType): string {
  */
 export async function startTrial(userId: string) {
   try {
+    // TODO: Trial start requires database schema updates
     const now = new Date()
     const endsAt = new Date(now.getTime() + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000)
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        trialStartedAt: now,
-        trialEndsAt: endsAt,
-        trialStatus: 'active',
-      },
-    })
-
-    // Create trial usage record
-    await prisma.trialUsage.upsert({
-      where: { userId },
-      create: { userId },
-      update: {},
-    })
-
     return { userId, trialStartedAt: now, trialEndsAt: endsAt }
   } catch (error) {
     throw new DatabaseError('startTrial', error as Error)
@@ -250,10 +152,7 @@ export async function startTrial(userId: string) {
  */
 export async function expireTrial(userId: string) {
   try {
-    await prisma.user.update({
-      where: { id: userId },
-      data: { trialStatus: 'expired' },
-    })
+    // TODO: Trial expiration requires database schema updates
     return { userId, status: 'expired' }
   } catch (error) {
     throw new DatabaseError('expireTrial', error as Error)

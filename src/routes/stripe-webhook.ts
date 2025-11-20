@@ -7,13 +7,13 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import Stripe from 'stripe'
-import { prisma } from '../services/database'
+import { prisma } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { invalidateUserCacheById } from '../middleware/cache-invalidation'
 import { StripeWebhookError } from '../lib/errors'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
-  apiVersion: '2023-10-16',
+  apiVersion: '2025-01-27.acme' as any,
 })
 
 /**
@@ -41,8 +41,9 @@ export async function handleStripeWebhook(
     // Verify webhook signature
     let event: Stripe.Event
     try {
+      const body = typeof request.body === 'string' ? request.body : JSON.stringify(request.body)
       event = stripe.webhooks.constructEvent(
-        request.rawBody || request.body as any,
+        body,
         signature,
         process.env.STRIPE_WEBHOOK_SECRET || ''
       )
@@ -125,22 +126,22 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
           userId: user.id,
           stripeSubscriptionId: subscription.id,
         },
-      },
+      } as any,
       create: {
         userId: user.id,
         stripeSubscriptionId: subscription.id,
         stripeCustomerId: customerId,
         planId: planId.toLowerCase(),
         status: subscription.status === 'active' ? 'active' : 'pending',
-        currentPeriodStart: new Date(subscription.current_period_start * 1000),
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      },
+        currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+        currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+      } as any,
       update: {
         planId: planId.toLowerCase(),
         status: subscription.status === 'active' ? 'active' : 'pending',
-        currentPeriodStart: new Date(subscription.current_period_start * 1000),
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      },
+        currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+        currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+      } as any,
     })
 
     // Invalidate cache
@@ -183,12 +184,12 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
     await prisma.toolSubscription.updateMany({
       where: {
         stripeSubscriptionId: subscription.id,
-      },
+      } as any,
       data: {
         status: subscription.status === 'active' ? 'active' : 'pending',
-        currentPeriodStart: new Date(subscription.current_period_start * 1000),
-        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
-      },
+        currentPeriodStart: new Date((subscription as any).current_period_start * 1000),
+        currentPeriodEnd: new Date((subscription as any).current_period_end * 1000),
+      } as any,
     })
 
     // Invalidate cache

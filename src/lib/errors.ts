@@ -128,19 +128,23 @@ export class StripeWebhookError extends AppError {
  * Validation errors
  */
 export class ValidationError extends AppError {
-  constructor(field: string, message: string) {
+  constructor(field: string, message?: string) {
+    // Support both ValidationError(field, message) and ValidationError(message)
+    const actualField = message ? field : 'validation'
+    const actualMessage = message ? message : field
+
     super(
       'VALIDATION_ERROR',
       400,
       'Invalid input',
-      `Validation error in ${field}: ${message}`,
-      { field }
+      `Validation error in ${actualField}: ${actualMessage}`,
+      { field: actualField }
     )
   }
 }
 
 /**
- * Unauthorized access errors
+ * Unauthorized access errors (authentication required)
  */
 export class UnauthorizedError extends AppError {
   constructor(reason: string = 'Unauthorized') {
@@ -150,6 +154,96 @@ export class UnauthorizedError extends AppError {
       'Authentication required',
       reason,
       {}
+    )
+  }
+}
+
+/**
+ * Authentication errors (invalid credentials)
+ */
+export class AuthenticationError extends AppError {
+  constructor(reason: string = 'Authentication failed') {
+    super(
+      'AUTHENTICATION_ERROR',
+      401,
+      'Invalid credentials',
+      reason,
+      {}
+    )
+  }
+}
+
+/**
+ * Authorization errors (user lacks permissions)
+ */
+export class AuthorizationError extends AppError {
+  constructor(resource: string = 'resource') {
+    super(
+      'FORBIDDEN',
+      403,
+      'You do not have permission to access this resource',
+      `Access denied to ${resource}`,
+      { resource }
+    )
+  }
+}
+
+/**
+ * Not found errors
+ */
+export class NotFoundError extends AppError {
+  constructor(resource: string, id?: string) {
+    super(
+      'NOT_FOUND',
+      404,
+      `${resource} not found`,
+      `${resource}${id ? ` ${id}` : ''} not found`,
+      { resource, id }
+    )
+  }
+}
+
+/**
+ * Circuit breaker open errors
+ */
+export class CircuitBreakerError extends AppError {
+  constructor(service: string) {
+    super(
+      'CIRCUIT_BREAKER_OPEN',
+      503,
+      'Service temporarily unavailable',
+      `Circuit breaker open for ${service}`,
+      { service }
+    )
+  }
+}
+
+/**
+ * LLM (Language Model) errors
+ */
+export class LLMError extends AppError {
+  constructor(message: string, originalError?: Error) {
+    super(
+      'LLM_ERROR',
+      500,
+      'AI service error',
+      `LLM error: ${message}`,
+      { originalError: originalError?.message }
+    )
+  }
+}
+
+/**
+ * Request timeout errors
+ */
+export class TimeoutError extends AppError {
+  constructor(operation: string, timeoutMs: number, metadata?: Record<string, unknown>) {
+    super(
+      'TIMEOUT',
+      504,
+      'Request timeout',
+      `${operation} timed out after ${timeoutMs}ms`,
+      { operation, timeoutMs, ...metadata }
     )
   }
 }
