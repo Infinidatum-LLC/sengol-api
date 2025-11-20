@@ -7,5 +7,5 @@ import { generateQuestionsController } from '../controllers/questions.controller
 
 export async function questionsRoutes(fastify: FastifyInstance) {
   // POST /api/questions/generate - Generate dynamic questions without a review
-  fastify.post('/api/questions/generate', generateQuestionsController)
+  fastify.post('/questions/generate', generateQuestionsController)
 }

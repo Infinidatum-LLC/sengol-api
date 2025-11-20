@@ -17,23 +17,23 @@ import {
 
 export async function assessmentsRoutes(fastify: FastifyInstance) {
   // Assessment CRUD
-  fastify.post('/api/assessments', createAssessmentController)
-  fastify.get('/api/assessments/:id', getAssessmentController)
+  fastify.post('/assessments', createAssessmentController)
+  fastify.get('/assessments/:id', getAssessmentController)
 
   // Assessment steps
-  fastify.put('/api/assessments/:id/step1', updateAssessmentStep1Controller)
-  fastify.put('/api/assessments/:id/step2', updateAssessmentStep2Controller)
-  fastify.put('/api/assessments/:id/step3', updateAssessmentStep3Controller)
+  fastify.put('/assessments/:id/step1', updateAssessmentStep1Controller)
+  fastify.put('/assessments/:id/step2', updateAssessmentStep2Controller)
+  fastify.put('/assessments/:id/step3', updateAssessmentStep3Controller)
 
   // Question generation and saving
-  fastify.post('/api/assessments/:id/generate-questions', generateQuestionsController)
-  fastify.put('/api/assessments/:id/save-questions', saveQuestionsController)
+  fastify.post('/assessments/:id/generate-questions', generateQuestionsController)
+  fastify.put('/assessments/:id/save-questions', saveQuestionsController)
 
   // Assessment submission
-  fastify.post('/api/assessments/:id/submit', submitAssessmentController)
+  fastify.post('/assessments/:id/submit', submitAssessmentController)
 
   // Assessment data
-  fastify.get('/api/assessments/:id/scores', getAssessmentScoresController)
-  fastify.get('/api/assessments/:id/benchmark', getAssessmentBenchmarkController)
-  fastify.get('/api/assessments/:id/similar-cases', getAssessmentSimilarCasesController)
+  fastify.get('/assessments/:id/scores', getAssessmentScoresController)
+  fastify.get('/assessments/:id/benchmark', getAssessmentBenchmarkController)
+  fastify.get('/assessments/:id/similar-cases', getAssessmentSimilarCasesController)
 }

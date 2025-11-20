@@ -9,13 +9,13 @@ import {
 
 export async function projectsGatedRoutes(fastify: FastifyInstance) {
   // Spec-compliant routes (BACKEND_API_IMPLEMENTATION_CHECKLIST.md)
-  fastify.get('/api/projects', listProjectsController)
-  fastify.post('/api/projects', createProjectController)
+  fastify.get('/projects', listProjectsController)
+  fastify.post('/projects', createProjectController)
 
   // Legacy routes (for backward compatibility)
-  fastify.get('/api/projects-list', listProjectsController)
-  fastify.post('/api/projects-create', createProjectController)
-  fastify.get('/api/projects-get/:id', getProjectController)
-  fastify.put('/api/projects-update/:id', updateProjectController)
-  fastify.delete('/api/projects-delete/:id', deleteProjectController)
+  fastify.get('/projects-list', listProjectsController)
+  fastify.post('/projects-create', createProjectController)
+  fastify.get('/projects-get/:id', getProjectController)
+  fastify.put('/projects-update/:id', updateProjectController)
+  fastify.delete('/projects-delete/:id', deleteProjectController)
 }
