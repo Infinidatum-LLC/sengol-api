@@ -29,8 +29,11 @@ export class Cache<T = unknown> {
   private store = new Map<string, CacheEntry<T>>()
   private hits = 0
   private misses = 0
+  private defaultTtl: number
 
-  constructor(private maxSize: number = 1000) {}
+  constructor(private maxSize: number = 1000, ttl: number = 60 * 60 * 1000) {
+    this.defaultTtl = ttl
+  }
 
   /**
    * Get value from cache
