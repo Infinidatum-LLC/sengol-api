@@ -16,8 +16,6 @@ export async function complianceRoutes(fastify: FastifyInstance) {
   // Save compliance question responses
   fastify.post('/api/review/:id/compliance-responses', {
     schema: {
-      description: 'Save compliance question responses for an assessment',
-      tags: ['compliance'],
       params: {
         type: 'object',
         properties: {
@@ -94,8 +92,6 @@ export async function complianceRoutes(fastify: FastifyInstance) {
   // Get compliance question responses
   fastify.get('/api/review/:id/compliance-responses', {
     schema: {
-      description: 'Retrieve compliance question responses for an assessment',
-      tags: ['compliance'],
       params: {
         type: 'object',
         properties: {
