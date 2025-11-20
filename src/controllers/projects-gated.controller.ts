@@ -112,11 +112,6 @@ export async function createProjectController(
             updatedAt: new Date(),
           },
         })
-      },
-      {
-        operationName: 'createProject',
-        maxRetries: 2,
-        timeout: 8000,
       }
     )
 

@@ -16,13 +16,11 @@ export function validateBody<T extends ZodSchema>(schema: T) {
       request.body = validated
     } catch (error) {
       if (error instanceof z.ZodError) {
-        throw new ValidationError('Request validation failed', {
-          errors: error.errors.map((e) => ({
-            path: e.path.join('.'),
-            message: e.message,
-            code: e.code,
-          })),
-        })
+        throw new ValidationError('Request validation failed: ' + JSON.stringify(error.errors.map((e) => ({
+          path: e.path.join('.'),
+          message: e.message,
+          code: e.code,
+        }))))
       }
       throw error
     }
@@ -39,13 +37,11 @@ export function validateQuery<T extends ZodSchema>(schema: T) {
       request.query = validated as any
     } catch (error) {
       if (error instanceof z.ZodError) {
-        throw new ValidationError('Query validation failed', {
-          errors: error.errors.map((e) => ({
-            path: e.path.join('.'),
-            message: e.message,
-            code: e.code,
-          })),
-        })
+        throw new ValidationError('Query validation failed: ' + JSON.stringify(error.errors.map((e) => ({
+          path: e.path.join('.'),
+          message: e.message,
+          code: e.code,
+        }))))
       }
       throw error
     }
@@ -62,13 +58,11 @@ export function validateParams<T extends ZodSchema>(schema: T) {
       request.params = validated as any
     } catch (error) {
       if (error instanceof z.ZodError) {
-        throw new ValidationError('Params validation failed', {
-          errors: error.errors.map((e) => ({
-            path: e.path.join('.'),
-            message: e.message,
-            code: e.code,
-          })),
-        })
+        throw new ValidationError('Params validation failed: ' + JSON.stringify(error.errors.map((e) => ({
+          path: e.path.join('.'),
+          message: e.message,
+          code: e.code,
+        }))))
       }
       throw error
     }

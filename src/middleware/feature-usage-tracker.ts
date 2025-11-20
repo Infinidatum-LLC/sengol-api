@@ -52,8 +52,10 @@ export function createUsageTracker(feature: FeatureType) {
  */
 export function trackFeatureUsage(feature: FeatureType) {
   return async (reply: FastifyReply) => {
-    // Store feature in reply context for tracker
-    const request = reply.request
-    (request as any).feature = feature
+    // Store feature in reply request for tracker
+    const req = (reply as any).request
+    if (req) {
+      (req as any).feature = feature
+    }
   }
 }

@@ -44,7 +44,7 @@ export async function healthRoutes(fastify: FastifyInstance) {
     const dbStart = Date.now()
     try {
       const isHealthy = await resilientPrisma.healthCheck()
-      const dbHealth = resilientPrisma.getHealthStatus()
+      const dbHealth = await resilientPrisma.getHealthStatus()
 
       health.checks.database = {
         status: isHealthy ? 'ok' : 'degraded',
@@ -250,15 +250,15 @@ export async function healthRoutes(fastify: FastifyInstance) {
 
     // Calculate overall cache hit rate
     const totalLocalOps = Object.values(localCacheMetrics).reduce(
-      (sum: number, cache: any) => sum + (cache.hits || 0) + (cache.misses || 0),
+      (sum: number, cache: any) => sum + ((cache as any).hits || 0) + ((cache as any).misses || 0),
       0
     )
     const totalLocalHits = Object.values(localCacheMetrics).reduce(
-      (sum: number, cache: any) => sum + (cache.hits || 0),
+      (sum: number, cache: any) => sum + ((cache as any).hits || 0),
       0
     )
-    const localHitRate = totalLocalOps > 0
-      ? ((totalLocalHits / totalLocalOps) * 100).toFixed(2) + '%'
+    const localHitRate = (totalLocalOps as number) > 0
+      ? (((totalLocalHits as number) / (totalLocalOps as number)) * 100).toFixed(2) + '%'
       : '0%'
 
     const redisHitRate = redisMetrics.hitRate || '0%'

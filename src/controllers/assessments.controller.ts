@@ -46,11 +46,6 @@ export async function createAssessmentController(
         return await prisma.project.findUnique({
           where: { id: projectId },
         })
-      },
-      {
-        operationName: 'findProject',
-        maxRetries: 2,
-        timeout: 5000,
       }
     )
 
@@ -82,11 +77,6 @@ export async function createAssessmentController(
             updatedAt: new Date(),
           },
         })
-      },
-      {
-        operationName: 'createAssessment',
-        maxRetries: 2,
-        timeout: 8000,
       }
     )
 

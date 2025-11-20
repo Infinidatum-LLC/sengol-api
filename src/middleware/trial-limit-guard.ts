@@ -31,23 +31,25 @@ export function createTrialLimitGuard(feature: FeatureType) {
       }
 
       // Get user's subscription tier
-      const { tier, status } = await getUserSubscription(userId)
+      const result = await getUserSubscription(userId)
+      const tierValue = (result as any).tier
+      const statusValue = (result as any).status
 
       // Check if user has reached trial limit
       const hasLimit = await hasReachedTrialLimit(userId, feature)
 
       if (hasLimit) {
-        logger.logTrialLimitViolation(userId, feature, 0, 0)
+        logger.warn(`Trial limit exceeded for user ${userId} on feature ${feature}`)
         reply.code(429).send({
           code: 'TRIAL_LIMIT_EXCEEDED',
           message: 'Feature not available for your tier',
-          tier,
+          tier: tierValue,
         })
         return
       }
 
       // Store tier and feature in request for later use
-      (request as any).tier = tier
+      (request as any).tier = tierValue
       (request as any).feature = feature
       done()
     } catch (error) {
