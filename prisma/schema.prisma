@@ -1625,25 +1625,30 @@ model Session {
 }
 
 model ToolSubscription {
-  id               String    @id
-  userId           String
-  planId           String
-  status           String    @default("active")
-  amount           Int       @default(5000)
-  billingPeriod    String    @default("monthly")
-  stripeSubId      String?   @unique
-  stripeCustId     String?
-  currentPeriodEnd DateTime?
-  cancelAt         DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime
-  User             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id                     String    @id
+  userId                 String
+  planId                 String
+  status                 String    @default("active")
+  amount                 Int       @default(5000)
+  billingPeriod          String    @default("monthly")
+  stripeSubId            String?   @unique
+  stripeSubscriptionId   String?   @unique
+  stripeCustId           String?
+  stripeCustomerId       String?
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  cancelAt               DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime
+  User                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, planId])
   @@unique([userId, planId], map: "ToolSubscription_userId_toolSlug_key")
+  @@unique([userId, stripeSubscriptionId])
   @@index([planId])
   @@index([status])
   @@index([stripeSubId])
+  @@index([stripeSubscriptionId])
   @@index([userId])
 }
 
@@ -1679,6 +1684,7 @@ model User {
   jobTitle               String?
   industry               String?
   teamSize               String?
+  stripeCustomerId       String?
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime
   currentGeographyId     String?
