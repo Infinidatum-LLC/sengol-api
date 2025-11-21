@@ -1,9 +1,26 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { Prisma } from '@prisma/client'
-import { prisma } from '../lib/prisma'
+import { selectOne, updateOne } from '../lib/db-queries'
 import { generateDynamicQuestions } from '../services/dynamic-question-generator'
 import { analyzeSystem } from '../services/system-analysis.service'
 import { ValidationError } from '../lib/errors'
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface RiskAssessment {
+  id: string
+  userId: string
+  systemDescription: string
+  selectedDomains?: any
+  jurisdictions?: any
+  industry?: string
+  riskNotes?: any
+  complianceNotes?: any
+  questionGeneratedAt?: Date
+  updatedAt?: Date
+  [key: string]: any
+}
 
 // ============================================================================
 // POST /api/review/analyze-system
@@ -98,9 +115,7 @@ export async function generateQuestionsController(
 
   try {
     // Get assessment
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id }
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       return reply.code(404).send({ error: 'Assessment not found' })
@@ -141,15 +156,12 @@ export async function generateQuestionsController(
     if (forceRegenerate) {
       console.log(`[GENERATE_QUESTIONS] Force Regenerate: ENABLED - Clearing all caches`)
 
-      // Clear database cache (use Prisma.JsonNull for JSONB null values)
-      await prisma.riskAssessment.update({
-        where: { id },
-        data: {
-          riskNotes: Prisma.JsonNull,
-          complianceNotes: Prisma.JsonNull,
-          questionGeneratedAt: null
-        }
-      })
+      // Clear database cache
+      await updateOne<RiskAssessment>('RiskAssessment', {
+        riskNotes: null,
+        complianceNotes: null,
+        questionGeneratedAt: null
+      }, { id })
     }
 
     if (skipIncidentSearch) {
@@ -219,9 +231,7 @@ export async function saveQuestionsController(
     }
 
     // Get assessment
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id }
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       return reply.code(404).send({
@@ -242,23 +252,23 @@ export async function saveQuestionsController(
     const existingRiskNotes = (assessment.riskNotes as any) || {}
     const existingComplianceNotes = (assessment.complianceNotes as any) || {}
 
-    await prisma.riskAssessment.update({
-      where: { id },
-      data: {
-        riskNotes: {
-          ...existingRiskNotes,
-          generatedQuestions: riskQuestions,
-          savedAt: new Date().toISOString()
-        },
-        complianceNotes: {
-          ...existingComplianceNotes,
-          generatedQuestions: complianceQuestions,
-          savedAt: new Date().toISOString()
-        },
-        questionGeneratedAt: new Date(),
-        updatedAt: new Date()
-      }
-    })
+    const updatedRiskNotes = {
+      ...existingRiskNotes,
+      generatedQuestions: riskQuestions,
+      savedAt: new Date().toISOString()
+    }
+    const updatedComplianceNotes = {
+      ...existingComplianceNotes,
+      generatedQuestions: complianceQuestions,
+      savedAt: new Date().toISOString()
+    }
+
+    await updateOne<RiskAssessment>('RiskAssessment', {
+      riskNotes: JSON.stringify(updatedRiskNotes),
+      complianceNotes: JSON.stringify(updatedComplianceNotes),
+      questionGeneratedAt: new Date(),
+      updatedAt: new Date()
+    }, { id })
 
     request.log.info({
       assessmentId: id,
@@ -329,9 +339,7 @@ export async function incidentAnalysisController(
     }
 
     // Get assessment to verify ownership and gather context
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id }
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       return reply.code(404).send({
@@ -383,17 +391,17 @@ export async function incidentAnalysisController(
     }
 
     // Save incident analysis to database for future reference
-    await prisma.riskAssessment.update({
-      where: { id },
-      data: {
-        complianceNotes: {
-          ...((assessment.complianceNotes as any) || {}),
-          incidentAnalysis: incidentSummary,
-          analyzedAt: new Date().toISOString()
-        },
-        updatedAt: new Date()
-      }
-    })
+    const existingComplianceNotes = ((assessment.complianceNotes as any) || {})
+    const updatedComplianceNotes = {
+      ...existingComplianceNotes,
+      incidentAnalysis: incidentSummary,
+      analyzedAt: new Date().toISOString()
+    }
+
+    await updateOne<RiskAssessment>('RiskAssessment', {
+      complianceNotes: JSON.stringify(updatedComplianceNotes),
+      updatedAt: new Date()
+    }, { id })
 
     request.log.info(
       {
