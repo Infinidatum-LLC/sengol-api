@@ -1,5 +1,4 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError } from '../lib/errors'
 import { getUserUsageSummary } from '../services/feature-gates.service'
 

@@ -1,11 +1,17 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
 import { ValidationError } from '../lib/errors'
 import { generateQuickAssessment } from '../services/quick-assessment.service'
-import { prisma } from '../lib/prisma'
+import { selectOne } from '../lib/db-queries'
 
 // ============================================================================
 // POST /api/projects/:projectId/quick-assessment
 // ============================================================================
+
+interface Project {
+  id: string
+  name: string
+  [key: string]: any
+}
 
 interface QuickAssessmentParams {
   projectId: string
@@ -41,10 +47,7 @@ export async function quickAssessmentController(
     // Try to get project name from database
     let projectName = 'Project'
     try {
-      const project = await prisma.project.findUnique({
-        where: { id: projectId },
-        select: { name: true }
-      })
+      const project = await selectOne<Project>('Project', { id: projectId })
       if (project) {
         projectName = project.name
       }
