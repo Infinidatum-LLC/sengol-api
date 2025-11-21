@@ -69,20 +69,50 @@ export async function createAssessmentController(
             analysisStatus: 'draft',
             industry: '',
             companySize: 'small',
-            businessImpact: {},
             budgetRange: '0-10k',
             timeline: '1-3 months',
             teamSize: 1,
             overallRiskScore: 0,
             updatedAt: new Date(),
-            // Initialize array fields with defaults (not as empty arrays)
-            selectedDomains: [],
+
+            // Required JSON field (NOT optional)
+            businessImpact: {},
+
+            // All Optional JSON fields initialized as null
+            modelType: null,
+            dataSensitivity: null,
+            scaleMetrics: null,
+            complianceReqs: null,
+            securityConcerns: null,
+            topRisks: null,
+            recommendation: null,
+            aggregateTopRisks: null,
+            overallRecommendation: null,
+            additionalComplianceElements: null,
+            additionalRiskElements: null,
+            complianceCoverageDetails: null,
+            complianceDetails: null,
+            complianceNotes: null,
+            complianceQuestionResponses: null,
+            complianceUserScores: null,
+            dynamicQuestions: null,
+            riskCoverageDetails: null,
+            riskNotes: null,
+            riskQuestionResponses: null,
+            systemContext: null,
+            userRiskScores: null,
+            weightedScoreResults: null,
+
+            // All String[] array fields initialized as empty arrays
             dataTypes: [],
             techStack: [],
             jurisdictions: [],
-            // Initialize optional JSON fields as null (not empty arrays)
-            complianceDetails: null,
-            dataSources: null,
+            technologyStack: [],
+            regulationIds: [],
+            selectedDomains: [],
+            dataSources: [],
+
+            // Optional DateTime fields
             analysisCompletedAt: null,
           },
         })
