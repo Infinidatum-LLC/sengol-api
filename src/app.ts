@@ -16,6 +16,7 @@ import { projectsGatedRoutes } from './routes/projects-gated.routes'
 import { userRoutes } from './routes/user.routes' // Protected user routes (JWT auth required)
 import { questionsRoutes } from './routes/questions.routes'
 import { complianceRoutes } from './routes/compliance.routes'
+import { totpRoutes } from './routes/totp.routes' // 2FA routes (TOTP support)
 import { registerAllRoutes } from './routes/index'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
@@ -81,6 +82,7 @@ export async function build() {
   // API routes (already have /api prefix in their definitions)
   await fastify.register(authRoutes) // JWT authentication routes (ENABLED)
   await fastify.register(userRoutes) // Protected user routes (JWT auth required) (ENABLED)
+  await fastify.register(totpRoutes) // 2FA (TOTP) routes (ENABLED)
   // await fastify.register(reviewRoutes) // DISABLED: May depend on Prisma
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)
