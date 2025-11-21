@@ -1,11 +1,29 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { resilientPrisma } from '../lib/prisma-resilient'
+import { selectOne, selectMany, insertOne, updateOne, deleteOne } from '../lib/db-queries'
 import { ValidationError, NotFoundError, AuthorizationError } from '../lib/errors'
 import { checkProjectLimit } from '../services/feature-gates.service'
 import crypto from 'crypto'
 
-// Get raw Prisma client for operations (wrapped with resilient patterns)
-const prisma = resilientPrisma.getRawClient()
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface Project {
+  id: string
+  userId: string
+  name: string
+  description?: string
+  createdAt?: Date
+  updatedAt?: Date
+  [key: string]: any
+}
+
+interface RiskAssessment {
+  id: string
+  projectId: string
+  createdAt?: Date
+  [key: string]: any
+}
 
 // ============================================================================
 // GET /api/projects-list - List user's projects
@@ -26,24 +44,29 @@ export async function listProjectsController(
       throw new ValidationError('userId is required')
     }
 
-    const projects = await prisma.project.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        _count: {
-          select: {
-            RiskAssessment: true,
-          },
-        },
-      },
+    const projects = await selectMany<Project>('Project', { userId })
+
+    // Get assessment counts for each project
+    const projectsWithCounts = await Promise.all(
+      projects.map(async (project) => {
+        const assessments = await selectMany<RiskAssessment>('RiskAssessment', { projectId: project.id })
+        return {
+          ...project,
+          assessmentCount: assessments.length,
+        }
+      })
+    )
+
+    // Sort by createdAt desc
+    projectsWithCounts.sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0).getTime()
+      const dateB = new Date(b.createdAt || 0).getTime()
+      return dateB - dateA
     })
 
     return reply.send({
       success: true,
-      data: projects.map(project => ({
-        ...project,
-        assessmentCount: project._count.RiskAssessment,
-      })),
+      data: projectsWithCounts,
     })
   } catch (error) {
     request.log.error({ err: error }, 'Failed to list projects')
@@ -100,20 +123,15 @@ export async function createProjectController(
       })
     }
 
-    // Create project (with retry)
-    const project = await resilientPrisma.executeQuery(
-      async () => {
-        return await prisma.project.create({
-          data: {
-            id: crypto.randomUUID(),
-            userId,
-            name,
-            description: description || null,
-            updatedAt: new Date(),
-          },
-        })
-      }
-    )
+    // Create project
+    const project = await insertOne<Project>('Project', {
+      id: crypto.randomUUID(),
+      userId,
+      name,
+      description: description || null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })
 
     request.log.info({ projectId: project.id }, 'Project created')
 
@@ -172,14 +190,8 @@ export async function getProjectController(
       throw new ValidationError('userId is required')
     }
 
-    const project = await prisma.project.findUnique({
-      where: { id },
-      include: {
-        RiskAssessment: {
-          orderBy: { createdAt: 'desc' },
-        },
-      },
-    })
+    // Get project
+    const project = await selectOne<Project>('Project', { id })
 
     if (!project) {
       throw new NotFoundError('Project not found')
@@ -189,9 +201,20 @@ export async function getProjectController(
       throw new AuthorizationError('You do not have access to this project')
     }
 
+    // Get related risk assessments, ordered by createdAt desc
+    const riskAssessments = await selectMany<RiskAssessment>('RiskAssessment', { projectId: id })
+    riskAssessments.sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0).getTime()
+      const dateB = new Date(b.createdAt || 0).getTime()
+      return dateB - dateA
+    })
+
     return reply.send({
       success: true,
-      data: project,
+      data: {
+        ...project,
+        RiskAssessment: riskAssessments,
+      },
     })
   } catch (error) {
     request.log.error({ err: error }, 'Failed to get project')
@@ -238,9 +261,7 @@ export async function updateProjectController(
     }
 
     // Verify ownership
-    const project = await prisma.project.findUnique({
-      where: { id },
-    })
+    const project = await selectOne<Project>('Project', { id })
 
     if (!project) {
       throw new NotFoundError('Project not found')
@@ -250,14 +271,18 @@ export async function updateProjectController(
       throw new AuthorizationError('You do not have access to this project')
     }
 
+    // Build update data
+    const updateData: Record<string, any> = {}
+    if (name) {
+      updateData.name = name
+    }
+    if (description !== undefined) {
+      updateData.description = description
+    }
+    updateData.updatedAt = new Date()
+
     // Update project
-    const updated = await prisma.project.update({
-      where: { id },
-      data: {
-        ...(name && { name }),
-        ...(description !== undefined && { description }),
-      },
-    })
+    const updated = await updateOne<Project>('Project', updateData, { id })
 
     return reply.send({
       success: true,
@@ -302,9 +327,7 @@ export async function deleteProjectController(
     }
 
     // Verify ownership
-    const project = await prisma.project.findUnique({
-      where: { id },
-    })
+    const project = await selectOne<Project>('Project', { id })
 
     if (!project) {
       throw new NotFoundError('Project not found')
@@ -315,9 +338,7 @@ export async function deleteProjectController(
     }
 
     // Delete project (cascade will delete related assessments)
-    await prisma.project.delete({
-      where: { id },
-    })
+    await deleteOne('Project', { id })
 
     request.log.info({ projectId: id }, 'Project deleted')
 
