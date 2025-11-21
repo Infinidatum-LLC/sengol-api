@@ -1,11 +1,47 @@
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { resilientPrisma } from '../lib/prisma-resilient'
 import { ValidationError, NotFoundError, AuthorizationError } from '../lib/errors'
 import { checkAssessmentLimit, getUserTier } from '../services/feature-gates.service'
 import { findSimilarIncidents, calculateIncidentStatistics } from '../services/incident-search'
+import { selectOne, insertOne, updateOne } from '../lib/db-queries'
+import * as crypto from 'crypto'
 
-// Get raw Prisma client for operations (wrapped with resilient patterns)
-const prisma = resilientPrisma.getRawClient()
+// RiskAssessment interface matching PostgreSQL schema
+interface RiskAssessment {
+  id: string
+  name: string
+  userId: string
+  projectId: string
+  analysisStatus: string
+  industry: string
+  companySize: string
+  budgetRange: string
+  timeline: string
+  teamSize: number
+  overallRiskScore: number | null
+  updatedAt: Date
+  businessImpact: Record<string, any>
+  systemDescription?: string
+  selectedDomains?: string[]
+  jurisdictions?: string[]
+  systemCriticality?: string
+  dataTypes?: string[]
+  dataSources?: string[]
+  techStack?: string[]
+  deploymentEnv?: string
+  riskQuestionResponses?: Record<string, any>
+  complianceDetails?: Record<string, any>
+  complianceQuestionResponses?: Record<string, any>
+  complianceUserScores?: Record<string, any>
+  complianceNotes?: Record<string, any>
+  complianceCoverageScore?: number
+  complianceCoverageDetails?: Record<string, any>
+  aiRiskScore?: number
+  cyberRiskScore?: number
+  cloudRiskScore?: number
+  complianceScore?: number
+  sengolScore?: number
+  analysisCompletedAt?: Date
+}
 
 // ============================================================================
 // POST /api/assessments - Create new assessment
@@ -40,14 +76,8 @@ export async function createAssessmentController(
       })
     }
 
-    // Verify project exists and belongs to user (with retry)
-    const project = await resilientPrisma.executeQuery(
-      async () => {
-        return await prisma.project.findUnique({
-          where: { id: projectId },
-        })
-      }
-    )
+    // Verify project exists and belongs to user
+    const project = await selectOne<any>('Project', { id: projectId })
 
     if (!project) {
       throw new NotFoundError('Project not found')
@@ -57,30 +87,23 @@ export async function createAssessmentController(
       throw new AuthorizationError('You do not have access to this project')
     }
 
-    // Create assessment with required fields (with retry)
-    // Note: All array and optional JSON fields have defaults in the Prisma schema,
-    // so we only need to provide the core required fields
-    const assessment = await resilientPrisma.executeQuery(
-      async () => {
-        return await prisma.riskAssessment.create({
-          data: {
-            id: crypto.randomUUID(),
-            name,
-            userId,
-            projectId,
-            analysisStatus: 'draft',
-            industry: '',
-            companySize: 'small',
-            budgetRange: '0-10k',
-            timeline: '1-3 months',
-            teamSize: 1,
-            overallRiskScore: 0,
-            updatedAt: new Date(),
-            businessImpact: {},
-          },
-        })
-      }
-    )
+    // Create assessment with required fields
+    const assessmentId = crypto.randomUUID()
+    const assessment = await insertOne<RiskAssessment>('RiskAssessment', {
+      id: assessmentId,
+      name,
+      userId,
+      projectId,
+      analysisStatus: 'draft',
+      industry: '',
+      companySize: 'small',
+      budgetRange: '0-10k',
+      timeline: '1-3 months',
+      teamSize: 1,
+      overallRiskScore: 0,
+      updatedAt: new Date(),
+      businessImpact: JSON.stringify({}),
+    })
 
     request.log.info({ assessmentId: assessment.id }, 'Assessment created')
 
@@ -139,12 +162,7 @@ export async function getAssessmentController(
       throw new ValidationError('userId is required')
     }
 
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      include: {
-        Project: true,
-      },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -210,9 +228,7 @@ export async function updateAssessmentStep1Controller(
     }
 
     // Verify ownership
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -223,20 +239,26 @@ export async function updateAssessmentStep1Controller(
     }
 
     // Update assessment with all Step 1 fields
-    const updated = await prisma.riskAssessment.update({
-      where: { id },
-      data: {
-        systemDescription,
-        selectedDomains: selectedDomains || [],
-        jurisdictions: jurisdictions || [],
-        industry: industry || assessment.industry,
-        systemCriticality: systemCriticality || assessment.systemCriticality,
-        dataTypes: dataTypes || [],
-        dataSources: dataSources || [],
-        techStack: techStack || [],
-        ...(deployment && { deploymentEnv: deployment }),
-      },
-    })
+    const updateData: any = {
+      systemDescription,
+      selectedDomains: JSON.stringify(selectedDomains || []),
+      jurisdictions: JSON.stringify(jurisdictions || []),
+      industry: industry || assessment.industry,
+      systemCriticality: systemCriticality || assessment.systemCriticality,
+      dataTypes: JSON.stringify(dataTypes || []),
+      dataSources: JSON.stringify(dataSources || []),
+      techStack: JSON.stringify(techStack || []),
+    }
+
+    if (deployment) {
+      updateData.deploymentEnv = deployment
+    }
+
+    const updated = await updateOne<RiskAssessment>(
+      'RiskAssessment',
+      updateData,
+      { id }
+    )
 
     return reply.send({
       success: true,
@@ -305,17 +327,7 @@ export async function updateAssessmentStep2Controller(
     }
 
     // Verify ownership
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        userId: true,
-        systemDescription: true,
-        industry: true,
-        jurisdictions: true,
-        riskQuestionResponses: true,
-      },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -332,7 +344,7 @@ export async function updateAssessmentStep2Controller(
 
     // Prepare update data (merge with existing, preserve Step 1)
     const updateData: any = {
-      riskQuestionResponses: responses,
+      riskQuestionResponses: JSON.stringify(responses),
       aiRiskScore: calculatedRiskScore || riskScore || null,
     }
 
@@ -340,26 +352,11 @@ export async function updateAssessmentStep2Controller(
     // We'll pass it through in the response if provided
 
     // Update assessment with risk responses
-    const updated = await prisma.riskAssessment.update({
-      where: { id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        userId: true,
-        systemDescription: true,
-        industry: true,
-        jurisdictions: true,
-        riskQuestionResponses: true,
-        complianceDetails: true,
-        aiRiskScore: true,
-        cyberRiskScore: true,
-        cloudRiskScore: true,
-        complianceScore: true,
-        sengolScore: true,
-        overallRiskScore: true,
-      },
-    })
+    const updated = await updateOne<RiskAssessment>(
+      'RiskAssessment',
+      updateData,
+      { id }
+    )
 
     // Normalize response for frontend (pass through selectedDomains if provided)
     const normalizedData = {
@@ -461,19 +458,7 @@ export async function updateAssessmentStep3Controller(
     }, 'Processing step 3 compliance data')
 
     // Verify ownership and get existing data
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        userId: true,
-        systemDescription: true,
-        industry: true,
-        jurisdictions: true,
-        riskQuestionResponses: true,
-        complianceDetails: true,
-        aiRiskScore: true,
-      },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -499,8 +484,8 @@ export async function updateAssessmentStep3Controller(
     // Prepare update data (merge with existing, preserve Step 1 and Step 2)
     const updateData: any = {
       // Save compliance responses to the proper field
-      complianceQuestionResponses: responses,
-      complianceDetails: responses, // Keep for backward compatibility
+      complianceQuestionResponses: JSON.stringify(responses),
+      complianceDetails: JSON.stringify(responses), // Keep for backward compatibility
       complianceScore: finalComplianceScore || null,
       sengolScore: sengolScore || null,
       overallRiskScore: sengolScore || null, // Alias for compatibility
@@ -508,13 +493,13 @@ export async function updateAssessmentStep3Controller(
 
     // Save user scores if provided
     if (userScores && Object.keys(userScores).length > 0) {
-      updateData.complianceUserScores = userScores
+      updateData.complianceUserScores = JSON.stringify(userScores)
       request.log.info({ userScoresCount: Object.keys(userScores).length }, 'Saving compliance user scores')
     }
 
     // Save compliance notes if provided
     if (complianceNotes && Object.keys(complianceNotes).length > 0) {
-      updateData.complianceNotes = complianceNotes
+      updateData.complianceNotes = JSON.stringify(complianceNotes)
       request.log.info({ complianceNotesCount: Object.keys(complianceNotes).length }, 'Saving compliance notes')
     }
 
@@ -525,13 +510,13 @@ export async function updateAssessmentStep3Controller(
     }
 
     if (complianceCoverageDetails) {
-      updateData.complianceCoverageDetails = complianceCoverageDetails
+      updateData.complianceCoverageDetails = JSON.stringify(complianceCoverageDetails)
       request.log.info({ complianceCoverageDetails }, 'Saving compliance coverage details')
     }
 
     // Update jurisdictions if provided
     if (jurisdictions && jurisdictions.length > 0) {
-      updateData.jurisdictions = jurisdictions
+      updateData.jurisdictions = JSON.stringify(jurisdictions)
       request.log.info({ jurisdictionsCount: jurisdictions.length }, 'Updating jurisdictions')
     }
 
@@ -550,31 +535,11 @@ export async function updateAssessmentStep3Controller(
     // We'll pass it through in the response if provided
 
     // Update assessment with compliance responses
-    const updated = await prisma.riskAssessment.update({
-      where: { id },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        userId: true,
-        systemDescription: true,
-        industry: true,
-        jurisdictions: true,
-        riskQuestionResponses: true,
-        complianceDetails: true,
-        complianceQuestionResponses: true,
-        complianceUserScores: true,
-        complianceNotes: true,
-        complianceCoverageScore: true,
-        complianceCoverageDetails: true,
-        aiRiskScore: true,
-        cyberRiskScore: true,
-        cloudRiskScore: true,
-        complianceScore: true,
-        sengolScore: true,
-        overallRiskScore: true,
-      },
-    })
+    const updated = await updateOne<RiskAssessment>(
+      'RiskAssessment',
+      updateData,
+      { id }
+    )
 
     // Log successful save for debugging
     request.log.info({
@@ -647,9 +612,7 @@ export async function submitAssessmentController(
     }
 
     // Verify ownership
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -660,14 +623,15 @@ export async function submitAssessmentController(
     }
 
     // Update assessment as completed
-    const updated = await prisma.riskAssessment.update({
-      where: { id },
-      data: {
+    const updated = await updateOne<RiskAssessment>(
+      'RiskAssessment',
+      {
         analysisStatus: 'complete',
         sengolScore: finalSengolScore || null,
         analysisCompletedAt: new Date(),
       },
-    })
+      { id }
+    )
 
     request.log.info({ assessmentId: id }, 'Assessment submitted')
 
@@ -713,19 +677,7 @@ export async function getAssessmentScoresController(
       throw new ValidationError('userId is required')
     }
 
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        aiRiskScore: true,
-        cyberRiskScore: true,
-        cloudRiskScore: true,
-        complianceScore: true,
-        sengolScore: true,
-        overallRiskScore: true,
-        userId: true,
-      },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -790,18 +742,7 @@ export async function getAssessmentBenchmarkController(
       throw new ValidationError('userId is required')
     }
 
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        userId: true,
-        overallRiskScore: true,
-        sengolScore: true,
-        industry: true,
-        systemDescription: true,
-        name: true,
-      },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
@@ -884,9 +825,7 @@ export async function getAssessmentSimilarCasesController(
 
     const limit = limitStr ? parseInt(limitStr) : 20
 
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       throw new NotFoundError('Assessment not found')
