@@ -58,6 +58,8 @@ export async function createAssessmentController(
     }
 
     // Create assessment with required fields (with retry)
+    // Note: All array and optional JSON fields have defaults in the Prisma schema,
+    // so we only need to provide the core required fields
     const assessment = await resilientPrisma.executeQuery(
       async () => {
         return await prisma.riskAssessment.create({
@@ -74,46 +76,7 @@ export async function createAssessmentController(
             teamSize: 1,
             overallRiskScore: 0,
             updatedAt: new Date(),
-
-            // Required JSON field (NOT optional)
             businessImpact: {},
-
-            // All Optional JSON fields initialized as null
-            modelType: null,
-            dataSensitivity: null,
-            scaleMetrics: null,
-            complianceReqs: null,
-            securityConcerns: null,
-            topRisks: null,
-            recommendation: null,
-            aggregateTopRisks: null,
-            overallRecommendation: null,
-            additionalComplianceElements: null,
-            additionalRiskElements: null,
-            complianceCoverageDetails: null,
-            complianceDetails: null,
-            complianceNotes: null,
-            complianceQuestionResponses: null,
-            complianceUserScores: null,
-            dynamicQuestions: null,
-            riskCoverageDetails: null,
-            riskNotes: null,
-            riskQuestionResponses: null,
-            systemContext: null,
-            userRiskScores: null,
-            weightedScoreResults: null,
-
-            // All String[] array fields initialized as empty arrays
-            dataTypes: [],
-            techStack: [],
-            jurisdictions: [],
-            technologyStack: [],
-            regulationIds: [],
-            selectedDomains: [],
-            dataSources: [],
-
-            // Optional DateTime fields
-            analysisCompletedAt: null,
           },
         })
       }

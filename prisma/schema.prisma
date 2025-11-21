@@ -1412,14 +1412,14 @@ model RiskAssessment {
   complianceScore              Int?
   complianceUserScores         Json?
   cyberRiskScore               Int?
-  dataTypes                    String[]
+  dataTypes                    String[]                @default([])
   deploymentType               String?
   dynamicQuestions             Json?
   evidenceCount                Int                     @default(0)
-  jurisdictions                String[]
+  jurisdictions                String[]                @default([])
   letterGrade                  String?
   questionGeneratedAt          DateTime?
-  regulationIds                String[]
+  regulationIds                String[]                @default([])
   riskCoverageDetails          Json?
   riskCoverageScore            Decimal?                @db.Decimal(5, 2)
   riskNotes                    Json?
@@ -1429,7 +1429,7 @@ model RiskAssessment {
   systemCriticality            String?
   systemDescription            String?
   techStack                    String[]                @default([])
-  technologyStack              String[]
+  technologyStack              String[]                @default([])
   useWeightedScoring           Boolean                 @default(false)
   userRiskScores               Json?
   weightedScoreResults         Json?
