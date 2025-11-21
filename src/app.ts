@@ -20,7 +20,6 @@ import { registerAllRoutes } from './routes/index'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
-import { prisma } from './lib/prisma'
 
 export async function build() {
   const fastify = Fastify({
@@ -76,21 +75,22 @@ export async function build() {
 
   // Register routes
   // Health routes at root level
-  await fastify.register(healthRoutes)
+  // DISABLED: Health routes depend on Prisma - pending Prisma migration
+  // await fastify.register(healthRoutes)
 
   // API routes (already have /api prefix in their definitions)
-  await fastify.register(authRoutes)
-  await fastify.register(reviewRoutes)
+  // await fastify.register(authRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(reviewRoutes) // DISABLED: May depend on Prisma
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)
   // await fastify.register(vectorSearchRoutes)
-  await fastify.register(projectsRoutes)
-  await fastify.register(riskRoutes)
-  await fastify.register(assessmentsRoutes)
-  await fastify.register(projectsGatedRoutes)
-  await fastify.register(userRoutes)
-  await fastify.register(questionsRoutes)
-  await fastify.register(complianceRoutes)
+  // await fastify.register(projectsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(riskRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(assessmentsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(projectsGatedRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(userRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(questionsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(complianceRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
 
   // Trial system routes - disabled pending build fixes
   // Cloud Build currently fails due to pre-existing TypeScript errors in codebase
@@ -156,13 +156,8 @@ export async function build() {
   fastify.addHook('onClose', async (instance) => {
     instance.log.info('Gracefully closing connections...')
 
-    // Close database connections
-    try {
-      await prisma.$disconnect()
-      instance.log.info('Database connections closed')
-    } catch (error) {
-      instance.log.error({ err: error }, 'Error closing database')
-    }
+    // Database connections are managed by the connection pool
+    // No need to manually disconnect
   })
 
   return fastify

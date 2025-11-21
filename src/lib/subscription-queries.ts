@@ -5,7 +5,7 @@
  * Uses shared Neon PostgreSQL connection to Sengol database.
  */
 
-import { prisma } from '../lib/prisma'
+import { query } from '../lib/db'
 import { PricingTier, PRICING_TIER_LIMITS, FeatureType, TRIAL_DURATION_DAYS } from '../config/trial'
 import {
   TrialLimitError,
@@ -27,15 +27,15 @@ import {
 export async function getUserSubscription(userId: string): Promise<{ tier: PricingTier; status: string }> {
   try {
     // Check for active paid subscription
-    const toolSub = await prisma.toolSubscription.findFirst({
-      where: { userId, status: 'active' },
-      orderBy: { createdAt: 'desc' },
-      select: { planId: true, status: true },
-    })
+    const result = await query(
+      `SELECT "planId", "status" FROM "ToolSubscription" WHERE "userId" = $1 AND "status" = 'active' ORDER BY "createdAt" DESC LIMIT 1`,
+      [userId]
+    )
 
-    if (toolSub) {
-      const tier = (toolSub.planId.toLowerCase() as PricingTier) || 'free'
-      return { tier, status: toolSub.status }
+    if (result.rows.length > 0) {
+      const row = result.rows[0]
+      const tier = (row.planId.toLowerCase() as PricingTier) || 'free'
+      return { tier, status: row.status }
     }
 
     // Default to free tier
