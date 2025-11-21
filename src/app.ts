@@ -13,7 +13,7 @@ import { projectsRoutes } from './routes/projects.routes'
 import { riskRoutes } from './routes/risk.routes'
 import { assessmentsRoutes } from './routes/assessments.routes'
 import { projectsGatedRoutes } from './routes/projects-gated.routes'
-import { userRoutes } from './routes/user.routes'
+import { userRoutes } from './routes/user.routes' // Protected user routes (JWT auth required)
 import { questionsRoutes } from './routes/questions.routes'
 import { complianceRoutes } from './routes/compliance.routes'
 import { registerAllRoutes } from './routes/index'
@@ -80,6 +80,7 @@ export async function build() {
 
   // API routes (already have /api prefix in their definitions)
   await fastify.register(authRoutes) // JWT authentication routes (ENABLED)
+  await fastify.register(userRoutes) // Protected user routes (JWT auth required) (ENABLED)
   // await fastify.register(reviewRoutes) // DISABLED: May depend on Prisma
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)

@@ -8,6 +8,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { query } from '../lib/db'
 import { generateTokens, revokeToken, revokeUserTokens } from '../lib/jwt.service'
+import { hashPassword, verifyPassword, validatePasswordStrength } from '../lib/password.service'
 import { AuthenticationError, ValidationError, DatabaseError } from '../lib/errors'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -90,9 +91,9 @@ async function login(request: FastifyRequest, reply: FastifyReply) {
 
     const user = userResult.rows[0]
 
-    // TODO: Implement password verification using bcrypt
-    // For now, accept any password (security stub - REPLACE IN PRODUCTION)
-    if (password === '') {
+    // Verify password against stored hash
+    const isPasswordValid = await verifyPassword(password, user.password)
+    if (!isPasswordValid) {
       throw new AuthenticationError('Invalid email or password')
     }
 
@@ -182,6 +183,15 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
       throw new ValidationError('Password must be at least 8 characters', 'WEAK_PASSWORD')
     }
 
+    // Validate password strength
+    const strengthResult = validatePasswordStrength(password)
+    if (!strengthResult.isValid) {
+      throw new ValidationError(
+        `Password is too weak: ${strengthResult.feedback.join(', ')}`,
+        'WEAK_PASSWORD'
+      )
+    }
+
     // Check if user already exists
     const existingResult = await query(
       `SELECT "id" FROM "User" WHERE "email" = $1 LIMIT 1`,
@@ -192,8 +202,8 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
       throw new ValidationError('Email already registered', 'DUPLICATE_EMAIL')
     }
 
-    // TODO: Hash password using bcrypt before storing
-    // For now, store password as plaintext (security stub - REPLACE IN PRODUCTION)
+    // Hash password before storing
+    const hashedPassword = await hashPassword(password)
     const userId = uuidv4()
 
     // Create user
@@ -207,7 +217,7 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
         "updatedAt"
       ) VALUES ($1, $2, $3, $4, NOW(), NOW())
       RETURNING "id", "email"`,
-      [userId, email.toLowerCase(), password, name || null]
+      [userId, email.toLowerCase(), hashedPassword, name || null]
     )
 
     if (createResult.rows.length === 0) {
