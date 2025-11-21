@@ -57,33 +57,26 @@ export async function generateTokens(
   ipAddress?: string
 ): Promise<TokenResponse> {
   const now = Math.floor(Date.now() / 1000)
-  const accessTokenExpiry = now + ACCESS_TOKEN_EXPIRY
-  const refreshTokenExpiry = now + REFRESH_TOKEN_EXPIRY
-
-  // Create payload
+  // Create payload (do NOT include exp here - let jwt.sign handle it)
   const payload: TokenPayload = {
     userId,
     email,
-    iat: now,
-    exp: accessTokenExpiry,
   }
 
-  // Sign access token
+  // Sign access token (expiresIn in seconds for jwt.sign)
   const accessToken = jwt.sign(payload, JWT_SECRET, {
     algorithm: 'HS256',
-    expiresIn: ACCESS_TOKEN_EXPIRY,
+    expiresIn: Math.floor(ACCESS_TOKEN_EXPIRY / 1000), // Convert ms to seconds for jwt.sign
   })
 
   // Sign refresh token
   const refreshTokenPayload: TokenPayload = {
     userId,
-    iat: now,
-    exp: refreshTokenExpiry,
   }
 
   const refreshToken = jwt.sign(refreshTokenPayload, JWT_SECRET, {
     algorithm: 'HS256',
-    expiresIn: REFRESH_TOKEN_EXPIRY,
+    expiresIn: Math.floor(REFRESH_TOKEN_EXPIRY / 1000), // Convert ms to seconds for jwt.sign
   })
 
   // Store tokens in database
@@ -91,7 +84,7 @@ export async function generateTokens(
     userId,
     token: accessToken,
     type: 'access',
-    expiresAt: new Date(accessTokenExpiry * 1000),
+    expiresAt: new Date(Date.now() + ACCESS_TOKEN_EXPIRY),
     userAgent,
     ipAddress,
   })
@@ -100,7 +93,7 @@ export async function generateTokens(
     userId,
     token: refreshToken,
     type: 'refresh',
-    expiresAt: new Date(refreshTokenExpiry * 1000),
+    expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY),
     userAgent,
     ipAddress,
   })
