@@ -8,11 +8,22 @@
  */
 
 import { FastifyRequest, FastifyReply } from 'fastify'
-import { prisma } from '../lib/prisma'
+import { selectOne, updateOne } from '../lib/db-queries'
 
 // ============================================================================
 // TYPES
 // ============================================================================
+
+interface RiskAssessment {
+  id: string
+  riskNotes: any
+  complianceQuestionResponses?: any
+  complianceCoverageScore?: number
+  complianceCoverageDetails?: any
+  complianceUserScores?: any
+  updatedAt?: Date
+  [key: string]: any
+}
 
 type ComplianceStatus = 'addressed' | 'partially_addressed' | 'not_addressed' | 'not_applicable'
 
@@ -98,13 +109,7 @@ export async function saveComplianceResponses(
     }
 
     // Fetch assessment
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        riskNotes: true
-      }
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       return reply.status(404).send({ error: 'Assessment not found' })
@@ -139,16 +144,16 @@ export async function saveComplianceResponses(
     }
 
     // Save to database
-    const updated = await prisma.riskAssessment.update({
-      where: { id },
-      data: {
-        complianceQuestionResponses: responses as any,
-        complianceCoverageScore: coverage.score,
-        complianceCoverageDetails: coverage.details as any,
-        complianceUserScores: Object.keys(complianceUserScores).length > 0 ? (complianceUserScores as any) : undefined,
-        updatedAt: new Date()
-      }
-    })
+    const updateData: any = {
+      complianceQuestionResponses: JSON.stringify(responses),
+      complianceCoverageScore: coverage.score,
+      complianceCoverageDetails: JSON.stringify(coverage.details),
+      updatedAt: new Date()
+    }
+    if (Object.keys(complianceUserScores).length > 0) {
+      updateData.complianceUserScores = JSON.stringify(complianceUserScores)
+    }
+    const updated = await updateOne<RiskAssessment>('RiskAssessment', updateData, { id })
 
     console.log(`[Compliance] Successfully saved responses for assessment ${id}`)
 
@@ -183,18 +188,7 @@ export async function getComplianceResponses(
   try {
     const { id } = request.params
 
-    const assessment = await prisma.riskAssessment.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        complianceQuestionResponses: true,
-        complianceCoverageScore: true,
-        complianceCoverageDetails: true,
-        complianceUserScores: true,
-        complianceNotes: true,
-        updatedAt: true
-      }
-    })
+    const assessment = await selectOne<RiskAssessment>('RiskAssessment', { id })
 
     if (!assessment) {
       return reply.status(404).send({ error: 'Assessment not found' })
