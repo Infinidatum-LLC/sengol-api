@@ -79,7 +79,7 @@ export async function build() {
   // await fastify.register(healthRoutes)
 
   // API routes (already have /api prefix in their definitions)
-  // await fastify.register(authRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  await fastify.register(authRoutes) // JWT authentication routes (ENABLED)
   // await fastify.register(reviewRoutes) // DISABLED: May depend on Prisma
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)
