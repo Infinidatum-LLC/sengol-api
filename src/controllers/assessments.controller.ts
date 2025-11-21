@@ -75,6 +75,15 @@ export async function createAssessmentController(
             teamSize: 1,
             overallRiskScore: 0,
             updatedAt: new Date(),
+            // Initialize array fields with defaults (not as empty arrays)
+            selectedDomains: [],
+            dataTypes: [],
+            techStack: [],
+            jurisdictions: [],
+            // Initialize optional JSON fields as null (not empty arrays)
+            complianceDetails: null,
+            dataSources: null,
+            analysisCompletedAt: null,
           },
         })
       }
