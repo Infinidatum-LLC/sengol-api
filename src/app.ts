@@ -77,9 +77,8 @@ export async function build() {
   fastify.addHook('onRequest', requestTimeoutMiddleware)
 
   // Register routes
-  // Health routes at root level
-  // DISABLED: Health routes depend on Prisma - pending Prisma migration
-  // await fastify.register(healthRoutes)
+  // Health routes at root level (ENABLED - no Prisma dependencies)
+  await fastify.register(healthRoutes)
 
   // API routes (already have /api prefix in their definitions)
   await fastify.register(authRoutes) // JWT authentication routes (ENABLED)
