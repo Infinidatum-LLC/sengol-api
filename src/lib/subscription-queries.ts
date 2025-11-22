@@ -21,21 +21,32 @@ import {
  *
  * Tier hierarchy (in order of precedence):
  * 1. Active paid subscription (ToolSubscription)
- * 2. Active trial
- * 3. Free/Community tier (default)
+ * 2. ProductAccess with ENTERPRISE access type (legacy paid access)
+ * 3. Active trial
+ * 4. Free/Community tier (default)
  */
 export async function getUserSubscription(userId: string): Promise<{ tier: PricingTier; status: string }> {
   try {
-    // Check for active paid subscription
-    const result = await query(
+    // Check for active paid subscription (ToolSubscription)
+    const toolSubResult = await query(
       `SELECT "planId", "status" FROM "ToolSubscription" WHERE "userId" = $1 AND "status" = 'active' ORDER BY "createdAt" DESC LIMIT 1`,
       [userId]
     )
 
-    if (result.rows.length > 0) {
-      const row = result.rows[0]
+    if (toolSubResult.rows.length > 0) {
+      const row = toolSubResult.rows[0]
       const tier = (row.planId.toLowerCase() as PricingTier) || 'free'
       return { tier, status: row.status }
+    }
+
+    // Check for ProductAccess with ENTERPRISE access type (legacy paid access)
+    const productAccessResult = await query(
+      `SELECT "accessType" FROM "ProductAccess" WHERE "userId" = $1 AND "status" = 'ACTIVE' AND "accessType" = 'ENTERPRISE' LIMIT 1`,
+      [userId]
+    )
+
+    if (productAccessResult.rows.length > 0) {
+      return { tier: 'enterprise', status: 'active' }
     }
 
     // Default to free tier
