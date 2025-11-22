@@ -98,12 +98,7 @@ export async function listComplianceAlerts(
     }
 
     const [alerts, total, unreadCount] = await Promise.all([
-      selectMany<ComplianceAlert>('ComplianceAlert', where, {
-        orderBy: 'createdAt',
-        desc: true,
-        limit,
-        offset,
-      }),
+      selectMany<ComplianceAlert>('ComplianceAlert', where, limit, offset),
       count('ComplianceAlert', where),
       count('ComplianceAlert', {
         userId,

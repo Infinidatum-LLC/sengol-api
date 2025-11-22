@@ -57,25 +57,10 @@ export async function listCalculations(
       where.projectId = projectId
     }
 
-    const calculations = await selectMany<Calculation>('Calculation', where, {
-      orderBy: 'updatedAt',
-      desc: true,
-      include: {
-        project: {
-          select: {
-            id: true,
-            name: true,
-            color: true,
-          },
-        },
-      },
-    })
+    const calculations = await selectMany<Calculation>('Calculation', where)
 
     return reply.send({
-      calculations: calculations.map(calc => ({
-        ...calc,
-        project: calc.project || null,
-      })),
+      calculations: calculations || [],
     })
   } catch (error) {
     console.error('[Calculations] Error listing calculations:', error)
