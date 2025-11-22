@@ -16,6 +16,8 @@ import { projectsGatedRoutes } from './routes/projects-gated.routes'
 import { userRoutes } from './routes/user.routes' // Protected user routes (JWT auth required)
 import { questionsRoutes } from './routes/questions.routes'
 import { complianceRoutes } from './routes/compliance.routes'
+import { calculationsRoutes } from './routes/calculations.routes'
+import { alertsRoutes } from './routes/alerts.routes' // Compliance alerts endpoints
 import { totpRoutes } from './routes/totp.routes' // 2FA routes (TOTP support)
 import { registerAllRoutes } from './routes/index'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
@@ -90,6 +92,8 @@ export async function build() {
   await fastify.register(projectsRoutes) // Project endpoints (ENABLED)
   // await fastify.register(riskRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   await fastify.register(assessmentsRoutes) // Assessment endpoints (ENABLED)
+  await fastify.register(calculationsRoutes) // ROI Calculator endpoints (ENABLED)
+  await fastify.register(alertsRoutes) // Compliance alerts endpoints (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   // await fastify.register(userRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   // await fastify.register(questionsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
