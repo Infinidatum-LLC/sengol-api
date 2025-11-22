@@ -1,20 +1,6 @@
 import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken'
 import { query } from './db'
-
-// Dynamic import for uuid to avoid CommonJS/ESM compatibility issues in Vercel
-let uuidv4: typeof import('uuid').v4
-
-async function initializeUuid() {
-  if (!uuidv4) {
-    const uuidModule = await import('uuid')
-    uuidv4 = uuidModule.v4
-  }
-}
-
-// Initialize uuid on module load
-initializeUuid().catch((err) => {
-  console.error('[JWT] Failed to initialize uuid:', err)
-})
+import { v4 as uuidv4 } from 'uuid'
 
 // ============================================================================
 // TYPES
