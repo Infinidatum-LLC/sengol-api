@@ -1,6 +1,9 @@
 import dotenv from 'dotenv'
 
-dotenv.config()
+// Only load .env file in development - Vercel sets vars via dashboard
+if (process.env.NODE_ENV !== 'production') {
+  dotenv.config()
+}
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
@@ -8,19 +11,19 @@ export const config = {
   apiVersion: process.env.API_VERSION || 'v1',
 
   // Database
-  databaseUrl: process.env.DATABASE_URL!,
+  databaseUrl: process.env.DATABASE_URL || '',
   redisUrl: process.env.REDIS_URL,
 
   // Auth
-  jwtSecret: process.env.JWT_SECRET!,
+  jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
   apiAuthToken: process.env.API_AUTH_TOKEN, // Optional: for API endpoint authentication
 
   // External services
-  openaiApiKey: process.env.OPENAI_API_KEY!,
+  openaiApiKey: process.env.OPENAI_API_KEY || '',
   openaiTimeout: parseInt(process.env.OPENAI_TIMEOUT || '60000'),
   openaiMaxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3'),
-  pythonBackendUrl: process.env.PYTHON_BACKEND_URL!,
+  pythonBackendUrl: process.env.PYTHON_BACKEND_URL || '',
 
   // CORS
   allowedOrigins: (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(','),
@@ -38,10 +41,12 @@ export const config = {
   shutdownTimeout: parseInt(process.env.SHUTDOWN_TIMEOUT || '30000'), // 30 seconds
 }
 
-// Validate required env vars
-const required = ['DATABASE_URL', 'JWT_SECRET', 'OPENAI_API_KEY']
-for (const key of required) {
-  if (!process.env[key]) {
-    throw new Error(`Missing required environment variable: ${key}`)
+// Validate required env vars only in production (where they must be set)
+if (process.env.NODE_ENV === 'production') {
+  const required = ['DATABASE_URL', 'JWT_SECRET', 'OPENAI_API_KEY']
+  for (const key of required) {
+    if (!process.env[key]) {
+      throw new Error(`Missing required environment variable: ${key}`)
+    }
   }
 }
