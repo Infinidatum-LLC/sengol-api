@@ -245,12 +245,13 @@ export async function startTrial(userId: string) {
     const trialUuid = randomUUID()
 
     // Create a trial subscription record
+    // Use ON CONFLICT to prevent duplicate trials for the same user
     await query(
       `INSERT INTO "ToolSubscription" (
         "id", "userId", "planId", "status", "trialEnds", 
         "createdAt", "updatedAt"
       ) VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-      ON CONFLICT DO NOTHING`,
+      ON CONFLICT ("userId", "planId") DO NOTHING`,
       [trialUuid, userId, 'trial', 'active', endsAt.toISOString()]
     )
 
