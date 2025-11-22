@@ -89,7 +89,7 @@ export async function build() {
   // await fastify.register(vectorSearchRoutes)
   // await fastify.register(projectsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   // await fastify.register(riskRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
-  // await fastify.register(assessmentsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  await fastify.register(assessmentsRoutes) // Assessment endpoints (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   // await fastify.register(userRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   // await fastify.register(questionsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
