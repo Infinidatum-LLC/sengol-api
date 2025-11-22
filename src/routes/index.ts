@@ -29,7 +29,7 @@ export async function registerAllRoutes(fastify: FastifyInstance): Promise<void>
   // The stripe-webhook.ts file contains the full webhook implementation
   await fastify.register(async (fastify) => {
     // Webhook endpoint for Stripe events
-    fastify.post('/api/webhooks/stripe', async (request, reply) => {
+    fastify.post('/webhooks/stripe', async (request, reply) => {
       try {
         // TODO: Activate Stripe webhook handler after schema updates
         reply.send({ received: true })

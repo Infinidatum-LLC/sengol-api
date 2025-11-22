@@ -271,9 +271,9 @@ async function revokeSession(request: FastifyRequest, reply: FastifyReply) {
  */
 export async function userRoutes(fastify: FastifyInstance) {
   // All routes require JWT authentication via middleware
-  fastify.get('/api/user/profile', { onRequest: jwtAuthMiddleware }, getUserProfile)
-  fastify.get('/api/user/sessions', { onRequest: jwtAuthMiddleware }, getUserSessions)
-  fastify.delete('/api/user/sessions/:sessionId', { onRequest: jwtAuthMiddleware }, revokeSession)
+  fastify.get('/user/profile', { onRequest: jwtAuthMiddleware }, getUserProfile)
+  fastify.get('/user/sessions', { onRequest: jwtAuthMiddleware }, getUserSessions)
+  fastify.delete('/user/sessions/:sessionId', { onRequest: jwtAuthMiddleware }, revokeSession)
 
   fastify.log.info('User routes registered')
 }

@@ -17,7 +17,7 @@ import {
 
 export async function calculationsRoutes(fastify: FastifyInstance) {
   // List all user calculations
-  fastify.get('/api/calculations', {
+  fastify.get('/calculations', {
     schema: {
       querystring: {
         type: 'object',
@@ -74,7 +74,7 @@ export async function calculationsRoutes(fastify: FastifyInstance) {
   }, listCalculations)
 
   // Create new calculation
-  fastify.post('/api/calculations', {
+  fastify.post('/calculations', {
     schema: {
       body: {
         type: 'object',
@@ -208,7 +208,7 @@ export async function calculationsRoutes(fastify: FastifyInstance) {
   }, getCalculation)
 
   // Update calculation
-  fastify.put('/api/calculations/:id', {
+  fastify.put('/calculations/:id', {
     schema: {
       params: {
         type: 'object',
@@ -278,7 +278,7 @@ export async function calculationsRoutes(fastify: FastifyInstance) {
   }, updateCalculation)
 
   // Delete calculation
-  fastify.delete('/api/calculations/:id', {
+  fastify.delete('/calculations/:id', {
     schema: {
       params: {
         type: 'object',

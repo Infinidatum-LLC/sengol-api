@@ -237,7 +237,7 @@ async function saveAssessmentProgress(request: FastifyRequest, reply: FastifyRep
 /**
  * Get assessment progress endpoint
  *
- * GET /api/assessments/:id/progress
+ * GET /assessments/:id/progress
  *
  * Retrieves the current progress and completion status of an assessment.
  * Returns percentage complete and sections status.
@@ -343,9 +343,9 @@ async function getAssessmentProgress(request: FastifyRequest, reply: FastifyRepl
  * Register all assessment routes
  */
 export async function assessmentsRoutes(fastify: FastifyInstance) {
-  fastify.get('/api/assessments/:id', getAssessmentById)
-  fastify.post('/api/assessments/:id/save-progress', saveAssessmentProgress)
-  fastify.get('/api/assessments/:id/progress', getAssessmentProgress)
+  fastify.get('/assessments/:id', getAssessmentById)
+  fastify.post('/assessments/:id/save-progress', saveAssessmentProgress)
+  fastify.get('/assessments/:id/progress', getAssessmentProgress)
 
   fastify.log.info('Assessment routes registered')
 }

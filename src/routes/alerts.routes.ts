@@ -15,7 +15,7 @@ import {
 
 export async function alertsRoutes(fastify: FastifyInstance) {
   // List all user compliance alerts
-  fastify.get('/api/compliance/alerts', {
+  fastify.get('/compliance/alerts', {
     schema: {
       querystring: {
         type: 'object',
@@ -94,7 +94,7 @@ export async function alertsRoutes(fastify: FastifyInstance) {
   }, listComplianceAlerts)
 
   // Create new compliance alert
-  fastify.post('/api/compliance/alerts', {
+  fastify.post('/compliance/alerts', {
     schema: {
       body: {
         type: 'object',
@@ -170,7 +170,7 @@ export async function alertsRoutes(fastify: FastifyInstance) {
   }, createComplianceAlert)
 
   // Update alert status
-  fastify.patch('/api/compliance/alerts/:id', {
+  fastify.patch('/compliance/alerts/:id', {
     schema: {
       params: {
         type: 'object',

@@ -669,14 +669,14 @@ async function revokeTrustedDeviceEndpoint(request: FastifyRequest, reply: Fasti
  */
 export async function totpRoutes(fastify: FastifyInstance) {
   // 2FA setup and management (all require JWT auth)
-  fastify.post('/api/auth/totp/setup', { onRequest: jwtAuthMiddleware }, initiateTOTPSetup)
-  fastify.post('/api/auth/totp/confirm', { onRequest: jwtAuthMiddleware }, confirmTOTPSetup)
-  fastify.post('/api/auth/totp/disable', { onRequest: jwtAuthMiddleware }, disableTOTPEndpoint)
-  fastify.get('/api/auth/totp/backup-codes', { onRequest: jwtAuthMiddleware }, getBackupCodesCount)
+  fastify.post('/auth/totp/setup', { onRequest: jwtAuthMiddleware }, initiateTOTPSetup)
+  fastify.post('/auth/totp/confirm', { onRequest: jwtAuthMiddleware }, confirmTOTPSetup)
+  fastify.post('/auth/totp/disable', { onRequest: jwtAuthMiddleware }, disableTOTPEndpoint)
+  fastify.get('/auth/totp/backup-codes', { onRequest: jwtAuthMiddleware }, getBackupCodesCount)
 
   // Device trust management
-  fastify.post('/api/auth/totp/trust-device', { onRequest: jwtAuthMiddleware }, trustDeviceEndpoint)
-  fastify.get('/api/auth/totp/trusted-devices', { onRequest: jwtAuthMiddleware }, getTrustedDevicesEndpoint)
+  fastify.post('/auth/totp/trust-device', { onRequest: jwtAuthMiddleware }, trustDeviceEndpoint)
+  fastify.get('/auth/totp/trusted-devices', { onRequest: jwtAuthMiddleware }, getTrustedDevicesEndpoint)
   fastify.delete(
     '/api/auth/totp/trusted-devices/:deviceId',
     { onRequest: jwtAuthMiddleware },
@@ -684,7 +684,7 @@ export async function totpRoutes(fastify: FastifyInstance) {
   )
 
   // TOTP verification (called during login, minimal auth)
-  fastify.post('/api/auth/totp/verify', verifyTOTPCode)
+  fastify.post('/auth/totp/verify', verifyTOTPCode)
 
   fastify.log.info('2FA (TOTP) routes registered')
 }
