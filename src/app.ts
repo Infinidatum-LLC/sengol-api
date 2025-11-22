@@ -87,7 +87,7 @@ export async function build() {
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)
   // await fastify.register(vectorSearchRoutes)
-  // await fastify.register(projectsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  await fastify.register(projectsRoutes) // Project endpoints (ENABLED)
   // await fastify.register(riskRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
   await fastify.register(assessmentsRoutes) // Assessment endpoints (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
