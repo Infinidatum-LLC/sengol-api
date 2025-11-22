@@ -592,6 +592,176 @@ async function getUserSubscription(request: FastifyRequest, reply: FastifyReply)
 }
 
 /**
+ * Check if email is already registered
+ *
+ * POST /api/auth/check-email
+ *
+ * Checks whether an email address is already registered in the system.
+ * Used by frontend during registration form to provide real-time feedback.
+ *
+ * Request:
+ * ```json
+ * {
+ *   "email": "user@example.com"
+ * }
+ * ```
+ *
+ * Response (200):
+ * ```json
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "exists": false
+ *   }
+ * }
+ * ```
+ */
+async function checkEmailExists(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { email } = request.body as { email?: string }
+
+    // Validate input
+    if (!email || typeof email !== 'string') {
+      throw new ValidationError('Email is required', 'INVALID_INPUT')
+    }
+
+    if (!email.includes('@')) {
+      throw new ValidationError('Invalid email format', 'INVALID_EMAIL')
+    }
+
+    // Check if email exists
+    const result = await query(
+      `SELECT "id" FROM "User" WHERE "email" = $1 LIMIT 1`,
+      [email.toLowerCase()]
+    )
+
+    const exists = result.rows.length > 0
+
+    request.log.info({ email, exists }, 'Email existence check')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        exists,
+      },
+    })
+
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Check email error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to check email',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Verify email with token (from email link)
+ *
+ * POST /api/auth/verify-email
+ *
+ * Verifies an email address using a verification token sent to the user's email.
+ * Used when user clicks the verification link in their email.
+ *
+ * Request:
+ * ```json
+ * {
+ *   "token": "email-verification-token"
+ * }
+ * ```
+ *
+ * Response (200):
+ * ```json
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "message": "Email verified successfully",
+ *     "verified": true
+ *   }
+ * }
+ * ```
+ */
+async function verifyEmailToken(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { token } = request.body as { token?: string }
+
+    // Validate input
+    if (!token || typeof token !== 'string') {
+      throw new ValidationError('Verification token is required', 'INVALID_INPUT')
+    }
+
+    // Find email verification record by token
+    const result = await query(
+      `SELECT "id", "userId", "email", "expiresAt" FROM "EmailVerification"
+       WHERE "token" = $1 AND "expiresAt" > NOW() LIMIT 1`,
+      [token]
+    )
+
+    if (result.rows.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Invalid or expired verification token',
+        code: 'INVALID_TOKEN',
+        statusCode: 400,
+      })
+    }
+
+    const verification = result.rows[0]
+
+    // Mark email as verified in user record
+    await query(
+      `UPDATE "User" SET "emailVerified" = true, "updatedAt" = NOW() WHERE "id" = $1`,
+      [verification.userId]
+    )
+
+    // Delete the verification record
+    await query(
+      `DELETE FROM "EmailVerification" WHERE "id" = $1`,
+      [verification.id]
+    )
+
+    request.log.info({ userId: verification.userId, email: verification.email }, 'Email verified')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        message: 'Email verified successfully',
+        verified: true,
+      },
+    })
+
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Verify email error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to verify email',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
  * Register all authentication routes
  */
 export async function authRoutes(fastify: FastifyInstance) {
@@ -601,6 +771,8 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/api/auth/logout', logout)
   fastify.get('/api/auth/user/:userId', getUserProfileById)
   fastify.get('/api/auth/subscription/:userId', getUserSubscription)
+  fastify.post('/api/auth/check-email', checkEmailExists)
+  fastify.post('/api/auth/verify-email', verifyEmailToken)
 
   fastify.log.info('Authentication routes registered')
 }
