@@ -2,7 +2,6 @@
   "name": "sengol-api",
   "version": "1.0.0",
   "description": "Sengol Middleware API - Business logic layer",
-  "type": "module",
   "main": "dist/app.js",
   "scripts": {
     "dev": "tsx watch src/app.ts",
