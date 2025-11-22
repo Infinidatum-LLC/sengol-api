@@ -260,8 +260,8 @@ async function createProject(request: FastifyRequest, reply: FastifyReply) {
  * Register all project routes
  */
 export async function projectsRoutes(fastify: FastifyInstance) {
-  fastify.get('/projects', listProjects)
-  fastify.post('/projects', createProject)
+  fastify.get('/api/projects', listProjects)
+  fastify.post('/api/projects', createProject)
 
   fastify.log.info('Project routes registered')
 }

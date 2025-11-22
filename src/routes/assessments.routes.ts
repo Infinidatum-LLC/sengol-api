@@ -343,9 +343,9 @@ async function getAssessmentProgress(request: FastifyRequest, reply: FastifyRepl
  * Register all assessment routes
  */
 export async function assessmentsRoutes(fastify: FastifyInstance) {
-  fastify.get('/assessments/:id', getAssessmentById)
-  fastify.post('/assessments/:id/save-progress', saveAssessmentProgress)
-  fastify.get('/assessments/:id/progress', getAssessmentProgress)
+  fastify.get('/api/assessments/:id', getAssessmentById)
+  fastify.post('/api/assessments/:id/save-progress', saveAssessmentProgress)
+  fastify.get('/api/assessments/:id/progress', getAssessmentProgress)
 
   fastify.log.info('Assessment routes registered')
 }
