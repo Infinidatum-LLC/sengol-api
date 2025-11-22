@@ -11,6 +11,7 @@ import { query } from '../lib/db'
 import { generateTokens, revokeToken, revokeUserTokens } from '../lib/jwt.service'
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../lib/password.service'
 import { AuthenticationError, ValidationError, DatabaseError } from '../lib/errors'
+import { sendPasswordResetEmail } from '../lib/email.service'
 
 /**
  * Login request body
@@ -830,9 +831,13 @@ async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
 
     request.log.info({ userId: user.id, email: user.email }, 'Password reset token created')
 
-    // TODO: Send email with reset link
-    // The frontend will construct the reset URL: /auth/reset-password?token={resetToken}
-    // Backend should send this token to the user's email with the reset link
+    // Send password reset email
+    try {
+      await sendPasswordResetEmail(user.email, resetToken, user.name || undefined)
+    } catch (error) {
+      // Log error but don't fail the request (security: don't reveal if email exists)
+      request.log.error({ err: error, email: user.email }, 'Failed to send password reset email')
+    }
 
     return reply.status(200).send({
       success: true,

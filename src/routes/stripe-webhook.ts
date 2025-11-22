@@ -7,6 +7,7 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import Stripe from 'stripe'
+import { randomUUID } from 'crypto'
 import { query } from '../lib/db'
 import { logger } from '../lib/logger'
 import { invalidateUserCacheById } from '../middleware/cache-invalidation'
@@ -103,10 +104,61 @@ export async function handleStripeWebhook(
  */
 async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
   try {
-    // TODO: Implement Prisma-to-raw-SQL migration for subscription creation
-    // This stub prevents compilation errors while Prisma migration is in progress
     const customerId = subscription.customer as string
-    logger.info(`Stripe subscription created: ${subscription.id} for customer ${customerId}`)
+    const subscriptionId = subscription.id
+    const planId = subscription.items.data[0]?.price?.id || subscription.items.data[0]?.price?.nickname || 'unknown'
+    const status = subscription.status
+    // Stripe subscription uses snake_case properties
+    const subData = subscription as any
+    const currentPeriodStart = new Date(subData.current_period_start * 1000)
+    const currentPeriodEnd = new Date(subData.current_period_end * 1000)
+
+    // Find user by Stripe customer ID
+    const userResult = await query(
+      `SELECT "id" FROM "User" WHERE "stripeCustomerId" = $1 LIMIT 1`,
+      [customerId]
+    )
+
+    if (userResult.rows.length === 0) {
+      logger.warn(`User not found for Stripe customer: ${customerId}`)
+      return
+    }
+
+    const userId = userResult.rows[0].id
+
+    // Check if subscription already exists
+    const existingResult = await query(
+      `SELECT "id" FROM "ToolSubscription" WHERE "stripeSubscriptionId" = $1 LIMIT 1`,
+      [subscriptionId]
+    )
+
+    if (existingResult.rows.length > 0) {
+      // Update existing subscription
+      await query(
+        `UPDATE "ToolSubscription" 
+         SET "status" = $1, "currentPeriodStart" = $2, "currentPeriodEnd" = $3, "updatedAt" = NOW()
+         WHERE "stripeSubscriptionId" = $4`,
+        [status, currentPeriodStart.toISOString(), currentPeriodEnd.toISOString(), subscriptionId]
+      )
+      logger.info(`Updated existing subscription: ${subscriptionId} for user ${userId}`)
+    } else {
+      // Create new subscription
+      const subscriptionUuid = require('crypto').randomUUID()
+      await query(
+        `INSERT INTO "ToolSubscription" (
+          "id", "userId", "planId", "status", "stripeSubscriptionId", 
+          "stripeCustomerId", "currentPeriodStart", "currentPeriodEnd", 
+          "createdAt", "updatedAt"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+        [subscriptionUuid, userId, planId, status, subscriptionId, customerId, currentPeriodStart.toISOString(), currentPeriodEnd.toISOString()]
+      )
+      logger.info(`Created new subscription: ${subscriptionId} for user ${userId}`)
+    }
+
+    // Invalidate user cache
+    await invalidateUserCacheById(userId)
+
+    logger.info(`Stripe subscription created: ${subscriptionId} for customer ${customerId}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`Failed to handle subscription creation: ${message}`,
@@ -121,9 +173,36 @@ async function handleSubscriptionCreated(subscription: Stripe.Subscription) {
  */
 async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
   try {
-    // TODO: Implement Prisma-to-raw-SQL migration for subscription updates
     const customerId = subscription.customer as string
-    logger.info(`Stripe subscription updated: ${subscription.id} for customer ${customerId}`)
+    const subscriptionId = subscription.id
+    const planId = subscription.items.data[0]?.price?.id || subscription.items.data[0]?.price?.nickname || 'unknown'
+    const status = subscription.status
+    // Stripe subscription uses snake_case properties
+    const subData = subscription as any
+    const currentPeriodStart = new Date(subData.current_period_start * 1000)
+    const currentPeriodEnd = new Date(subData.current_period_end * 1000)
+    const cancelAt = (subscription as any).cancel_at ? new Date((subscription as any).cancel_at * 1000) : null
+
+    // Update subscription
+    const result = await query(
+      `UPDATE "ToolSubscription" 
+       SET "planId" = $1, "status" = $2, "currentPeriodStart" = $3, 
+           "currentPeriodEnd" = $4, "cancelAt" = $5, "updatedAt" = NOW()
+       WHERE "stripeSubscriptionId" = $6
+       RETURNING "userId"`,
+      [planId, status, currentPeriodStart.toISOString(), currentPeriodEnd.toISOString(), cancelAt?.toISOString() || null, subscriptionId]
+    )
+
+    if (result.rows.length > 0) {
+      const userId = result.rows[0].userId
+      // Invalidate user cache
+      await invalidateUserCacheById(userId)
+      logger.info(`Updated subscription: ${subscriptionId} for user ${userId}`)
+    } else {
+      logger.warn(`Subscription not found for update: ${subscriptionId}`)
+    }
+
+    logger.info(`Stripe subscription updated: ${subscriptionId} for customer ${customerId}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`Failed to handle subscription update: ${message}`,
@@ -138,9 +217,35 @@ async function handleSubscriptionUpdated(subscription: Stripe.Subscription) {
  */
 async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   try {
-    // TODO: Implement Prisma-to-raw-SQL migration for subscription deletion
     const customerId = subscription.customer as string
-    logger.info(`Stripe subscription deleted: ${subscription.id} for customer ${customerId}`)
+    const subscriptionId = subscription.id
+
+    // Get userId before deleting
+    const result = await query(
+      `SELECT "userId" FROM "ToolSubscription" WHERE "stripeSubscriptionId" = $1 LIMIT 1`,
+      [subscriptionId]
+    )
+
+    if (result.rows.length > 0) {
+      const userId = result.rows[0].userId
+
+      // Update subscription status to cancelled instead of deleting
+      // This preserves history and allows for reactivation
+      await query(
+        `UPDATE "ToolSubscription" 
+         SET "status" = 'cancelled', "updatedAt" = NOW()
+         WHERE "stripeSubscriptionId" = $1`,
+        [subscriptionId]
+      )
+
+      // Invalidate user cache
+      await invalidateUserCacheById(userId)
+      logger.info(`Cancelled subscription: ${subscriptionId} for user ${userId}`)
+    } else {
+      logger.warn(`Subscription not found for deletion: ${subscriptionId}`)
+    }
+
+    logger.info(`Stripe subscription deleted: ${subscriptionId} for customer ${customerId}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     logger.error(`Failed to handle subscription deletion: ${message}`,
@@ -155,8 +260,32 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
  */
 async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
   try {
-    // TODO: Implement Prisma-to-raw-SQL migration for payment success handling
     const customerId = invoice.customer as string
+    const subscriptionId = (invoice as any).subscription as string | null
+
+    if (subscriptionId) {
+      // Update subscription period dates if payment succeeded
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId)
+      const subData = subscription as any
+      const currentPeriodStart = new Date(subData.current_period_start * 1000)
+      const currentPeriodEnd = new Date(subData.current_period_end * 1000)
+
+      const result = await query(
+        `UPDATE "ToolSubscription" 
+         SET "status" = 'active', "currentPeriodStart" = $1, 
+             "currentPeriodEnd" = $2, "updatedAt" = NOW()
+         WHERE "stripeSubscriptionId" = $3
+         RETURNING "userId"`,
+        [currentPeriodStart.toISOString(), currentPeriodEnd.toISOString(), subscriptionId]
+      )
+
+      if (result.rows.length > 0) {
+        const userId = result.rows[0].userId
+        await invalidateUserCacheById(userId)
+        logger.info(`Payment succeeded, subscription renewed: ${subscriptionId} for user ${userId}`)
+      }
+    }
+
     logger.info(`Stripe payment succeeded: ${invoice.id} for customer ${customerId}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -172,8 +301,26 @@ async function handlePaymentSucceeded(invoice: Stripe.Invoice) {
  */
 async function handlePaymentFailed(invoice: Stripe.Invoice) {
   try {
-    // TODO: Implement Prisma-to-raw-SQL migration for payment failure handling
     const customerId = invoice.customer as string
+    const subscriptionId = (invoice as any).subscription as string | null
+
+    if (subscriptionId) {
+      // Update subscription status to past_due or unpaid
+      const result = await query(
+        `UPDATE "ToolSubscription" 
+         SET "status" = 'past_due', "updatedAt" = NOW()
+         WHERE "stripeSubscriptionId" = $1
+         RETURNING "userId"`,
+        [subscriptionId]
+      )
+
+      if (result.rows.length > 0) {
+        const userId = result.rows[0].userId
+        await invalidateUserCacheById(userId)
+        logger.info(`Payment failed, subscription marked past_due: ${subscriptionId} for user ${userId}`)
+      }
+    }
+
     logger.info(`Stripe payment failed: ${invoice.id} for customer ${customerId}`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

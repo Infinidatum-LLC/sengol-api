@@ -1,14 +1,13 @@
 /**
- * Health Routes - STUB
+ * Health Routes
  *
- * Temporary stub to unblock build while Prisma migration is completed.
- * This file provides basic health check endpoints without Prisma dependencies.
- *
- * TODO: Complete Prisma-to-raw-SQL migration for detailed health checks
+ * Provides health check endpoints for monitoring and orchestration.
+ * Uses raw SQL queries for database connectivity checks.
  */
 
 import { FastifyInstance } from 'fastify'
 import { config } from '../config/env'
+import { query } from '../lib/db'
 
 export async function healthRoutes(fastify: FastifyInstance) {
   // Root endpoint - API information
@@ -49,12 +48,27 @@ export async function healthRoutes(fastify: FastifyInstance) {
       circuitBreakers: {},
     }
 
-    // TODO: Check database connectivity
-    health.checks.database = {
-      status: 'ok',
-      responseTime: 0,
-      healthy: true,
-      lastCheck: new Date().toISOString(),
+    // Check database connectivity
+    const dbStartTime = Date.now()
+    try {
+      await query('SELECT 1 as health_check')
+      const dbResponseTime = Date.now() - dbStartTime
+      health.checks.database = {
+        status: 'ok',
+        responseTime: dbResponseTime,
+        healthy: true,
+        lastCheck: new Date().toISOString(),
+      }
+    } catch (error) {
+      const dbResponseTime = Date.now() - dbStartTime
+      health.checks.database = {
+        status: 'error',
+        responseTime: dbResponseTime,
+        healthy: false,
+        lastCheck: new Date().toISOString(),
+        error: error instanceof Error ? error.message : 'Database connection failed',
+      }
+      health.status = 'degraded'
     }
 
     // Overall response time
@@ -67,7 +81,8 @@ export async function healthRoutes(fastify: FastifyInstance) {
   // Readiness check for Kubernetes/orchestration at /api/health/ready
   fastify.get('/health/ready', async (request, reply) => {
     try {
-      // Check critical dependencies
+      // Check critical dependencies - database connectivity
+      await query('SELECT 1 as health_check')
       return reply.send({ ready: true })
     } catch (error) {
       return reply.code(503).send({

@@ -2,7 +2,8 @@ import { FastifyRequest, FastifyReply } from 'fastify'
 import { selectOne, updateOne } from '../lib/db-queries'
 import { generateDynamicQuestions } from '../services/dynamic-question-generator'
 import { analyzeSystem } from '../services/system-analysis.service'
-import { ValidationError } from '../lib/errors'
+import { ValidationError, AuthenticationError } from '../lib/errors'
+import { getUserId, requireResourceOwnership } from '../middleware/jwt-auth'
 
 // ============================================================================
 // TYPES
@@ -121,10 +122,30 @@ export async function generateQuestionsController(
       return reply.code(404).send({ error: 'Assessment not found' })
     }
 
-    // TODO: Add auth check when auth is implemented
-    // if (assessment.userId !== request.user.userId) {
-    //   return reply.code(403).send({ error: 'Forbidden' })
-    // }
+    // Auth check - verify user owns this assessment
+    const userId = getUserId(request)
+    if (!userId) {
+      return reply.code(401).send({ 
+        success: false,
+        error: 'Authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401
+      })
+    }
+
+    try {
+      requireResourceOwnership(userId, assessment.userId)
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        return reply.code(403).send({ 
+          success: false,
+          error: error.message,
+          code: 'FORBIDDEN',
+          statusCode: 403
+        })
+      }
+      throw error
+    }
 
     // Use request body values if provided, otherwise fall back to database values
     const systemDescription = requestSystemDescription || assessment.systemDescription
@@ -219,14 +240,17 @@ export async function saveQuestionsController(
   reply: FastifyReply
 ) {
   const { id } = request.params
-  const { riskQuestions = [], complianceQuestions = [], userId } = request.body
+  const { riskQuestions = [], complianceQuestions = [] } = request.body
 
   try {
-    // Verify userId is provided
+    // Auth check - verify user is authenticated
+    const userId = getUserId(request)
     if (!userId) {
-      return reply.code(400).send({
-        error: 'userId is required',
-        status: 400
+      return reply.code(401).send({ 
+        success: false,
+        error: 'Authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401
       })
     }
 
@@ -235,17 +259,26 @@ export async function saveQuestionsController(
 
     if (!assessment) {
       return reply.code(404).send({
+        success: false,
         error: 'Assessment not found',
-        status: 404
+        code: 'NOT_FOUND',
+        statusCode: 404
       })
     }
 
     // CRITICAL: Verify ownership
-    if (assessment.userId !== userId) {
-      return reply.code(403).send({
-        error: 'Forbidden - You do not own this assessment',
-        status: 403
-      })
+    try {
+      requireResourceOwnership(userId, assessment.userId)
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        return reply.code(403).send({
+          success: false,
+          error: error.message,
+          code: 'FORBIDDEN',
+          statusCode: 403
+        })
+      }
+      throw error
     }
 
     // Update assessment with generated questions
@@ -346,6 +379,31 @@ export async function incidentAnalysisController(
         error: 'Assessment not found',
         status: 404
       })
+    }
+
+    // Auth check - verify user owns this assessment
+    const userId = getUserId(request)
+    if (!userId) {
+      return reply.code(401).send({ 
+        success: false,
+        error: 'Authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401
+      })
+    }
+
+    try {
+      requireResourceOwnership(userId, assessment.userId)
+    } catch (error) {
+      if (error instanceof AuthenticationError) {
+        return reply.code(403).send({ 
+          success: false,
+          error: error.message,
+          code: 'FORBIDDEN',
+          statusCode: 403
+        })
+      }
+      throw error
     }
 
     console.log(`[INCIDENT_ANALYSIS] Assessment: ${id}`)

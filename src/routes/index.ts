@@ -5,10 +5,10 @@
  * Imports all middleware, route handlers, and webhooks.
  * Called from app.ts to configure the Fastify instance.
  *
- * NOTE: Stripe webhook handler requires database schema updates for:
+ * NOTE: Stripe webhook handler requires database schema fields:
  * - User.stripeCustomerId
  * - ToolSubscription.stripeSubscriptionId, currentPeriodStart, currentPeriodEnd
- * These fields need to be added to Prisma schema before webhook can be fully activated.
+ * These fields should exist in the database schema.
  */
 
 import { FastifyInstance } from 'fastify'

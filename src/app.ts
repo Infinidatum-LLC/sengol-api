@@ -77,26 +77,25 @@ export async function build() {
   fastify.addHook('onRequest', requestTimeoutMiddleware)
 
   // Register routes
-  // Health routes at root level (ENABLED - no Prisma dependencies)
+  // Health routes at root level (ENABLED)
   await fastify.register(healthRoutes)
 
   // API routes (already have /api prefix in their definitions)
   await fastify.register(authRoutes) // JWT authentication routes (ENABLED)
   await fastify.register(userRoutes) // Protected user routes (JWT auth required) (ENABLED)
   await fastify.register(totpRoutes) // 2FA (TOTP) routes (ENABLED)
-  // await fastify.register(reviewRoutes) // DISABLED: May depend on Prisma
+  // await fastify.register(reviewRoutes) // DISABLED: Pending implementation
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)
   // await fastify.register(vectorSearchRoutes)
   await fastify.register(projectsRoutes) // Project endpoints (ENABLED)
-  // await fastify.register(riskRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(riskRoutes) // DISABLED: Pending implementation
   await fastify.register(assessmentsRoutes) // Assessment endpoints (ENABLED)
   await fastify.register(calculationsRoutes) // ROI Calculator endpoints (ENABLED)
   await fastify.register(alertsRoutes) // Compliance alerts endpoints (ENABLED)
-  // await fastify.register(projectsGatedRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
-  // await fastify.register(userRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
-  // await fastify.register(questionsRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
-  // await fastify.register(complianceRoutes) // DISABLED: Depends on Prisma - pending Prisma migration
+  // await fastify.register(projectsGatedRoutes) // DISABLED: Pending implementation
+  // await fastify.register(questionsRoutes) // DISABLED: Pending implementation
+  // await fastify.register(complianceRoutes) // DISABLED: Pending implementation
 
   // Trial system routes - disabled pending build fixes
   // Cloud Build currently fails due to pre-existing TypeScript errors in codebase
