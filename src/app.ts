@@ -19,6 +19,7 @@ import { complianceRoutes } from './routes/compliance.routes'
 import { calculationsRoutes } from './routes/calculations.routes'
 import { alertsRoutes } from './routes/alerts.routes' // Compliance alerts endpoints
 import { totpRoutes } from './routes/totp.routes' // 2FA routes (TOTP support)
+import { pricingRoutes } from './routes/pricing.routes' // Admin pricing management routes
 import { registerAllRoutes } from './routes/index'
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
@@ -93,6 +94,7 @@ export async function build() {
   await fastify.register(assessmentsRoutes) // Assessment endpoints (ENABLED)
   await fastify.register(calculationsRoutes) // ROI Calculator endpoints (ENABLED)
   await fastify.register(alertsRoutes) // Compliance alerts endpoints (ENABLED)
+  await fastify.register(pricingRoutes) // Admin pricing management routes (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Pending implementation
   // await fastify.register(questionsRoutes) // DISABLED: Pending implementation
   // await fastify.register(complianceRoutes) // DISABLED: Pending implementation
