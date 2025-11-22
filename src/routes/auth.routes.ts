@@ -979,16 +979,16 @@ async function resetPassword(request: FastifyRequest, reply: FastifyReply) {
  * Register all authentication routes
  */
 export async function authRoutes(fastify: FastifyInstance) {
-  fastify.post('/api/auth/login', login)
-  fastify.post('/api/auth/register', register)
-  fastify.post('/api/auth/refresh', refreshAccessToken)
-  fastify.post('/api/auth/logout', logout)
-  fastify.get('/api/auth/user/:userId', getUserProfileById)
-  fastify.get('/api/auth/subscription/:userId', getUserSubscription)
-  fastify.post('/api/auth/check-email', checkEmailExists)
-  fastify.post('/api/auth/verify-email', verifyEmailToken)
-  fastify.post('/api/auth/forgot-password', forgotPassword)
-  fastify.post('/api/auth/reset-password', resetPassword)
+  fastify.post('/auth/login', login)
+  fastify.post('/auth/register', register)
+  fastify.post('/auth/refresh', refreshAccessToken)
+  fastify.post('/auth/logout', logout)
+  fastify.get('/auth/user/:userId', getUserProfileById)
+  fastify.get('/auth/subscription/:userId', getUserSubscription)
+  fastify.post('/auth/check-email', checkEmailExists)
+  fastify.post('/auth/verify-email', verifyEmailToken)
+  fastify.post('/auth/forgot-password', forgotPassword)
+  fastify.post('/auth/reset-password', resetPassword)
 
   fastify.log.info('Authentication routes registered')
 }
