@@ -101,4 +101,53 @@ export async function healthRoutes(fastify: FastifyInstance) {
       memory: process.memoryUsage(),
     })
   })
+
+  // Database health check endpoint for frontend
+  // GET /api/v1/health/database
+  fastify.get('/api/v1/health/database', async (request, reply) => {
+    const startTime = Date.now()
+    
+    try {
+      // Set timeout for health check
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Database health check timeout')), 5000)
+      })
+
+      // Simple query to test connection
+      const healthCheckPromise = query('SELECT 1 as health')
+
+      // Race between health check and timeout
+      await Promise.race([healthCheckPromise, timeoutPromise])
+
+      const responseTime = Date.now() - startTime
+
+      // Determine status based on response time
+      let status: 'up' | 'degraded' = 'up'
+      if (responseTime > 1000) {
+        status = 'degraded'
+      }
+
+      return reply.send({
+        success: true,
+        data: {
+          status,
+          responseTime,
+          timestamp: new Date().toISOString(),
+        },
+      })
+    } catch (error) {
+      const responseTime = Date.now() - startTime
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+
+      return reply.code(503).send({
+        success: false,
+        data: {
+          status: 'down',
+          responseTime,
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+        },
+      })
+    }
+  })
 }

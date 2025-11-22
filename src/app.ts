@@ -21,6 +21,15 @@ import { alertsRoutes } from './routes/alerts.routes' // Compliance alerts endpo
 import { totpRoutes } from './routes/totp.routes' // 2FA routes (TOTP support)
 import { pricingRoutes } from './routes/pricing.routes' // Admin pricing management routes
 import { registerAllRoutes } from './routes/index'
+import { usersRoutes } from './routes/users.routes' // User management routes
+import { newsRoutes } from './routes/news.routes' // News management routes
+import { marketingRoutes } from './routes/marketing.routes' // Marketing events routes
+import { analyticsRoutes } from './routes/analytics.routes' // Analytics routes
+import { webhooksRoutes } from './routes/webhooks.routes' // Webhook management routes
+import { toolUsageRoutes } from './routes/tool-usage.routes' // Tool usage routes
+import { geographyRoutes } from './routes/geography.routes' // Geography account routes
+import { contextAnalysisRoutes } from './routes/context-analysis.routes' // Context analysis cache routes
+import { councilRoutes } from './routes/council.routes' // Council feature routes
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
 import { AppError } from './lib/errors'
@@ -95,6 +104,15 @@ export async function build() {
   await fastify.register(calculationsRoutes) // ROI Calculator endpoints (ENABLED)
   await fastify.register(alertsRoutes) // Compliance alerts endpoints (ENABLED)
   await fastify.register(pricingRoutes) // Admin pricing management routes (ENABLED)
+  await fastify.register(usersRoutes) // User management routes (ENABLED)
+  await fastify.register(newsRoutes) // News management routes (ENABLED)
+  await fastify.register(marketingRoutes) // Marketing events routes (ENABLED)
+  await fastify.register(analyticsRoutes) // Analytics routes (ENABLED)
+  await fastify.register(webhooksRoutes) // Webhook management routes (ENABLED)
+  await fastify.register(toolUsageRoutes) // Tool usage routes (ENABLED)
+  await fastify.register(geographyRoutes) // Geography account routes (ENABLED)
+  await fastify.register(contextAnalysisRoutes) // Context analysis cache routes (ENABLED)
+  await fastify.register(councilRoutes) // Council feature routes (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Pending implementation
   // await fastify.register(questionsRoutes) // DISABLED: Pending implementation
   // await fastify.register(complianceRoutes) // DISABLED: Pending implementation
