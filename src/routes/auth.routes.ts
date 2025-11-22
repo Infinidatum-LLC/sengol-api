@@ -105,11 +105,12 @@ async function login(request: FastifyRequest, reply: FastifyReply) {
     return reply.status(200).send({
       success: true,
       data: {
+        id: user.id,
+        email: user.email,
+        name: user.name || '',
+        emailVerified: user.emailVerified || null,
+        role: user.role || 'user',
         ...tokens,
-        user: {
-          id: user.id,
-          email: user.email,
-        },
       },
     })
 
@@ -234,11 +235,12 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
     return reply.status(201).send({
       success: true,
       data: {
+        id: newUser.id,
+        email: newUser.email,
+        name: name || '',
+        emailVerified: false,
+        role: 'user',
         ...tokens,
-        user: {
-          id: newUser.id,
-          email: newUser.email,
-        },
       },
     })
 
