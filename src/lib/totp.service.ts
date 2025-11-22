@@ -14,8 +14,8 @@
 
 import speakeasy from 'speakeasy'
 import qrcode from 'qrcode'
+import { randomUUID } from 'crypto'
 import { query } from './db'
-import { v4 as uuidv4 } from 'uuid'
 
 // ============================================================================
 // CONFIGURATION
@@ -235,7 +235,7 @@ export async function enableTOTP(userId: string, secret: string, backupCodes: st
           "used",
           "createdAt"
         ) VALUES ($1, $2, $3, false, NOW())`,
-        [uuidv4(), userId, code]
+        [randomUUID(), userId, code]
       )
     }
 
@@ -420,7 +420,7 @@ export async function trustDevice(
   ipAddress?: string
 ): Promise<string> {
   try {
-    const deviceId = uuidv4()
+    const deviceId = randomUUID()
 
     await query(
       `INSERT INTO "trusted_devices" (

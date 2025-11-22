@@ -6,11 +6,11 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { randomUUID } from 'crypto'
 import { query } from '../lib/db'
 import { generateTokens, revokeToken, revokeUserTokens } from '../lib/jwt.service'
 import { hashPassword, verifyPassword, validatePasswordStrength } from '../lib/password.service'
 import { AuthenticationError, ValidationError, DatabaseError } from '../lib/errors'
-import { v4 as uuidv4 } from 'uuid'
 
 /**
  * Login request body
@@ -205,7 +205,7 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
 
     // Hash password before storing
     const hashedPassword = await hashPassword(password)
-    const userId = uuidv4()
+    const userId = randomUUID()
 
     // Create user
     const createResult = await query(
@@ -818,14 +818,14 @@ async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
     const user = userResult.rows[0]
 
     // Generate reset token (valid for 1 hour)
-    const resetToken = uuidv4()
+    const resetToken = randomUUID()
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
 
     // Store reset token in database
     await query(
       `INSERT INTO "PasswordResetToken" ("id", "userId", "token", "expiresAt", "createdAt", "updatedAt")
        VALUES ($1, $2, $3, $4, NOW(), NOW())`,
-      [uuidv4(), user.id, resetToken, expiresAt]
+      [randomUUID(), user.id, resetToken, expiresAt]
     )
 
     request.log.info({ userId: user.id, email: user.email }, 'Password reset token created')

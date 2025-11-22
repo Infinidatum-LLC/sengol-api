@@ -6,9 +6,9 @@
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { randomUUID } from 'crypto'
 import { query } from '../lib/db'
 import { ValidationError } from '../lib/errors'
-import { v4 as uuidv4 } from 'uuid'
 
 /**
  * List all projects for authenticated user
@@ -213,7 +213,7 @@ async function createProject(request: FastifyRequest, reply: FastifyReply) {
     }
 
     // Create project
-    const projectId = uuidv4()
+    const projectId = randomUUID()
     const now = new Date()
 
     await query(

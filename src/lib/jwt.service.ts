@@ -1,6 +1,6 @@
 import jwt, { SignOptions, VerifyOptions } from 'jsonwebtoken'
 import { query } from './db'
-import { v4 as uuidv4 } from 'uuid'
+import { randomUUID } from 'crypto'
 
 // ============================================================================
 // TYPES
@@ -250,7 +250,7 @@ async function storeToken(data: {
   userAgent?: string
   ipAddress?: string
 }): Promise<TokenRecord> {
-  const tokenId = uuidv4()
+  const tokenId = randomUUID()
 
   const result = await query(
     `INSERT INTO "user_tokens" (

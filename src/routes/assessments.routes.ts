@@ -8,7 +8,6 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { query } from '../lib/db'
 import { ValidationError, DatabaseError } from '../lib/errors'
-import { v4 as uuidv4 } from 'uuid'
 
 /**
  * Get assessment by ID endpoint
