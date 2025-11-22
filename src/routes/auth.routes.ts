@@ -762,6 +762,220 @@ async function verifyEmailToken(request: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * Forgot password endpoint
+ *
+ * POST /api/auth/forgot-password
+ *
+ * Initiates password reset by sending reset token to user's email.
+ *
+ * Request:
+ * ```json
+ * {
+ *   "email": "user@example.com"
+ * }
+ * ```
+ *
+ * Response (200):
+ * ```json
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "message": "Password reset instructions sent to your email"
+ *   }
+ * }
+ * ```
+ */
+async function forgotPassword(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { email } = request.body as { email?: string }
+
+    // Validate input
+    if (!email || typeof email !== 'string') {
+      throw new ValidationError('Email is required', 'INVALID_INPUT')
+    }
+
+    if (!email.includes('@')) {
+      throw new ValidationError('Invalid email format', 'INVALID_EMAIL')
+    }
+
+    // Check if user exists
+    const userResult = await query(
+      `SELECT "id", "email" FROM "User" WHERE "email" = $1 LIMIT 1`,
+      [email.toLowerCase()]
+    )
+
+    // Security: Always return success message even if email doesn't exist
+    // This prevents email enumeration attacks
+    if (userResult.rows.length === 0) {
+      return reply.status(200).send({
+        success: true,
+        data: {
+          message: 'If that email exists, we sent a password reset link',
+        },
+      })
+    }
+
+    const user = userResult.rows[0]
+
+    // Generate reset token (valid for 1 hour)
+    const resetToken = uuidv4()
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000) // 1 hour from now
+
+    // Store reset token in database
+    await query(
+      `INSERT INTO "PasswordResetToken" ("id", "userId", "token", "expiresAt", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+      [uuidv4(), user.id, resetToken, expiresAt]
+    )
+
+    request.log.info({ userId: user.id, email: user.email }, 'Password reset token created')
+
+    // TODO: Send email with reset link
+    // The frontend will construct the reset URL: /auth/reset-password?token={resetToken}
+    // Backend should send this token to the user's email with the reset link
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        message: 'If that email exists, we sent a password reset link',
+      },
+    })
+
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Forgot password error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to process password reset request',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Reset password endpoint
+ *
+ * POST /api/auth/reset-password
+ *
+ * Validates reset token and updates user's password.
+ *
+ * Request:
+ * ```json
+ * {
+ *   "token": "reset-token-from-email",
+ *   "password": "newPassword123"
+ * }
+ * ```
+ *
+ * Response (200):
+ * ```json
+ * {
+ *   "success": true,
+ *   "data": {
+ *     "message": "Password reset successfully"
+ *   }
+ * }
+ * ```
+ */
+async function resetPassword(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { token, password } = request.body as { token?: string; password?: string }
+
+    // Validate input
+    if (!token || typeof token !== 'string') {
+      throw new ValidationError('Reset token is required', 'INVALID_INPUT')
+    }
+
+    if (!password || typeof password !== 'string') {
+      throw new ValidationError('Password is required', 'INVALID_INPUT')
+    }
+
+    // Validate password strength
+    try {
+      validatePasswordStrength(password)
+    } catch (error) {
+      throw new ValidationError(
+        error instanceof Error ? error.message : 'Password does not meet requirements',
+        'WEAK_PASSWORD'
+      )
+    }
+
+    // Find valid reset token
+    const tokenResult = await query(
+      `SELECT "id", "userId", "expiresAt" FROM "PasswordResetToken"
+       WHERE "token" = $1 AND "expiresAt" > NOW() LIMIT 1`,
+      [token]
+    )
+
+    if (tokenResult.rows.length === 0) {
+      return reply.status(400).send({
+        success: false,
+        error: 'Invalid or expired reset token',
+        code: 'INVALID_TOKEN',
+        statusCode: 400,
+      })
+    }
+
+    const resetTokenRecord = tokenResult.rows[0]
+
+    // Hash new password
+    const hashedPassword = await hashPassword(password)
+
+    // Update user password
+    await query(
+      `UPDATE "User" SET "password" = $1, "updatedAt" = NOW() WHERE "id" = $2`,
+      [hashedPassword, resetTokenRecord.userId]
+    )
+
+    // Delete the reset token (one-time use)
+    await query(
+      `DELETE FROM "PasswordResetToken" WHERE "id" = $1`,
+      [resetTokenRecord.id]
+    )
+
+    // Optionally: Revoke all existing tokens for this user to force re-login
+    // This ensures old sessions become invalid after password reset
+    await revokeUserTokens(resetTokenRecord.userId)
+
+    request.log.info({ userId: resetTokenRecord.userId }, 'Password reset successfully')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        message: 'Password reset successfully',
+      },
+    })
+
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Reset password error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to reset password',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
  * Register all authentication routes
  */
 export async function authRoutes(fastify: FastifyInstance) {
@@ -773,6 +987,8 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.get('/api/auth/subscription/:userId', getUserSubscription)
   fastify.post('/api/auth/check-email', checkEmailExists)
   fastify.post('/api/auth/verify-email', verifyEmailToken)
+  fastify.post('/api/auth/forgot-password', forgotPassword)
+  fastify.post('/api/auth/reset-password', resetPassword)
 
   fastify.log.info('Authentication routes registered')
 }
