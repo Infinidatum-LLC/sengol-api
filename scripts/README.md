@@ -1,5 +1,52 @@
 # Database Migration Scripts
 
+## Migration 002: Add User Onboarding Fields
+
+This migration adds onboarding tracking fields to the User table:
+- `eulaAccepted` (BOOLEAN, default: false) - Whether user accepted EULA
+- `onboardingCompleted` (BOOLEAN, default: false) - Whether user completed onboarding
+- `onboardingCompletedAt` (TIMESTAMP, nullable) - When onboarding was completed
+
+### Usage
+
+```bash
+# Make sure DATABASE_URL is set in your .env file
+tsx scripts/run-migration-002.ts
+```
+
+Or add to package.json:
+```json
+"scripts": {
+  "migrate:onboarding": "tsx scripts/run-migration-002.ts"
+}
+```
+
+Then run:
+```bash
+npm run migrate:onboarding
+```
+
+### What it does
+
+1. Adds `eulaAccepted` column to User table (defaults to false)
+2. Adds `onboardingCompleted` column to User table (defaults to false)
+3. Adds `onboardingCompletedAt` column to User table (nullable)
+4. Creates indexes for performance:
+   - `idx_user_onboardingCompleted`
+   - `idx_user_eulaAccepted`
+
+### Requirements
+
+- `DATABASE_URL` environment variable must be set
+- Database connection must be accessible
+- User must have ALTER TABLE permissions
+
+### Notes
+
+- This migration is idempotent (uses `IF NOT EXISTS`)
+- Safe to run multiple times
+- Existing users will have default values (false, false, null)
+
 ## Grant Premium Access to All Users
 
 This script grants premium access to all existing users in the database by creating `ToolSubscription` records with `planId='premium'` and `status='active'`.

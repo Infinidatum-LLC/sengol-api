@@ -25,11 +25,10 @@ async function getOnboardingStatus(request: FastifyRequest, reply: FastifyReply)
     }
 
     // Fetch user onboarding status
-    // Note: eulaAccepted, onboardingCompleted fields may not exist in schema
-    // We'll check what columns exist and handle gracefully
     const result = await query(
       `SELECT 
-        "id", "email", "emailVerified"
+        "id", "email", "emailVerified", 
+        "eulaAccepted", "onboardingCompleted", "onboardingCompletedAt"
        FROM "User"
        WHERE "id" = $1 LIMIT 1`,
       [userId]
@@ -46,43 +45,19 @@ async function getOnboardingStatus(request: FastifyRequest, reply: FastifyReply)
 
     const user = result.rows[0]
 
-    // Try to fetch optional onboarding fields if they exist
-    let eulaAccepted = false
-    let onboardingCompleted = false
-    let onboardingCompletedAt = null
-
-    try {
-      const onboardingResult = await query(
-        `SELECT 
-          COALESCE("eulaAccepted", false) as "eulaAccepted",
-          COALESCE("onboardingCompleted", false) as "onboardingCompleted",
-          "onboardingCompletedAt"
-         FROM "User"
-         WHERE "id" = $1 LIMIT 1`,
-        [userId]
-      )
-      if (onboardingResult.rows.length > 0) {
-        eulaAccepted = onboardingResult.rows[0].eulaAccepted || false
-        onboardingCompleted = onboardingResult.rows[0].onboardingCompleted || false
-        onboardingCompletedAt = onboardingResult.rows[0].onboardingCompletedAt || null
-      }
-    } catch (e) {
-      // Columns don't exist, use defaults
-      request.log.debug('Onboarding fields not found in User table, using defaults')
-    }
-
     // Determine what's required
     const requiresEmailVerification = !user.emailVerified
-    const requiresEulaAcceptance = !eulaAccepted
+    const requiresEulaAcceptance = !(user.eulaAccepted || false)
+    const onboardingCompleted = user.onboardingCompleted || false
 
     request.log.info({ userId }, 'Onboarding status retrieved')
 
     return reply.status(200).send({
       success: true,
       emailVerified: !!user.emailVerified,
-      eulaAccepted,
+      eulaAccepted: user.eulaAccepted || false,
       onboardingCompleted,
-      onboardingCompletedAt,
+      onboardingCompletedAt: user.onboardingCompletedAt || null,
       requiresEmailVerification,
       requiresEulaAcceptance,
     })
@@ -127,7 +102,6 @@ async function completeOnboarding(request: FastifyRequest, reply: FastifyReply) 
     }
 
     // Update user onboarding status
-    // Build update query dynamically based on what columns exist
     const updateFields: string[] = []
     const updateValues: any[] = []
     let paramIndex = 1
@@ -138,50 +112,26 @@ async function completeOnboarding(request: FastifyRequest, reply: FastifyReply) 
       paramIndex++
     }
 
-    // Always update updatedAt
+    if (body.eulaAccepted !== undefined) {
+      updateFields.push(`"eulaAccepted" = $${paramIndex}`)
+      updateValues.push(body.eulaAccepted)
+      paramIndex++
+    }
+
+    // Always mark onboarding as completed when this endpoint is called
+    updateFields.push(`"onboardingCompleted" = true`)
+    updateFields.push(`"onboardingCompletedAt" = NOW()`)
     updateFields.push(`"updatedAt" = NOW()`)
+
     updateValues.push(userId)
 
-    // Try to update optional fields if they exist
-    let updateQuery = `
+    const updateQuery = `
       UPDATE "User"
       SET ${updateFields.join(', ')}
       WHERE "id" = $${paramIndex}
     `
 
     await query(updateQuery, updateValues)
-
-    // Try to update eulaAccepted if column exists
-    if (body.eulaAccepted !== undefined) {
-      try {
-        await query(
-          `UPDATE "User" SET "eulaAccepted" = $1 WHERE "id" = $2`,
-          [body.eulaAccepted, userId]
-        )
-      } catch (e: any) {
-        // Column may not exist, log and continue
-        if (e.message && !e.message.includes('column "eulaAccepted" does not exist')) {
-          throw e // Re-throw if it's a different error
-        }
-        request.log.debug('eulaAccepted column does not exist, skipping update')
-      }
-    }
-
-    // Try to update onboarding fields if columns exist
-    try {
-      await query(
-        `UPDATE "User" 
-         SET "onboardingCompleted" = true, "onboardingCompletedAt" = NOW()
-         WHERE "id" = $1`,
-        [userId]
-      )
-    } catch (e: any) {
-      // Columns may not exist, log and continue
-      if (e.message && !e.message.includes('column "onboardingCompleted" does not exist')) {
-        throw e // Re-throw if it's a different error
-      }
-      request.log.debug('onboardingCompleted columns do not exist, skipping update')
-    }
 
     request.log.info({ userId }, 'Onboarding completed')
 

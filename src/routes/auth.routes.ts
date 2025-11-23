@@ -208,18 +208,29 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
     const hashedPassword = await hashPassword(password)
     const userId = randomUUID()
 
-    // Create user
+    // Create user with onboarding fields
     const createResult = await query(
       `INSERT INTO "User" (
         "id",
         "email",
         "password",
         "name",
+        "eulaAccepted",
+        "onboardingCompleted",
+        "onboardingCompletedAt",
         "createdAt",
         "updatedAt"
-      ) VALUES ($1, $2, $3, $4, NOW(), NOW())
-      RETURNING "id", "email"`,
-      [userId, email.toLowerCase(), hashedPassword, name || null]
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+      RETURNING "id", "email", "eulaAccepted", "onboardingCompleted"`,
+      [
+        userId,
+        email.toLowerCase(),
+        hashedPassword,
+        name || null,
+        false, // eulaAccepted - default to false
+        false, // onboardingCompleted - default to false
+        null,  // onboardingCompletedAt - null until completed
+      ]
     )
 
     if (createResult.rows.length === 0) {
@@ -241,6 +252,8 @@ async function register(request: FastifyRequest, reply: FastifyReply) {
         name: name || '',
         emailVerified: false,
         role: 'user',
+        eulaAccepted: newUser.eulaAccepted || false,
+        onboardingCompleted: newUser.onboardingCompleted || false,
         ...tokens,
       },
     })
@@ -440,7 +453,9 @@ async function getUserProfileById(request: FastifyRequest, reply: FastifyReply) 
 
     // Fetch user profile from database
     const result = await query(
-      `SELECT "id", "email", "name", "emailVerified", "role", "currentGeographyId" FROM "User" WHERE "id" = $1 LIMIT 1`,
+      `SELECT "id", "email", "name", "emailVerified", "role", "currentGeographyId", 
+              "eulaAccepted", "onboardingCompleted", "onboardingCompletedAt" 
+       FROM "User" WHERE "id" = $1 LIMIT 1`,
       [userId]
     )
 
@@ -466,6 +481,9 @@ async function getUserProfileById(request: FastifyRequest, reply: FastifyReply) 
         emailVerified: user.emailVerified || false,
         role: user.role || 'user',
         currentGeographyId: user.currentGeographyId || null,
+        eulaAccepted: user.eulaAccepted || false,
+        onboardingCompleted: user.onboardingCompleted || false,
+        onboardingCompletedAt: user.onboardingCompletedAt || null,
       },
     })
 
