@@ -1278,10 +1278,30 @@ Provide question text and priority weight (0-100) based on the above context.`
   const evidenceWeight = calculateEvidenceWeight(relevantIncidents)
   
   // Industry weight: Higher if industry specified AND matches system context
-  const industryWeight = request.industry ? 0.9 : 0.7
+  // ✅ ENHANCED: Adjust industry weight based on data types (regulated data = higher weight)
+  let industryWeight = request.industry ? 0.9 : 0.7
+  const hasRegulatedData = (request.dataTypes || []).some(dt => 
+    ['PII', 'PHI', 'Financial', 'Health', 'Credit', 'Biometric'].includes(dt)
+  )
+  if (hasRegulatedData) {
+    industryWeight = Math.min(industryWeight + 0.1, 1.0) // Boost for regulated data
+  }
   
-  // ✅ Final weight formula: Base (50%) + Evidence (30%) + Industry (20%)
-  const finalWeight = (baseWeight * 0.5) + (evidenceWeight * 0.3) + (industryWeight * 0.2)
+  // ✅ ADAPTIVE WEIGHTING: Adjust formula based on evidence quality
+  // If evidence is weak (low similarity or no incidents), rely more on LLM analysis
+  let finalWeight: number
+  if (evidenceWeight < 0.4) {
+    // Low evidence: Rely more on LLM (60%) and industry (30%), less on evidence (10%)
+    finalWeight = (baseWeight * 0.6) + (evidenceWeight * 0.1) + (industryWeight * 0.3)
+    console.log(`[WEIGHT_CALC] "${priorityArea.area}": LOW EVIDENCE - Using adaptive weighting (LLM-heavy)`)
+  } else {
+    // Good evidence: Standard formula
+    finalWeight = (baseWeight * 0.5) + (evidenceWeight * 0.3) + (industryWeight * 0.2)
+    console.log(`[WEIGHT_CALC] "${priorityArea.area}": GOOD EVIDENCE - Using standard weighting`)
+  }
+  
+  // Clamp to valid range
+  finalWeight = Math.min(Math.max(finalWeight, 0), 1)
   
   console.log(`[WEIGHT_CALC] "${priorityArea.area}": base=${(baseWeight * 100).toFixed(0)}%, evidence=${(evidenceWeight * 100).toFixed(0)}%, industry=${(industryWeight * 100).toFixed(0)}%, final=${(finalWeight * 100).toFixed(0)}%`)
 
