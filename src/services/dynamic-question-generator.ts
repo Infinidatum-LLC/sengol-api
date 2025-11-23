@@ -14,6 +14,8 @@ import { gemini } from '../lib/multi-llm-client' // Multi-provider LLM with auto
 import { findSimilarIncidents, calculateIncidentStatistics, type IncidentMatch } from './incident-search'
 import { getFromCache, setInCache, CACHE_TTL } from '../lib/redis-cache'
 import { PRE_FILTER_THRESHOLDS, QUESTION_INTENSITY, WEIGHT_FORMULAS, VECTOR_SEARCH_CONFIG, type QuestionIntensity } from '../config/thresholds'
+import { retryWithBackoff } from '../lib/retry'
+import { validateQuestions, filterValidQuestions } from './question-validator'
 import crypto from 'crypto'
 
 // ============================================================================
@@ -717,17 +719,34 @@ export async function generateDynamicQuestions(
     console.log(`✅ Performance target met (< 60s)`)
   }
 
-  // ✅ Calculate per-domain question counts (using FINAL filtered questions)
+  // ✅ NEW: Validate question quality before returning
+  console.log('\n✅ Step 4.7: Validating question quality...')
+  const riskValidation = filterValidQuestions(finalRiskQuestions)
+  const complianceValidation = filterValidQuestions(finalComplianceQuestions)
+  
+  const validatedRiskQuestions = riskValidation.valid
+  const validatedComplianceQuestions = complianceValidation.valid
+  
+  if (riskValidation.invalid.length > 0) {
+    console.warn(`[VALIDATION] Filtered out ${riskValidation.invalid.length} invalid risk questions`)
+  }
+  if (complianceValidation.invalid.length > 0) {
+    console.warn(`[VALIDATION] Filtered out ${complianceValidation.invalid.length} invalid compliance questions`)
+  }
+  
+  console.log(`[VALIDATION] Final validated counts: ${validatedRiskQuestions.length} risk + ${validatedComplianceQuestions.length} compliance`)
+  
+  // ✅ Calculate per-domain question counts (using FINAL validated questions)
   const selectedDomains = request.selectedDomains || ['ai', 'cyber', 'cloud']
   const domainCounts = selectedDomains.reduce((acc, domain) => {
-    acc[`${domain}Questions`] = finalRiskQuestions.filter(q => q.domain === domain).length
+    acc[`${domain}Questions`] = validatedRiskQuestions.filter(q => q.domain === domain).length
     return acc
   }, {} as Record<string, number>)
 
   // Build result object
   const result: QuestionGenerationResult = {
-    riskQuestions: finalRiskQuestions,
-    complianceQuestions: finalComplianceQuestions,
+    riskQuestions: validatedRiskQuestions,
+    complianceQuestions: validatedComplianceQuestions,
     scoringFormula,
     // ✅ REMOVED incidentSummary - moved to /api/review/:id/incident-analysis endpoint
     // This was causing the 30-second delay; now questions generate in 5-10 seconds
@@ -745,14 +764,14 @@ export async function generateDynamicQuestions(
       avgSimilarityScore: 0, // ✅ No similarity scoring in this endpoint
       generationTimeMs,
       // ✅ Add metadata fields for frontend (using FINAL filtered questions)
-      totalRiskQuestions: finalRiskQuestions.length,
-      totalComplianceQuestions: finalComplianceQuestions.length,
+      totalRiskQuestions: validatedRiskQuestions.length,
+      totalComplianceQuestions: validatedComplianceQuestions.length,
       ...domainCounts, // aiQuestions, cyberQuestions, cloudQuestions
-      avgRiskWeight: finalRiskQuestions.length > 0
-        ? finalRiskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / finalRiskQuestions.length
+      avgRiskWeight: validatedRiskQuestions.length > 0
+        ? validatedRiskQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / validatedRiskQuestions.length
         : 0,
-      avgComplianceWeight: finalComplianceQuestions.length > 0
-        ? finalComplianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / finalComplianceQuestions.length
+      avgComplianceWeight: validatedComplianceQuestions.length > 0
+        ? validatedComplianceQuestions.reduce((sum, q) => sum + q.finalWeight, 0) / validatedComplianceQuestions.length
         : 0,
     },
   }
@@ -937,16 +956,27 @@ async function generateRiskQuestions(
     const batchResults = await Promise.all(
       batch.map(async ({ riskArea, domain }) => {
         try {
-          const question = await generateSingleRiskQuestion(
-            riskArea,
-            incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of empty array
-            request,
-            llmAnalysis,
-            domain
+          // ✅ NEW: Use retry with exponential backoff for resilience
+          const question = await retryWithBackoff(
+            () => generateSingleRiskQuestion(
+              riskArea,
+              incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of empty array
+              request,
+              llmAnalysis,
+              domain
+            ),
+            {
+              maxRetries: 2,
+              initialDelay: 1000,
+              onRetry: (attempt, error) => {
+                console.warn(`[RETRY] Question generation attempt ${attempt} failed for "${riskArea.area}":`, error.message)
+              }
+            }
           )
           return question
         } catch (error) {
-          console.error(`[PARALLEL] Failed to generate question for "${riskArea.area}":`, error)
+          console.error(`[PARALLEL] Failed to generate question for "${riskArea.area}" after retries:`, error)
+          // Return null to allow partial results
           return null
         }
       })
@@ -1558,15 +1588,26 @@ async function generateComplianceQuestions(
   const generatedQuestions = await Promise.all(
     Array.from(complianceAreas).map(async (complianceArea) => {
       try {
-        const question = await generateSingleComplianceQuestion(
-          complianceArea,
-          incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of per-question vector searches
-          request,
-          llmAnalysis
+        // ✅ NEW: Use retry with exponential backoff for resilience
+        const question = await retryWithBackoff(
+          () => generateSingleComplianceQuestion(
+            complianceArea,
+            incidents, // ✅ OPTIMIZED: Pass preloaded incidents instead of per-question vector searches
+            request,
+            llmAnalysis
+          ),
+          {
+            maxRetries: 2,
+            initialDelay: 1000,
+            onRetry: (attempt, error) => {
+              console.warn(`[RETRY] Compliance question generation attempt ${attempt} failed for "${complianceArea}":`, error.message)
+            }
+          }
         )
         return question
       } catch (error) {
-        console.error(`[PARALLEL] Failed to generate compliance question for "${complianceArea}":`, error)
+        console.error(`[PARALLEL] Failed to generate compliance question for "${complianceArea}" after retries:`, error)
+        // Return null to allow partial results
         return null
       }
     })

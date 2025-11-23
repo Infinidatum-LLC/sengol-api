@@ -8,7 +8,7 @@
  */
 
 import { config } from '../config/env'
-import { withRetry, withTimeout } from './retry'
+import { retryWithBackoff } from './retry'
 import { LLMError } from './errors'
 import { llmResponseCache, generateCacheKey } from './cache'
 
