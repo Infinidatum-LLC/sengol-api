@@ -424,8 +424,13 @@ export async function incidentAnalysisController(
     }
 
     // Auth check - verify user owns this assessment
-    const userId = getUserId(request)
+    // Get userId from header (x-user-id) or from JWT if available
+    const userId = (request.headers['x-user-id'] as string) || getUserId(request)
     if (!userId) {
+      request.log.warn({
+        hasXUserId: !!request.headers['x-user-id'],
+        hasJwtUserId: !!getUserId(request)
+      }, 'Missing userId in incident analysis request')
       return reply.code(401).send({ 
         success: false,
         error: 'Authentication required',
