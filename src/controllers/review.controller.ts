@@ -238,9 +238,34 @@ export async function generateQuestionsController(
         assessmentId: id,
         systemDescriptionLength: systemDescription.length,
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
-        errorStack: error instanceof Error ? error.stack : undefined
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorName: error instanceof Error ? error.name : 'UnknownError'
       }, 'Question generation failed')
-      throw error
+      
+      // Return a user-friendly error response instead of throwing
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const isOpenAIError = errorMessage.includes('OpenAI') || errorMessage.includes('API key') || errorMessage.includes('OPENAI_API_KEY')
+      
+      if (isOpenAIError) {
+        return reply.code(500).send({
+          success: false,
+          error: 'LLM service unavailable',
+          message: 'The AI question generation service is temporarily unavailable. Please check your OpenAI API key configuration or try again later.',
+          code: 'LLM_SERVICE_ERROR',
+          statusCode: 500,
+          details: errorMessage
+        })
+      }
+      
+      // For other errors, return a generic error
+      return reply.code(500).send({
+        success: false,
+        error: 'Failed to generate questions',
+        message: errorMessage,
+        code: 'QUESTION_GENERATION_ERROR',
+        statusCode: 500,
+        details: error instanceof Error ? error.stack : undefined
+      })
     }
 
     // Build response based on whether incidents were included
