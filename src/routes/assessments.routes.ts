@@ -623,6 +623,13 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
     const step = (request.url.match(/step(\d+)/) || [])[1] || '1'
     const userId = request.headers['x-user-id'] as string
 
+    request.log.info({
+      assessmentId: id,
+      step,
+      hasUserId: !!userId,
+      requestBodyKeys: Object.keys(request.body as Record<string, any> || {})
+    }, 'Save assessment step request received')
+
     if (!userId) {
       return reply.status(401).send({
         success: false,
@@ -633,6 +640,20 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
     }
 
     const body = request.body as Record<string, any>
+    
+    if (step === '1') {
+      request.log.info({
+        assessmentId: id,
+        step,
+        hasSystemDescription: !!body.systemDescription,
+        systemDescriptionLength: body.systemDescription?.length || 0,
+        hasIndustry: !!body.industry,
+        hasSystemCriticality: !!body.systemCriticality,
+        hasDataTypes: !!body.dataTypes,
+        hasDataSources: !!body.dataSources,
+        hasTechnologyStack: !!body.technologyStack
+      }, 'Step1 save request body details')
+    }
 
     // Verify assessment exists
     const checkResult = await query(
