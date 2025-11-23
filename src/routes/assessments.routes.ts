@@ -738,20 +738,6 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
           updateValues
         )
       }
-    } else {
-      // For other steps, just save to riskNotes
-      const currentNotes = assessment.riskNotes || {}
-      const updatedNotes = {
-        ...currentNotes,
-        [`step${step}`]: body,
-      }
-
-      await query(
-        `UPDATE "RiskAssessment" 
-         SET "riskNotes" = $1::jsonb, "updatedAt" = NOW()
-         WHERE "id" = $2`,
-        [JSON.stringify(updatedNotes), id]
-      )
     } else if (step === '3') {
       // For step3, save compliance data to actual database columns
       const updateFields: string[] = []
