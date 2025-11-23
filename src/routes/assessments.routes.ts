@@ -47,11 +47,15 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
 
     // Fetch assessment from database
     // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
+    // ✅ FIX: Added all Step 2 and Step 3 fields for complete data loading
     const result = await query(
       `SELECT "id", "userId", "projectId", "riskScore", "complianceScore",
               "sengolScore", "riskNotes", "systemDescription", "industry", 
               "systemCriticality", "dataTypes", "dataSources", "technologyStack",
-              "selectedDomains", "jurisdictions", "createdAt", "updatedAt"
+              "selectedDomains", "jurisdictions", "riskQuestionResponses",
+              "userRiskScores", "additionalRiskElements", "complianceQuestionResponses",
+              "complianceUserScores", "complianceNotes", "complianceCoverageScore",
+              "complianceCoverageDetails", "regulationIds", "createdAt", "updatedAt"
        FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
       [id]
     )
@@ -97,6 +101,17 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         technologyStack: assessment.technologyStack || [],
         selectedDomains: assessment.selectedDomains || [],
         jurisdictions: assessment.jurisdictions || [],
+        // ✅ FIX: Added Step 2 fields for complete data loading
+        riskQuestionResponses: assessment.riskQuestionResponses || {},
+        userRiskScores: assessment.userRiskScores || {},
+        additionalRiskElements: assessment.additionalRiskElements || [],
+        // ✅ FIX: Added Step 3 fields for complete data loading
+        complianceQuestionResponses: assessment.complianceQuestionResponses || {},
+        complianceUserScores: assessment.complianceUserScores || {},
+        complianceNotes: assessment.complianceNotes || {},
+        complianceCoverageScore: assessment.complianceCoverageScore || null,
+        complianceCoverageDetails: assessment.complianceCoverageDetails || null,
+        regulationIds: assessment.regulationIds || [],
         createdAt: assessment.createdAt,
         updatedAt: assessment.updatedAt,
       },
@@ -380,10 +395,12 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Verify assessment exists and belongs to user
+    // Verify assessment exists and belongs to user, and load all data for score calculation
     const checkResult = await query(
-      // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
-      `SELECT "id", "userId" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      // ✅ FIX: Load all necessary data for score calculation
+      `SELECT "id", "userId", "riskQuestionResponses", "complianceQuestionResponses",
+              "riskScore", "complianceScore", "sengolScore", "riskNotes"
+       FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
       [id]
     )
 
@@ -406,21 +423,89 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Update assessment status to completed
+    // ✅ FIX: Calculate scores before submitting
+    let riskScore = assessment.riskScore
+    let complianceScore = assessment.complianceScore
+    let sengolScore = assessment.sengolScore
+
+    try {
+      const { 
+        calculateRiskScoreFromResponses, 
+        calculateComplianceScoreFromResponses, 
+        calculateSengolScore,
+        calculateLetterGrade 
+      } = await import('../services/score-calculator')
+
+      // Calculate risk score from Step 2 responses
+      const riskResponses = assessment.riskQuestionResponses || {}
+      if (typeof riskResponses === 'string') {
+        try {
+          const parsed = JSON.parse(riskResponses)
+          riskScore = calculateRiskScoreFromResponses(parsed)
+        } catch (e) {
+          request.log.warn({ assessmentId: id, error: e }, 'Failed to parse riskQuestionResponses')
+        }
+      } else if (riskResponses && typeof riskResponses === 'object') {
+        riskScore = calculateRiskScoreFromResponses(riskResponses)
+      }
+
+      // Calculate compliance score from Step 3 responses
+      const complianceResponses = assessment.complianceQuestionResponses || {}
+      if (typeof complianceResponses === 'string') {
+        try {
+          const parsed = JSON.parse(complianceResponses)
+          complianceScore = calculateComplianceScoreFromResponses(parsed)
+        } catch (e) {
+          request.log.warn({ assessmentId: id, error: e }, 'Failed to parse complianceQuestionResponses')
+        }
+      } else if (complianceResponses && typeof complianceResponses === 'object') {
+        complianceScore = calculateComplianceScoreFromResponses(complianceResponses)
+      }
+
+      // Calculate Sengol score (weighted combination)
+      if (riskScore !== null && complianceScore !== null) {
+        sengolScore = calculateSengolScore(riskScore, complianceScore)
+      }
+
+      request.log.info({ 
+        assessmentId: id, 
+        riskScore, 
+        complianceScore, 
+        sengolScore 
+      }, 'Scores calculated for submission')
+    } catch (scoreError) {
+      request.log.error({ err: scoreError, assessmentId: id }, 'Failed to calculate scores, using existing values')
+      // Continue with existing scores if calculation fails
+    }
+
+    // Calculate letter grade
+    const letterGrade = sengolScore !== null && sengolScore !== undefined
+      ? (sengolScore >= 90 ? 'A' : sengolScore >= 80 ? 'B' : sengolScore >= 70 ? 'C' : sengolScore >= 60 ? 'D' : 'F')
+      : null
+
+    // Update assessment with scores and completion status
+    // ✅ FIX: Removed status column update - it doesn't exist
     await query(
       `UPDATE "RiskAssessment" 
-       SET "status" = 'completed', "updatedAt" = NOW()
-       WHERE "id" = $1`,
-      [id]
+       SET "riskScore" = $1, 
+           "complianceScore" = $2, 
+           "sengolScore" = $3,
+           "letterGrade" = $4,
+           "updatedAt" = NOW()
+       WHERE "id" = $5`,
+      [riskScore, complianceScore, sengolScore, letterGrade, id]
     )
 
-    request.log.info({ assessmentId: id, userId }, 'Assessment submitted')
+    request.log.info({ assessmentId: id, userId, riskScore, complianceScore, sengolScore, letterGrade }, 'Assessment submitted with scores')
 
     return reply.status(200).send({
       success: true,
       data: {
         id,
-        status: 'completed',
+        riskScore,
+        complianceScore,
+        sengolScore,
+        letterGrade,
         message: 'Assessment submitted successfully',
       },
     })
@@ -859,6 +944,127 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
           statusCode: 400,
         })
       }
+    } else if (step === '2') {
+      // For step2, save risk assessment data to actual database columns
+      const updateFields: string[] = []
+      const updateValues: any[] = []
+      let paramIndex = 1
+
+      // Save selectedDomains array
+      if (body.selectedDomains !== undefined) {
+        updateFields.push(`"selectedDomains" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.selectedDomains) ? body.selectedDomains : [])
+        paramIndex++
+      }
+
+      // Save riskQuestionResponses (from riskQuestionResponses or riskResponses)
+      const riskResponses = body.riskQuestionResponses || body.riskResponses
+      if (riskResponses !== undefined) {
+        updateFields.push(`"riskQuestionResponses" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(riskResponses))
+        paramIndex++
+      }
+
+      // Save userRiskScores if provided
+      if (body.userRiskScores !== undefined) {
+        updateFields.push(`"userRiskScores" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(body.userRiskScores))
+        paramIndex++
+      }
+
+      // Save riskNotes if provided
+      if (body.riskNotes !== undefined) {
+        updateFields.push(`"riskNotes" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(body.riskNotes))
+        paramIndex++
+      }
+
+      // Save additionalRiskElements if provided
+      if (body.additionalRiskElements !== undefined) {
+        updateFields.push(`"additionalRiskElements" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(body.additionalRiskElements))
+        paramIndex++
+      }
+
+      // Also save to riskNotes for backward compatibility
+      const currentNotes = assessment.riskNotes || {}
+      const updatedNotes = {
+        ...currentNotes,
+        step2: {
+          ...body,
+          savedAt: new Date().toISOString(),
+        },
+      }
+
+      // Only update riskNotes if we haven't already updated it above
+      if (body.riskNotes === undefined) {
+        updateFields.push(`"riskNotes" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(updatedNotes))
+        paramIndex++
+      }
+
+      // Always update updatedAt
+      updateFields.push(`"updatedAt" = NOW()`)
+
+      if (updateFields.length > 0) {
+        // Add id to the end of updateValues for WHERE clause
+        updateValues.push(id)
+        // Use the length of updateValues as the parameter index for WHERE clause
+        const whereParamIndex = updateValues.length
+        
+        request.log.info({
+          assessmentId: id,
+          updateFieldsCount: updateFields.length,
+          hasRiskResponses: !!riskResponses,
+          riskResponseCount: riskResponses ? Object.keys(riskResponses).length : 0,
+        }, 'Executing UPDATE query for step2')
+        
+        await query(
+          `UPDATE "RiskAssessment" 
+           SET ${updateFields.join(', ')}
+           WHERE "id" = $${whereParamIndex}`,
+          updateValues
+        )
+        
+        // Fetch the updated assessment to return saved data
+        const updatedResult = await query(
+          `SELECT "id", "userId", "projectId", "systemDescription", "industry", 
+                  "systemCriticality", "dataTypes", "dataSources", "technologyStack",
+                  "selectedDomains", "jurisdictions", "riskQuestionResponses",
+                  "userRiskScores", "riskNotes", "additionalRiskElements",
+                  "createdAt", "updatedAt"
+           FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+          [id]
+        )
+        
+        if (updatedResult.rows.length > 0) {
+          const updatedAssessment = updatedResult.rows[0]
+          request.log.info({ 
+            assessmentId: id, 
+            hasRiskResponses: !!updatedAssessment.riskQuestionResponses,
+            riskResponseCount: updatedAssessment.riskQuestionResponses ? Object.keys(updatedAssessment.riskQuestionResponses).length : 0
+          }, 'Step2 data saved successfully')
+          
+          return reply.status(200).send({
+            success: true,
+            data: {
+              id: updatedAssessment.id,
+              userId: updatedAssessment.userId,
+              projectId: updatedAssessment.projectId || null,
+              systemDescription: updatedAssessment.systemDescription || null,
+              industry: updatedAssessment.industry || null,
+              systemCriticality: updatedAssessment.systemCriticality || null,
+              selectedDomains: updatedAssessment.selectedDomains || [],
+              riskQuestionResponses: updatedAssessment.riskQuestionResponses || {},
+              userRiskScores: updatedAssessment.userRiskScores || {},
+              riskNotes: updatedAssessment.riskNotes || {},
+              additionalRiskElements: updatedAssessment.additionalRiskElements || [],
+              createdAt: updatedAssessment.createdAt,
+              updatedAt: updatedAssessment.updatedAt,
+            },
+          })
+        }
+      }
     } else if (step === '3') {
       // For step3, save compliance data to actual database columns
       const updateFields: string[] = []
@@ -996,19 +1202,17 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
       }
     }
 
-    // For step2, return success message (step1 and step3 already return data above)
-    if (step !== '1' && step !== '3') {
-      request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
-      
-      return reply.status(200).send({
-        success: true,
-        data: {
-          id,
-          step: parseInt(step, 10),
-          message: `Step ${step} saved successfully`,
-        },
-      })
-    }
+    // If we reach here, step was not 1, 2, or 3 - return generic success
+    request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
+    
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id,
+        step: parseInt(step, 10),
+        message: `Step ${step} saved successfully`,
+      },
+    })
   } catch (error) {
     request.log.error({ err: error }, 'Save assessment step error')
     return reply.status(500).send({
