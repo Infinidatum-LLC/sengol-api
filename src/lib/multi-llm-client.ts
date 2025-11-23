@@ -382,6 +382,7 @@ export function getProviderStatus(): Record<LLMProvider, { enabled: boolean; pri
 
 /**
  * Gemini-compatible interface for backward compatibility
+ * Returns response with provider information for logging
  */
 export const gemini = {
   chat: {
@@ -395,8 +396,8 @@ export const gemini = {
           responseFormat: options.response_format || options.responseFormat,
         })
 
-        // Return in OpenAI-compatible format
-        return {
+        // Return in OpenAI-compatible format with provider info
+        const result = {
           choices: [
             {
               message: {
@@ -411,7 +412,12 @@ export const gemini = {
             completion_tokens: 0,
             total_tokens: 0,
           },
+          // Add provider info for logging/debugging
+          provider: response.provider,
+          model: response.model,
         }
+        
+        return result
       },
     },
   },

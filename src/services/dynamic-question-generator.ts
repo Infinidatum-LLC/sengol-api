@@ -786,7 +786,7 @@ Return JSON:
 }`
 
   try {
-    console.log('[LLM] Calling OpenAI API for system analysis...')
+    console.log('[LLM] Calling multi-provider LLM for system analysis...')
     const response = await gemini.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       responseFormat: { type: 'json_object' },
@@ -794,6 +794,9 @@ Return JSON:
     })
 
     const analysis = JSON.parse(response.choices[0].message.content || '{}')
+    const providerUsed = (response as any).provider || 'unknown'
+    console.log(`[LLM] ✅ System analysis completed using ${providerUsed.toUpperCase()} provider`)
+    console.log(`[LLM] Analysis results: ${Object.keys(analysis).length} fields, ${analysis.recommendedPriorities?.length || 0} priority areas`)
     return analysis as LLMAnalysis
   } catch (error) {
     console.error('LLM analysis failed:', error)
@@ -1152,9 +1155,18 @@ Provide question text and priority weight (0-100) based on the above context.`
     // ✅ Strip any "Based on X incidents" prefix that LLM might include despite instructions
     questionText = stripIncidentPrefix(questionText)
 
-    console.log(`[LLM_QUESTION] Generated: "${questionText.substring(0, 80)}..." (Priority: ${llmPriority})`)
+    // Log which provider was used (if available in response)
+    const providerUsed = (completion as any).provider || 'unknown'
+    console.log(`[LLM_QUESTION] Generated: "${questionText.substring(0, 80)}..." (Priority: ${llmPriority}, Provider: ${providerUsed})`)
   } catch (error) {
     console.error(`[LLM_QUESTION] Failed to generate question for ${priorityArea.area}:`, error)
+    // Log error details for debugging fallback
+    if (error instanceof Error) {
+      console.error(`[LLM_QUESTION] Error details: ${error.message}`)
+      if (error.message.includes('All LLM providers failed')) {
+        console.error(`[LLM_QUESTION] ⚠️  All LLM providers failed - check API keys`)
+      }
+    }
     // Use fallback question generation
     const tech = (request.techStack || [])[0] || 'your system'
     const data = (request.dataTypes || [])[0] || 'data'
