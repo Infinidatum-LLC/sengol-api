@@ -396,10 +396,10 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
     }
 
     // Verify assessment exists and belongs to user, and load all data for score calculation
-    // ✅ FIX: Only select columns that exist - check for both riskScore and overallRiskScore
+    // ✅ CRITICAL: Load questions from riskNotes for weighted scoring
     const checkResult = await query(
       `SELECT "id", "userId", "riskQuestionResponses", "complianceQuestionResponses",
-              "riskNotes"
+              "riskNotes", "complianceNotes"
        FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
       [id]
     )
@@ -423,8 +423,8 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // ✅ FIX: Calculate scores before submitting
-    // Initialize scores as null - will be calculated from responses
+    // ✅ CRITICAL FIX: Calculate WEIGHTED scores using questions + responses
+    // Initialize scores as null - will be calculated from responses WITH question weights
     let riskScore: number | null = null
     let complianceScore: number | null = null
     let sengolScore: number | null = null
@@ -443,7 +443,28 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
         }
       }
 
-      // Calculate risk score from Step 2 responses
+      // ✅ CRITICAL: Load questions from riskNotes for weighted scoring
+      const riskNotes = assessment.riskNotes || {}
+      let parsedRiskNotes: any = {}
+      
+      if (typeof riskNotes === 'string') {
+        try {
+          parsedRiskNotes = JSON.parse(riskNotes)
+        } catch (e) {
+          request.log.warn({ assessmentId: id, error: e }, 'Failed to parse riskNotes')
+        }
+      } else if (riskNotes && typeof riskNotes === 'object') {
+        parsedRiskNotes = riskNotes
+      }
+
+      const riskQuestions = parsedRiskNotes.generatedQuestions || []
+      request.log.info({ 
+        assessmentId: id,
+        riskQuestionCount: riskQuestions.length,
+        hasQuestions: riskQuestions.length > 0
+      }, 'Loaded risk questions for weighted scoring')
+
+      // Calculate risk score from Step 2 responses WITH question weights
       const riskResponses = assessment.riskQuestionResponses || {}
       let parsedRiskResponses: Record<string, any> = {}
       
@@ -457,27 +478,88 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
         parsedRiskResponses = riskResponses
       }
 
-      // Calculate average risk score from responses
-      const riskScores: number[] = []
-      for (const [questionId, response] of Object.entries(parsedRiskResponses)) {
-        if (!response) continue
-        
-        // Use userRiskScores if available, otherwise calculate from status
-        if (response.riskScore !== undefined && response.riskScore !== null) {
-          riskScores.push(response.riskScore)
-        } else if (response.status) {
-          const score = statusToRiskScore(response.status)
-          if (score !== null) {
-            riskScores.push(score)
+      // ✅ WEIGHTED SCORING: Use question weights if available
+      if (riskQuestions.length > 0) {
+        let totalWeight = 0
+        let weightedSum = 0
+
+        for (const question of riskQuestions) {
+          const questionId = question.id
+          const response = parsedRiskResponses[questionId]
+          if (!response || !response.status) continue
+
+          // Get question weight (normalize to 0-1 scale)
+          const rawWeight = question.weight || question.finalWeight || 0.5
+          const questionWeight = rawWeight > 1 ? Math.min(rawWeight / 10, 1.0) : Math.min(rawWeight, 1.0)
+
+          // Get response score
+          let responseScore: number | null = null
+          if (response.riskScore !== undefined && response.riskScore !== null) {
+            responseScore = response.riskScore
+          } else if (response.status) {
+            responseScore = statusToRiskScore(response.status)
+          }
+
+          if (responseScore !== null) {
+            weightedSum += responseScore * questionWeight
+            totalWeight += questionWeight
           }
         }
-      }
-      
-      if (riskScores.length > 0) {
-        riskScore = Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
+
+        if (totalWeight > 0) {
+          riskScore = Math.round(weightedSum / totalWeight)
+          request.log.info({ 
+            assessmentId: id,
+            riskScore,
+            totalWeight,
+            weightedSum,
+            questionsUsed: riskQuestions.filter((q: any) => parsedRiskResponses[q.id]?.status).length
+          }, 'Risk score calculated using weighted formula')
+        }
+      } else {
+        // Fallback: Simple average if no questions available
+        request.log.warn({ assessmentId: id }, 'No questions available for weighted scoring, using simple average')
+        const riskScores: number[] = []
+        for (const [questionId, response] of Object.entries(parsedRiskResponses)) {
+          if (!response) continue
+          
+          if (response.riskScore !== undefined && response.riskScore !== null) {
+            riskScores.push(response.riskScore)
+          } else if (response.status) {
+            const score = statusToRiskScore(response.status)
+            if (score !== null) {
+              riskScores.push(score)
+            }
+          }
+        }
+        
+        if (riskScores.length > 0) {
+          riskScore = Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
+        }
       }
 
-      // Calculate compliance score from Step 3 responses
+      // ✅ WEIGHTED SCORING: Calculate compliance score with question weights
+      const complianceNotes = assessment.complianceNotes || {}
+      let parsedComplianceNotes: any = {}
+      
+      if (typeof complianceNotes === 'string') {
+        try {
+          parsedComplianceNotes = JSON.parse(complianceNotes)
+        } catch (e) {
+          request.log.warn({ assessmentId: id, error: e }, 'Failed to parse complianceNotes')
+        }
+      } else if (complianceNotes && typeof complianceNotes === 'object') {
+        parsedComplianceNotes = complianceNotes
+      }
+
+      const complianceQuestions = parsedComplianceNotes.generatedQuestions || []
+      request.log.info({ 
+        assessmentId: id,
+        complianceQuestionCount: complianceQuestions.length,
+        hasQuestions: complianceQuestions.length > 0
+      }, 'Loaded compliance questions for weighted scoring')
+
+      // Calculate compliance score from Step 3 responses WITH question weights
       const complianceResponses = assessment.complianceQuestionResponses || {}
       let parsedComplianceResponses: Record<string, any> = {}
       
@@ -491,25 +573,67 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
         parsedComplianceResponses = complianceResponses
       }
 
-      // Calculate average compliance score from responses (inverted: higher status = better compliance)
-      const complianceScores: number[] = []
-      for (const [questionId, response] of Object.entries(parsedComplianceResponses)) {
-        if (!response) continue
-        
-        // Use userScores if available, otherwise calculate from status
-        if (response.userScore !== undefined && response.userScore !== null) {
-          complianceScores.push(response.userScore)
-        } else if (response.status) {
-          // For compliance, invert the risk score (addressed = 100, not_addressed = 0)
-          const riskScore = statusToRiskScore(response.status)
-          if (riskScore !== null) {
-            complianceScores.push(100 - riskScore) // Invert: 20 -> 80, 50 -> 50, 80 -> 20
+      // ✅ WEIGHTED SCORING: Use question weights if available
+      if (complianceQuestions.length > 0) {
+        let totalWeight = 0
+        let weightedSum = 0
+
+        for (const question of complianceQuestions) {
+          const questionId = question.id
+          const response = parsedComplianceResponses[questionId]
+          if (!response || !response.status) continue
+
+          // Get question weight (normalize to 0-1 scale)
+          const rawWeight = question.weight || question.finalWeight || 0.5
+          const questionWeight = rawWeight > 1 ? Math.min(rawWeight / 10, 1.0) : Math.min(rawWeight, 1.0)
+
+          // Get response score (inverted for compliance: addressed = 100, not_addressed = 0)
+          let responseScore: number | null = null
+          if (response.userScore !== undefined && response.userScore !== null) {
+            responseScore = response.userScore
+          } else if (response.status) {
+            const riskScoreValue = statusToRiskScore(response.status)
+            if (riskScoreValue !== null) {
+              responseScore = 100 - riskScoreValue // Invert: 20 -> 80, 50 -> 50, 80 -> 20
+            }
+          }
+
+          if (responseScore !== null) {
+            weightedSum += responseScore * questionWeight
+            totalWeight += questionWeight
           }
         }
-      }
-      
-      if (complianceScores.length > 0) {
-        complianceScore = Math.round(complianceScores.reduce((a, b) => a + b, 0) / complianceScores.length)
+
+        if (totalWeight > 0) {
+          complianceScore = Math.round(weightedSum / totalWeight)
+          request.log.info({ 
+            assessmentId: id,
+            complianceScore,
+            totalWeight,
+            weightedSum,
+            questionsUsed: complianceQuestions.filter((q: any) => parsedComplianceResponses[q.id]?.status).length
+          }, 'Compliance score calculated using weighted formula')
+        }
+      } else {
+        // Fallback: Simple average if no questions available
+        request.log.warn({ assessmentId: id }, 'No compliance questions available for weighted scoring, using simple average')
+        const complianceScores: number[] = []
+        for (const [questionId, response] of Object.entries(parsedComplianceResponses)) {
+          if (!response) continue
+          
+          if (response.userScore !== undefined && response.userScore !== null) {
+            complianceScores.push(response.userScore)
+          } else if (response.status) {
+            const riskScoreValue = statusToRiskScore(response.status)
+            if (riskScoreValue !== null) {
+              complianceScores.push(100 - riskScoreValue)
+            }
+          }
+        }
+        
+        if (complianceScores.length > 0) {
+          complianceScore = Math.round(complianceScores.reduce((a, b) => a + b, 0) / complianceScores.length)
+        }
       }
 
       // Calculate Sengol score (weighted combination: 60% risk health, 40% compliance)
@@ -526,10 +650,18 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
         complianceScore, 
         sengolScore,
         riskResponseCount: Object.keys(parsedRiskResponses).length,
-        complianceResponseCount: Object.keys(parsedComplianceResponses).length
-      }, 'Scores calculated for submission')
+        complianceResponseCount: Object.keys(parsedComplianceResponses).length,
+        riskQuestionCount: riskQuestions.length,
+        complianceQuestionCount: complianceQuestions.length,
+        usingWeightedScoring: riskQuestions.length > 0 || complianceQuestions.length > 0
+      }, 'Scores calculated for submission (weighted if questions available)')
     } catch (scoreError) {
-      request.log.error({ err: scoreError, assessmentId: id }, 'Failed to calculate scores, using existing values')
+      request.log.error({ 
+        err: scoreError, 
+        assessmentId: id,
+        errorMessage: scoreError instanceof Error ? scoreError.message : 'Unknown error',
+        errorStack: scoreError instanceof Error ? scoreError.stack : undefined
+      }, 'Failed to calculate scores, using existing values')
       // Continue with existing scores if calculation fails
     }
 
