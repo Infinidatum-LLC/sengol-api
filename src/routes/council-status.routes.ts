@@ -6,15 +6,22 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { AuthenticationError } from '../lib/errors'
+import {
+  AuthenticatedRequest,
+  GeographyRequest,
+  getUserId,
+  getGeographyAccountId,
+} from '../types/request'
+import {
+  sendSuccess,
+  sendUnauthorized,
+  sendInternalError,
+} from '../lib/response-helpers'
 
 async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
 
     const [policiesCount, vendorsCount, schedulesCount, violationsCount] = await Promise.all([
       query(
@@ -51,8 +58,9 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
         [userId]
       )
       hasAccess = accessResult.rows.length > 0
-    } catch (e: any) {
-      if (e.message && e.message.includes('does not exist')) {
+    } catch (e: unknown) {
+      const error = e as Error
+      if (error.message && error.message.includes('does not exist')) {
         request.log.debug('ProductAccess table does not exist')
       } else {
         throw e
@@ -81,27 +89,15 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
       },
     }
 
-    return reply.status(200).send({
-      success: true,
-      data: status,
-    })
+    sendSuccess(reply, status)
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
     }
 
     request.log.error({ err: error }, 'Get council status error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to retrieve council status',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to retrieve council status', error)
   }
 }
 
@@ -110,4 +106,3 @@ export async function councilStatusRoutes(fastify: FastifyInstance) {
 
   fastify.log.info('Council status routes registered')
 }
-

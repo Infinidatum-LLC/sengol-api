@@ -7,31 +7,64 @@ import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 import { randomUUID } from 'crypto'
+import {
+  AuthenticatedRequest,
+  GeographyRequest,
+  getUserId,
+  getGeographyAccountId,
+  parsePagination,
+  PaginationQuery,
+} from '../types/request'
+import {
+  validateRequiredString,
+  validateOptionalString,
+  validateEnum,
+} from '../lib/validation'
+import {
+  sendSuccess,
+  sendPaginated,
+  sendNotFound,
+  sendUnauthorized,
+  sendValidationError,
+  sendInternalError,
+  sendSuccessMessage,
+} from '../lib/response-helpers'
+
+/**
+ * Schedule status enum
+ */
+const SCHEDULE_STATUSES = ['ACTIVE', 'PAUSED', 'COMPLETED'] as const
+type ScheduleStatus = typeof SCHEDULE_STATUSES[number]
+
+/**
+ * Schedule frequency enum
+ */
+const SCHEDULE_FREQUENCIES = ['DAILY', 'WEEKLY', 'MONTHLY', 'QUARTERLY'] as const
+type ScheduleFrequency = typeof SCHEDULE_FREQUENCIES[number]
+
+/**
+ * Schedule creation/update body
+ */
+interface ScheduleBody {
+  name?: string
+  description?: string
+  frequency?: string
+  status?: string
+}
 
 async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const queryParams = request.query as {
-      page?: string
-      limit?: string
-      status?: string
-    }
-
-    const page = parseInt(queryParams.page || '1', 10)
-    const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
-    const offset = (page - 1) * limit
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const queryParams = request.query as PaginationQuery & { status?: string }
+    const { page, limit, offset } = parsePagination(queryParams)
 
     const conditions: string[] = [`"geographyAccountId" = $1`]
-    const params: any[] = [geographyAccountId]
+    const params: (string | number | boolean | null)[] = [geographyAccountId]
     let paramIndex = 2
 
     if (queryParams.status) {
+      validateEnum(queryParams.status, 'status', SCHEDULE_STATUSES)
       conditions.push(`"status" = $${paramIndex}`)
       params.push(queryParams.status)
       paramIndex++
@@ -56,64 +89,52 @@ async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
       params
     )
 
-    const schedules = schedulesResult.rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description || '',
-      frequency: row.frequency || null,
-      status: row.status || 'ACTIVE',
-      nextRunAt: row.nextRunAt || null,
-      lastRunAt: row.lastRunAt || null,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+    const schedules = schedulesResult.rows.map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      description: (row.description as string) || '',
+      frequency: (row.frequency as ScheduleFrequency) || null,
+      status: (row.status as ScheduleStatus) || 'ACTIVE',
+      nextRunAt: (row.nextRunAt as Date) || null,
+      lastRunAt: (row.lastRunAt as Date) || null,
+      createdAt: row.createdAt as Date,
+      updatedAt: row.updatedAt as Date,
     }))
 
-    return reply.status(200).send({
-      success: true,
-      schedules,
-      total,
-      page,
-      limit,
-    })
+    sendPaginated(reply, schedules, total, page, limit, 'schedules')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'List schedules error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to list schedules',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to list schedules', error)
   }
 }
 
 async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const body = request.body as ScheduleBody
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      name?: string
-      description?: string
-      frequency?: string
-      status?: string
-    }
-
-    if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
-      throw new ValidationError('Schedule name is required', 'INVALID_INPUT')
-    }
+    const name = validateRequiredString(body.name, 'Schedule name', 1, 255)
+    const description = validateOptionalString(body.description, 'Description')
+    const frequency = body.frequency
+      ? (validateEnum(body.frequency, 'frequency', SCHEDULE_FREQUENCIES) as ScheduleFrequency)
+      : null
+    const status = validateEnum(
+      body.status,
+      'status',
+      SCHEDULE_STATUSES,
+      'ACTIVE'
+    ) as ScheduleStatus
 
     const scheduleId = randomUUID()
     const now = new Date()
@@ -126,56 +147,51 @@ async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
       [
         scheduleId,
         geographyAccountId,
-        body.name.trim(),
-        body.description || null,
-        body.frequency || null,
-        body.status || 'ACTIVE',
+        name,
+        description,
+        frequency,
+        status,
         now.toISOString(),
         now.toISOString(),
       ]
     )
 
-    return reply.status(201).send({
-      success: true,
-      data: {
+    sendSuccess(
+      reply,
+      {
         id: scheduleId,
-        name: body.name.trim(),
-        description: body.description || null,
-        frequency: body.frequency || null,
-        status: body.status || 'ACTIVE',
+        name,
+        description,
+        frequency,
+        status,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       },
-    })
+      201
+    )
   } catch (error) {
-    if (error instanceof AuthenticationError || error instanceof ValidationError) {
-      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: error instanceof AuthenticationError ? 401 : 400,
-      })
+    if (error instanceof AuthenticationError) {
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Create schedule error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to create schedule',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to create schedule', error)
   }
 }
 
 async function getSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Schedule ID')
 
     const result = await query(
       `SELECT "id", "name", "description", "frequency", "status", 
@@ -187,66 +203,47 @@ async function getSchedule(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (result.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Schedule not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Schedule')
+      return
     }
 
     const schedule = result.rows[0]
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: schedule.id,
-        name: schedule.name,
-        description: schedule.description || '',
-        frequency: schedule.frequency || null,
-        status: schedule.status || 'ACTIVE',
-        nextRunAt: schedule.nextRunAt || null,
-        lastRunAt: schedule.lastRunAt || null,
-        createdAt: schedule.createdAt,
-        updatedAt: schedule.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: schedule.id as string,
+      name: schedule.name as string,
+      description: (schedule.description as string) || '',
+      frequency: (schedule.frequency as ScheduleFrequency) || null,
+      status: (schedule.status as ScheduleStatus) || 'ACTIVE',
+      nextRunAt: (schedule.nextRunAt as Date) || null,
+      lastRunAt: (schedule.lastRunAt as Date) || null,
+      createdAt: schedule.createdAt as Date,
+      updatedAt: schedule.updatedAt as Date,
     })
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Get schedule error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to fetch schedule',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to fetch schedule', error)
   }
 }
 
 async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
+    const body = request.body as ScheduleBody
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      name?: string
-      description?: string
-      frequency?: string
-      status?: string
-    }
+    validateRequiredString(id, 'Schedule ID')
 
     const checkResult = await query(
       `SELECT "id" FROM "AssessmentSchedule" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
@@ -254,39 +251,43 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Schedule not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Schedule')
+      return
     }
 
     const updateFields: string[] = []
-    const updateValues: any[] = []
+    const updateValues: (string | number | boolean | null)[] = []
     let paramIndex = 1
 
     if (body.name !== undefined) {
+      const validatedName = validateRequiredString(body.name, 'Schedule name', 1, 255)
       updateFields.push(`"name" = $${paramIndex}`)
-      updateValues.push(body.name.trim())
+      updateValues.push(validatedName)
       paramIndex++
     }
 
     if (body.description !== undefined) {
+      const validatedDescription = validateOptionalString(body.description, 'Description')
       updateFields.push(`"description" = $${paramIndex}`)
-      updateValues.push(body.description)
+      updateValues.push(validatedDescription)
       paramIndex++
     }
 
     if (body.frequency !== undefined) {
+      const validatedFrequency = validateEnum(
+        body.frequency,
+        'frequency',
+        SCHEDULE_FREQUENCIES
+      ) as ScheduleFrequency
       updateFields.push(`"frequency" = $${paramIndex}`)
-      updateValues.push(body.frequency)
+      updateValues.push(validatedFrequency)
       paramIndex++
     }
 
     if (body.status !== undefined) {
+      const validatedStatus = validateEnum(body.status, 'status', SCHEDULE_STATUSES) as ScheduleStatus
       updateFields.push(`"status" = $${paramIndex}`)
-      updateValues.push(body.status)
+      updateValues.push(validatedStatus)
       paramIndex++
     }
 
@@ -315,49 +316,40 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
 
     const schedule = result.rows[0]
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: schedule.id,
-        name: schedule.name,
-        description: schedule.description || '',
-        frequency: schedule.frequency || null,
-        status: schedule.status || 'ACTIVE',
-        nextRunAt: schedule.nextRunAt || null,
-        lastRunAt: schedule.lastRunAt || null,
-        createdAt: schedule.createdAt,
-        updatedAt: schedule.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: schedule.id as string,
+      name: schedule.name as string,
+      description: (schedule.description as string) || '',
+      frequency: (schedule.frequency as ScheduleFrequency) || null,
+      status: (schedule.status as ScheduleStatus) || 'ACTIVE',
+      nextRunAt: (schedule.nextRunAt as Date) || null,
+      lastRunAt: (schedule.lastRunAt as Date) || null,
+      createdAt: schedule.createdAt as Date,
+      updatedAt: schedule.updatedAt as Date,
     })
   } catch (error) {
-    if (error instanceof AuthenticationError || error instanceof ValidationError) {
-      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: error instanceof AuthenticationError ? 401 : 400,
-      })
+    if (error instanceof AuthenticationError) {
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Update schedule error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to update schedule',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to update schedule', error)
   }
 }
 
 async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Schedule ID')
 
     const checkResult = await query(
       `SELECT "id" FROM "AssessmentSchedule" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
@@ -365,12 +357,8 @@ async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Schedule not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Schedule')
+      return
     }
 
     await query(
@@ -378,39 +366,30 @@ async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
       [id, geographyAccountId]
     )
 
-    return reply.status(200).send({
-      success: true,
-      message: 'Schedule deleted successfully',
-    })
+    sendSuccessMessage(reply, 'Schedule deleted successfully')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Delete schedule error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to delete schedule',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to delete schedule', error)
   }
 }
 
 async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Schedule ID')
 
     const scheduleResult = await query(
       `SELECT "id", "name", "status" FROM "AssessmentSchedule" 
@@ -419,23 +398,16 @@ async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (scheduleResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Schedule not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Schedule')
+      return
     }
 
     const schedule = scheduleResult.rows[0]
+    const status = schedule.status as ScheduleStatus
 
-    if (schedule.status === 'COMPLETED' || schedule.status === 'ARCHIVED') {
-      return reply.status(400).send({
-        success: false,
-        error: 'Cannot run a completed or archived schedule',
-        code: 'INVALID_STATUS',
-        statusCode: 400,
-      })
+    if (status === 'COMPLETED') {
+      sendValidationError(reply, 'Cannot run a completed schedule', 'INVALID_STATUS')
+      return
     }
 
     const now = new Date()
@@ -446,32 +418,25 @@ async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
       [now.toISOString(), now.toISOString(), id, geographyAccountId]
     )
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        scheduleId: id,
-        status: 'running',
-        lastRunAt: now.toISOString(),
-        message: 'Schedule execution started',
-      },
+    sendSuccess(reply, {
+      scheduleId: id,
+      status: 'running',
+      lastRunAt: now.toISOString(),
+      message: 'Schedule execution started',
     })
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Run schedule now error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to run schedule',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to run schedule', error)
   }
 }
 
@@ -485,4 +450,3 @@ export async function councilSchedulesRoutes(fastify: FastifyInstance) {
 
   fastify.log.info('Council schedule routes registered')
 }
-

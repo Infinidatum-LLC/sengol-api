@@ -9,6 +9,46 @@ import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 import { randomUUID } from 'crypto'
+import {
+  AuthenticatedRequest,
+  GeographyRequest,
+  getUserId,
+  getGeographyAccountId,
+  parsePagination,
+  PaginationQuery,
+} from '../types/request'
+import {
+  validateRequiredString,
+  validateOptionalString,
+} from '../lib/validation'
+import {
+  sendSuccess,
+  sendPaginated,
+  sendNotFound,
+  sendUnauthorized,
+  sendValidationError,
+  sendInternalError,
+  sendSuccessMessage,
+} from '../lib/response-helpers'
+
+/**
+ * Vendor status enum
+ */
+const VENDOR_STATUSES = ['active', 'inactive', 'archived'] as const
+type VendorStatus = typeof VENDOR_STATUSES[number]
+
+/**
+ * Vendor creation/update body
+ */
+interface VendorBody {
+  name?: string
+  vendorType?: string
+  riskTier?: string
+  category?: string
+  description?: string
+  website?: string
+  status?: string
+}
 
 /**
  * List vendors
@@ -19,28 +59,18 @@ import { randomUUID } from 'crypto'
  */
 async function listVendors(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const queryParams = request.query as {
-      page?: string
-      limit?: string
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const queryParams = request.query as PaginationQuery & {
       vendorType?: string
       riskTier?: string
       category?: string
     }
-
-    const page = parseInt(queryParams.page || '1', 10)
-    const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
-    const offset = (page - 1) * limit
+    const { page, limit, offset } = parsePagination(queryParams)
 
     // Build WHERE conditions
     const conditions: string[] = [`"geographyAccountId" = $1`]
-    const params: any[] = [geographyAccountId]
+    const params: (string | number | boolean | null)[] = [geographyAccountId]
     let paramIndex = 2
 
     if (queryParams.vendorType) {
@@ -83,45 +113,30 @@ async function listVendors(request: FastifyRequest, reply: FastifyReply) {
       params
     )
 
-    const vendors = vendorsResult.rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      vendorType: row.vendorType,
-      riskTier: row.riskTier,
-      category: row.category,
-      description: row.description || '',
-      website: row.website || null,
-      status: row.status || 'active',
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+    const vendors = vendorsResult.rows.map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      vendorType: (row.vendorType as string) || null,
+      riskTier: (row.riskTier as string) || null,
+      category: (row.category as string) || null,
+      description: (row.description as string) || '',
+      website: (row.website as string) || null,
+      status: (row.status as VendorStatus) || 'active',
+      createdAt: row.createdAt as Date,
+      updatedAt: row.updatedAt as Date,
     }))
 
     request.log.info({ userId, count: vendors.length }, 'Vendors listed')
 
-    return reply.status(200).send({
-      success: true,
-      vendors,
-      total,
-      page,
-      limit,
-    })
+    sendPaginated(reply, vendors, total, page, limit, 'vendors')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
     }
 
     request.log.error({ err: error }, 'List vendors error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to list vendors',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to list vendors', error)
   }
 }
 
@@ -134,26 +149,17 @@ async function listVendors(request: FastifyRequest, reply: FastifyReply) {
  */
 async function createVendor(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      name?: string
-      vendorType?: string
-      riskTier?: string
-      category?: string
-      description?: string
-      website?: string
-    }
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const body = request.body as VendorBody
 
     // Validate input
-    if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
-      throw new ValidationError('Vendor name is required', 'INVALID_INPUT')
-    }
+    const name = validateRequiredString(body.name, 'Vendor name', 1, 255)
+    const vendorType = validateOptionalString(body.vendorType, 'Vendor type')
+    const riskTier = validateOptionalString(body.riskTier, 'Risk tier')
+    const category = validateOptionalString(body.category, 'Category')
+    const description = validateOptionalString(body.description, 'Description')
+    const website = validateOptionalString(body.website, 'Website', 500)
 
     // Create vendor
     const vendorId = randomUUID()
@@ -167,12 +173,12 @@ async function createVendor(request: FastifyRequest, reply: FastifyReply) {
       [
         vendorId,
         geographyAccountId,
-        body.name.trim(),
-        body.vendorType || null,
-        body.riskTier || null,
-        body.category || null,
-        body.description || null,
-        body.website || null,
+        name,
+        vendorType,
+        riskTier,
+        category,
+        description,
+        website,
         'active',
         now.toISOString(),
         now.toISOString(),
@@ -181,47 +187,35 @@ async function createVendor(request: FastifyRequest, reply: FastifyReply) {
 
     request.log.info({ userId, vendorId }, 'Vendor created')
 
-    return reply.status(201).send({
-      success: true,
-      data: {
+    sendSuccess(
+      reply,
+      {
         id: vendorId,
-        name: body.name.trim(),
-        vendorType: body.vendorType || null,
-        riskTier: body.riskTier || null,
-        category: body.category || null,
-        description: body.description || null,
-        website: body.website || null,
-        status: 'active',
+        name,
+        vendorType,
+        riskTier,
+        category,
+        description,
+        website,
+        status: 'active' as VendorStatus,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       },
-    })
+      201
+    )
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
     }
 
     if (error instanceof ValidationError) {
-      return reply.status(400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
-      })
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Create vendor error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to create vendor',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to create vendor', error)
   }
 }
 
@@ -234,13 +228,11 @@ async function createVendor(request: FastifyRequest, reply: FastifyReply) {
  */
 async function getVendor(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Vendor ID')
 
     const result = await query(
       `SELECT 
@@ -253,48 +245,37 @@ async function getVendor(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (result.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Vendor not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Vendor')
+      return
     }
 
     const vendor = result.rows[0]
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: vendor.id,
-        name: vendor.name,
-        vendorType: vendor.vendorType,
-        riskTier: vendor.riskTier,
-        category: vendor.category,
-        description: vendor.description || '',
-        website: vendor.website || null,
-        status: vendor.status || 'active',
-        createdAt: vendor.createdAt,
-        updatedAt: vendor.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: vendor.id as string,
+      name: vendor.name as string,
+      vendorType: (vendor.vendorType as string) || null,
+      riskTier: (vendor.riskTier as string) || null,
+      category: (vendor.category as string) || null,
+      description: (vendor.description as string) || '',
+      website: (vendor.website as string) || null,
+      status: (vendor.status as VendorStatus) || 'active',
+      createdAt: vendor.createdAt as Date,
+      updatedAt: vendor.updatedAt as Date,
     })
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Get vendor error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to fetch vendor',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to fetch vendor', error)
   }
 }
 
@@ -307,23 +288,12 @@ async function getVendor(request: FastifyRequest, reply: FastifyReply) {
  */
 async function updateVendor(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
+    const body = request.body as VendorBody
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      name?: string
-      vendorType?: string
-      riskTier?: string
-      category?: string
-      description?: string
-      website?: string
-      status?: string
-    }
+    validateRequiredString(id, 'Vendor ID')
 
     // Verify vendor exists and belongs to geography account
     const checkResult = await query(
@@ -332,58 +302,61 @@ async function updateVendor(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Vendor not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Vendor')
+      return
     }
 
     // Build update query
     const updateFields: string[] = []
-    const updateValues: any[] = []
+    const updateValues: (string | number | boolean | null)[] = []
     let paramIndex = 1
 
     if (body.name !== undefined) {
+      const validatedName = validateRequiredString(body.name, 'Vendor name', 1, 255)
       updateFields.push(`"name" = $${paramIndex}`)
-      updateValues.push(body.name.trim())
+      updateValues.push(validatedName)
       paramIndex++
     }
 
     if (body.vendorType !== undefined) {
+      const validatedType = validateOptionalString(body.vendorType, 'Vendor type')
       updateFields.push(`"vendorType" = $${paramIndex}`)
-      updateValues.push(body.vendorType)
+      updateValues.push(validatedType)
       paramIndex++
     }
 
     if (body.riskTier !== undefined) {
+      const validatedTier = validateOptionalString(body.riskTier, 'Risk tier')
       updateFields.push(`"riskTier" = $${paramIndex}`)
-      updateValues.push(body.riskTier)
+      updateValues.push(validatedTier)
       paramIndex++
     }
 
     if (body.category !== undefined) {
+      const validatedCategory = validateOptionalString(body.category, 'Category')
       updateFields.push(`"category" = $${paramIndex}`)
-      updateValues.push(body.category)
+      updateValues.push(validatedCategory)
       paramIndex++
     }
 
     if (body.description !== undefined) {
+      const validatedDescription = validateOptionalString(body.description, 'Description')
       updateFields.push(`"description" = $${paramIndex}`)
-      updateValues.push(body.description)
+      updateValues.push(validatedDescription)
       paramIndex++
     }
 
     if (body.website !== undefined) {
+      const validatedWebsite = validateOptionalString(body.website, 'Website', 500)
       updateFields.push(`"website" = $${paramIndex}`)
-      updateValues.push(body.website)
+      updateValues.push(validatedWebsite)
       paramIndex++
     }
 
     if (body.status !== undefined) {
+      const validatedStatus = validateOptionalString(body.status, 'Status')
       updateFields.push(`"status" = $${paramIndex}`)
-      updateValues.push(body.status)
+      updateValues.push(validatedStatus)
       paramIndex++
     }
 
@@ -416,47 +389,31 @@ async function updateVendor(request: FastifyRequest, reply: FastifyReply) {
 
     request.log.info({ userId, vendorId: id }, 'Vendor updated')
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: vendor.id,
-        name: vendor.name,
-        vendorType: vendor.vendorType,
-        riskTier: vendor.riskTier,
-        category: vendor.category,
-        description: vendor.description || '',
-        website: vendor.website || null,
-        status: vendor.status || 'active',
-        createdAt: vendor.createdAt,
-        updatedAt: vendor.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: vendor.id as string,
+      name: vendor.name as string,
+      vendorType: (vendor.vendorType as string) || null,
+      riskTier: (vendor.riskTier as string) || null,
+      category: (vendor.category as string) || null,
+      description: (vendor.description as string) || '',
+      website: (vendor.website as string) || null,
+      status: (vendor.status as VendorStatus) || 'active',
+      createdAt: vendor.createdAt as Date,
+      updatedAt: vendor.updatedAt as Date,
     })
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
     }
 
     if (error instanceof ValidationError) {
-      return reply.status(400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
-      })
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Update vendor error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to update vendor',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to update vendor', error)
   }
 }
 
@@ -469,13 +426,11 @@ async function updateVendor(request: FastifyRequest, reply: FastifyReply) {
  */
 async function deleteVendor(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Vendor ID')
 
     // Verify vendor exists and belongs to geography account
     const checkResult = await query(
@@ -484,12 +439,8 @@ async function deleteVendor(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Vendor not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Vendor')
+      return
     }
 
     // Delete vendor
@@ -500,27 +451,20 @@ async function deleteVendor(request: FastifyRequest, reply: FastifyReply) {
 
     request.log.info({ userId, vendorId: id }, 'Vendor deleted')
 
-    return reply.status(200).send({
-      success: true,
-      message: 'Vendor deleted successfully',
-    })
+    sendSuccessMessage(reply, 'Vendor deleted successfully')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Delete vendor error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to delete vendor',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to delete vendor', error)
   }
 }
 
@@ -531,13 +475,11 @@ async function deleteVendor(request: FastifyRequest, reply: FastifyReply) {
  */
 async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Vendor ID')
 
     // Verify vendor exists
     const vendorResult = await query(
@@ -546,41 +488,34 @@ async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (vendorResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Vendor not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Vendor')
+      return
     }
 
     request.log.info({ userId, vendorId: id }, 'Vendor assessment triggered')
 
-    return reply.status(201).send({
-      success: true,
-      data: {
+    sendSuccess(
+      reply,
+      {
         vendorId: id,
         status: 'pending',
         message: 'Assessment queued successfully',
       },
-    })
+      201
+    )
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Assess vendor error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to trigger vendor assessment',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to trigger vendor assessment', error)
   }
 }
 
@@ -591,13 +526,11 @@ async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
  */
 async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Vendor ID')
 
     // Verify vendor exists
     const vendorResult = await query(
@@ -607,21 +540,17 @@ async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) 
     )
 
     if (vendorResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Vendor not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Vendor')
+      return
     }
 
     const vendor = vendorResult.rows[0]
 
     // Build scorecard response
     const scorecard = {
-      vendorId: vendor.id,
-      vendorName: vendor.name,
-      riskTier: vendor.riskTier || 'unknown',
+      vendorId: vendor.id as string,
+      vendorName: vendor.name as string,
+      riskTier: (vendor.riskTier as string) || 'unknown',
       overallScore: 0,
       assessmentCount: 0,
       lastAssessmentDate: null,
@@ -629,27 +558,20 @@ async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) 
       recommendations: [],
     }
 
-    return reply.status(200).send({
-      success: true,
-      data: scorecard,
-    })
+    sendSuccess(reply, scorecard)
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Get vendor scorecard error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to fetch vendor scorecard',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to fetch vendor scorecard', error)
   }
 }
 
@@ -660,23 +582,13 @@ async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) 
  */
 async function listVendorAssessments(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
+    const queryParams = request.query as PaginationQuery & { status?: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const queryParams = request.query as {
-      page?: string
-      limit?: string
-      status?: string
-    }
-
-    const page = parseInt(queryParams.page || '1', 10)
-    const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
-    const offset = (page - 1) * limit
+    validateRequiredString(id, 'Vendor ID')
+    const { page, limit, offset } = parsePagination(queryParams)
 
     // Verify vendor exists
     const vendorResult = await query(
@@ -685,39 +597,25 @@ async function listVendorAssessments(request: FastifyRequest, reply: FastifyRepl
     )
 
     if (vendorResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Vendor not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Vendor')
+      return
     }
 
     // Return empty list (assessments table may not exist yet)
-    return reply.status(200).send({
-      success: true,
-      assessments: [],
-      total: 0,
-      page,
-      limit,
-    })
+    sendPaginated(reply, [], 0, page, limit, 'assessments')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'List vendor assessments error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to list vendor assessments',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to list vendor assessments', error)
   }
 }
 
@@ -736,4 +634,3 @@ export async function councilVendorsRoutes(fastify: FastifyInstance) {
 
   fastify.log.info('Council vendor routes registered')
 }
-

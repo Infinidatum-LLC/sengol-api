@@ -6,38 +6,71 @@ import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
+import {
+  AuthenticatedRequest,
+  GeographyRequest,
+  getUserId,
+  getGeographyAccountId,
+  parsePagination,
+  PaginationQuery,
+} from '../types/request'
+import {
+  validateRequiredString,
+  validateOptionalString,
+  validateEnum,
+} from '../lib/validation'
+import {
+  sendSuccess,
+  sendPaginated,
+  sendNotFound,
+  sendUnauthorized,
+  sendValidationError,
+  sendInternalError,
+} from '../lib/response-helpers'
+
+/**
+ * Violation status enum
+ */
+const VIOLATION_STATUSES = ['OPEN', 'RESOLVED', 'MITIGATED', 'DISMISSED'] as const
+type ViolationStatus = typeof VIOLATION_STATUSES[number]
+
+/**
+ * Violation severity enum
+ */
+const VIOLATION_SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const
+type ViolationSeverity = typeof VIOLATION_SEVERITIES[number]
+
+/**
+ * Violation update body
+ */
+interface ViolationUpdateBody {
+  status?: string
+  resolution?: string
+}
 
 async function listViolations(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const queryParams = request.query as {
-      page?: string
-      limit?: string
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const queryParams = request.query as PaginationQuery & {
       status?: string
       severity?: string
     }
-
-    const page = parseInt(queryParams.page || '1', 10)
-    const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
-    const offset = (page - 1) * limit
+    const { page, limit, offset } = parsePagination(queryParams)
 
     const conditions: string[] = [`"geographyAccountId" = $1`]
-    const params: any[] = [geographyAccountId]
+    const params: (string | number | boolean | null)[] = [geographyAccountId]
     let paramIndex = 2
 
     if (queryParams.status) {
+      validateEnum(queryParams.status, 'status', VIOLATION_STATUSES)
       conditions.push(`"status" = $${paramIndex}`)
       params.push(queryParams.status)
       paramIndex++
     }
 
     if (queryParams.severity) {
+      validateEnum(queryParams.severity, 'severity', VIOLATION_SEVERITIES)
       conditions.push(`"severity" = $${paramIndex}`)
       params.push(queryParams.severity)
       paramIndex++
@@ -62,58 +95,42 @@ async function listViolations(request: FastifyRequest, reply: FastifyReply) {
       params
     )
 
-    const violations = violationsResult.rows.map((row: any) => ({
-      id: row.id,
-      policyId: row.policyId,
-      assessmentId: row.assessmentId || null,
-      severity: row.severity || 'medium',
-      status: row.status || 'open',
-      description: row.description || '',
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+    const violations = violationsResult.rows.map((row) => ({
+      id: row.id as string,
+      policyId: row.policyId as string,
+      assessmentId: (row.assessmentId as string) || null,
+      severity: (row.severity as ViolationSeverity) || 'MEDIUM',
+      status: (row.status as ViolationStatus) || 'OPEN',
+      description: (row.description as string) || '',
+      createdAt: row.createdAt as Date,
+      updatedAt: row.updatedAt as Date,
     }))
 
-    return reply.status(200).send({
-      success: true,
-      violations,
-      total,
-      page,
-      limit,
-    })
+    sendPaginated(reply, violations, total, page, limit, 'violations')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'List violations error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to list violations',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to list violations', error)
   }
 }
 
 async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
+    const body = request.body as ViolationUpdateBody
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      status?: string
-      resolution?: string
-    }
+    validateRequiredString(id, 'Violation ID')
 
     const checkResult = await query(
       `SELECT "id" FROM "PolicyViolation" WHERE "id" = $1 LIMIT 1`,
@@ -121,34 +138,29 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Violation not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Violation')
+      return
     }
 
     const updateFields: string[] = []
-    const updateValues: any[] = []
+    const updateValues: (string | number | boolean | null)[] = []
     let paramIndex = 1
 
     if (body.status !== undefined) {
-      const validStatuses = ['open', 'acknowledged', 'resolved', 'dismissed']
-      if (!validStatuses.includes(body.status)) {
-        throw new ValidationError(
-          `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
-          'INVALID_STATUS'
-        )
-      }
+      const validatedStatus = validateEnum(
+        body.status,
+        'status',
+        VIOLATION_STATUSES
+      ) as ViolationStatus
       updateFields.push(`"status" = $${paramIndex}`)
-      updateValues.push(body.status)
+      updateValues.push(validatedStatus)
       paramIndex++
     }
 
     if (body.resolution !== undefined) {
+      const validatedResolution = validateOptionalString(body.resolution, 'Resolution')
       updateFields.push(`"resolution" = $${paramIndex}`)
-      updateValues.push(body.resolution)
+      updateValues.push(validatedResolution)
       paramIndex++
     }
 
@@ -177,37 +189,30 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
 
     const violation = result.rows[0]
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: violation.id,
-        policyId: violation.policyId,
-        assessmentId: violation.assessmentId || null,
-        severity: violation.severity || 'medium',
-        status: violation.status || 'open',
-        description: violation.description || '',
-        resolution: violation.resolution || null,
-        createdAt: violation.createdAt,
-        updatedAt: violation.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: violation.id as string,
+      policyId: violation.policyId as string,
+      assessmentId: (violation.assessmentId as string) || null,
+      severity: (violation.severity as ViolationSeverity) || 'MEDIUM',
+      status: (violation.status as ViolationStatus) || 'OPEN',
+      description: (violation.description as string) || '',
+      resolution: (violation.resolution as string) || null,
+      createdAt: violation.createdAt as Date,
+      updatedAt: violation.updatedAt as Date,
     })
   } catch (error) {
-    if (error instanceof AuthenticationError || error instanceof ValidationError) {
-      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: error instanceof AuthenticationError ? 401 : 400,
-      })
+    if (error instanceof AuthenticationError) {
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Update violation error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to update violation',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to update violation', error)
   }
 }
 
@@ -217,4 +222,3 @@ export async function councilViolationsRoutes(fastify: FastifyInstance) {
 
   fastify.log.info('Council violation routes registered')
 }
-
