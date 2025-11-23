@@ -68,6 +68,15 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
 
     request.log.info({ assessmentId: id, userId: assessment.userId }, 'Assessment retrieved')
 
+    // Log what we're returning for debugging
+    request.log.info({
+      assessmentId: id,
+      hasSystemDescription: !!assessment.systemDescription,
+      systemDescriptionLength: assessment.systemDescription?.length || 0,
+      hasIndustry: !!assessment.industry,
+      hasSystemCriticality: !!assessment.systemCriticality
+    }, 'Returning assessment data')
+
     return reply.status(200).send({
       success: true,
       data: {
