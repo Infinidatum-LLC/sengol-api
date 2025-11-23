@@ -785,7 +785,8 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
           request.log.info({ 
             assessmentId: id, 
             hasSystemDescription: !!updatedAssessment.systemDescription,
-            systemDescriptionLength: updatedAssessment.systemDescription?.length || 0
+            systemDescriptionLength: updatedAssessment.systemDescription?.length || 0,
+            systemDescriptionPreview: updatedAssessment.systemDescription?.substring(0, 100) || 'N/A'
           }, 'Step1 data saved successfully')
           
           return reply.status(200).send({
@@ -806,7 +807,23 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
               updatedAt: updatedAssessment.updatedAt,
             },
           })
+        } else {
+          request.log.error({ assessmentId: id }, 'Failed to retrieve updated assessment after save')
+          return reply.status(500).send({
+            success: false,
+            error: 'Failed to retrieve saved assessment',
+            code: 'RETRIEVAL_ERROR',
+            statusCode: 500,
+          })
         }
+      } else {
+        request.log.warn({ assessmentId: id, bodyKeys: Object.keys(body) }, 'No fields to update in step1')
+        return reply.status(400).send({
+          success: false,
+          error: 'No fields provided to update',
+          code: 'NO_FIELDS',
+          statusCode: 400,
+        })
       }
     } else if (step === '3') {
       // For step3, save compliance data to actual database columns
