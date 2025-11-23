@@ -766,22 +766,25 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
         dbError: dbError.message,
         dbErrorCode: dbError.code,
         dbErrorDetail: dbError.detail,
+        dbErrorTable: dbError.table,
+        dbErrorConstraint: dbError.constraint,
         userId,
-        projectId: body.projectId
+        projectId: body.projectId,
+        assessmentId
       }, 'Database error creating assessment')
       
       // Check for specific database errors
       if (dbError.code === '23503') { // Foreign key violation
-        if (dbError.message.includes('userId')) {
+        if (dbError.message?.includes('userId') || dbError.detail?.includes('userId') || dbError.constraint?.includes('userId')) {
           return reply.status(400).send({
             success: false,
             error: 'Invalid user ID',
             code: 'INVALID_USER_ID',
             statusCode: 400,
-            details: 'User does not exist in database'
+            details: 'User does not exist in database. Please ensure you are logged in with a valid account.'
           })
         }
-        if (dbError.message.includes('projectId')) {
+        if (dbError.message?.includes('projectId') || dbError.detail?.includes('projectId') || dbError.constraint?.includes('projectId')) {
           return reply.status(400).send({
             success: false,
             error: 'Invalid project ID',
@@ -790,6 +793,24 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
             details: 'Project does not exist or does not belong to user'
           })
         }
+        // Generic foreign key error
+        return reply.status(400).send({
+          success: false,
+          error: 'Database constraint violation',
+          code: 'FOREIGN_KEY_VIOLATION',
+          statusCode: 400,
+          details: dbError.detail || dbError.message || 'Invalid reference in database'
+        })
+      }
+      
+      if (dbError.code === '42P01') { // Table does not exist
+        return reply.status(500).send({
+          success: false,
+          error: 'Database table not found',
+          code: 'TABLE_NOT_FOUND',
+          statusCode: 500,
+          details: 'RiskAssessment table does not exist. Please run database migrations.'
+        })
       }
       
       // Re-throw to be caught by outer catch block
