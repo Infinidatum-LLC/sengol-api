@@ -21,6 +21,8 @@ export const config = {
 
   // External services
   openaiApiKey: process.env.OPENAI_API_KEY || '',
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
   openaiTimeout: parseInt(process.env.OPENAI_TIMEOUT || '60000'),
   openaiMaxRetries: parseInt(process.env.OPENAI_MAX_RETRIES || '3'),
   pythonBackendUrl: process.env.PYTHON_BACKEND_URL || '',

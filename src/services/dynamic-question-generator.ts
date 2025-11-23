@@ -10,7 +10,7 @@
  * that provide real differentiation value to clients.
  */
 
-import { openai as gemini } from '../lib/openai-client' // Using OpenAI instead of Gemini to avoid quota issues
+import { gemini } from '../lib/multi-llm-client' // Multi-provider LLM with automatic fallback
 import { findSimilarIncidents, calculateIncidentStatistics, type IncidentMatch } from './incident-search'
 import { getFromCache, setInCache, CACHE_TTL } from '../lib/redis-cache'
 import { PRE_FILTER_THRESHOLDS, QUESTION_INTENSITY, WEIGHT_FORMULAS, VECTOR_SEARCH_CONFIG, type QuestionIntensity } from '../config/thresholds'
