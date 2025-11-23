@@ -144,16 +144,36 @@ export async function saveComplianceResponses(
     }
 
     // Save to database
+    // Note: For JSON/JSONB columns, pass objects directly (not stringified)
+    // PostgreSQL will handle the JSON conversion automatically
     const updateData: any = {
-      complianceQuestionResponses: JSON.stringify(responses),
+      complianceQuestionResponses: responses, // Pass object directly for JSON column
       complianceCoverageScore: coverage.score,
-      complianceCoverageDetails: JSON.stringify(coverage.details),
+      complianceCoverageDetails: coverage.details, // Pass object directly for JSON column
       updatedAt: new Date()
     }
     if (Object.keys(complianceUserScores).length > 0) {
-      updateData.complianceUserScores = JSON.stringify(complianceUserScores)
+      updateData.complianceUserScores = complianceUserScores // Pass object directly for JSON column
     }
-    const updated = await updateOne<RiskAssessment>('RiskAssessment', updateData, { id })
+    
+    // Use direct SQL query to properly handle JSON fields
+    const { query } = await import('../lib/db')
+    await query(
+      `UPDATE "RiskAssessment" 
+       SET "complianceQuestionResponses" = $1::jsonb,
+           "complianceCoverageScore" = $2,
+           "complianceCoverageDetails" = $3::jsonb,
+           "complianceUserScores" = $4::jsonb,
+           "updatedAt" = NOW()
+       WHERE "id" = $5`,
+      [
+        JSON.stringify(responses), // Stringify for JSONB cast
+        coverage.score,
+        JSON.stringify(coverage.details), // Stringify for JSONB cast
+        Object.keys(complianceUserScores).length > 0 ? JSON.stringify(complianceUserScores) : null,
+        id
+      ]
+    )
 
     console.log(`[Compliance] Successfully saved responses for assessment ${id}`)
 

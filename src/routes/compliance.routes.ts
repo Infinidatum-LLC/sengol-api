@@ -14,7 +14,7 @@ import {
 
 export async function complianceRoutes(fastify: FastifyInstance) {
   // Save compliance question responses
-  fastify.post('/review/:id/compliance-responses', {
+  fastify.post('/api/review/:id/compliance-responses', {
     schema: {
       params: {
         type: 'object',
@@ -90,7 +90,7 @@ export async function complianceRoutes(fastify: FastifyInstance) {
   }, saveComplianceResponses)
 
   // Get compliance question responses
-  fastify.get('/review/:id/compliance-responses', {
+  fastify.get('/api/review/:id/compliance-responses', {
     schema: {
       params: {
         type: 'object',
@@ -121,4 +121,6 @@ export async function complianceRoutes(fastify: FastifyInstance) {
       }
     }
   }, getComplianceResponses)
+
+  fastify.log.info('Compliance routes registered')
 }

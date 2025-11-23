@@ -133,7 +133,7 @@ export async function build() {
   await fastify.register(cronArchiveArticlesRoutes) // Cron archive articles routes (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Pending implementation
   // await fastify.register(questionsRoutes) // DISABLED: Pending implementation
-  // await fastify.register(complianceRoutes) // DISABLED: Pending implementation
+  await fastify.register(complianceRoutes) // Compliance response routes (ENABLED)
 
   // Trial system routes - disabled pending build fixes
   // Cloud Build currently fails due to pre-existing TypeScript errors in codebase
