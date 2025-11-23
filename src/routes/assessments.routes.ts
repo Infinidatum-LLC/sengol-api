@@ -48,7 +48,9 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
     // Fetch assessment from database
     const result = await query(
       `SELECT "id", "userId", "projectId", "status", "riskScore", "complianceScore",
-              "sengolScore", "riskNotes", "createdAt", "updatedAt"
+              "sengolScore", "riskNotes", "systemDescription", "industry", 
+              "systemCriticality", "dataTypes", "dataSources", "technologyStack",
+              "selectedDomains", "jurisdictions", "createdAt", "updatedAt"
        FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
       [id]
     )
@@ -77,6 +79,14 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         complianceScore: assessment.complianceScore || null,
         sengolScore: assessment.sengolScore || null,
         riskNotes: assessment.riskNotes || {},
+        systemDescription: assessment.systemDescription || null,
+        industry: assessment.industry || null,
+        systemCriticality: assessment.systemCriticality || null,
+        dataTypes: assessment.dataTypes || [],
+        dataSources: assessment.dataSources || [],
+        technologyStack: assessment.technologyStack || [],
+        selectedDomains: assessment.selectedDomains || [],
+        jurisdictions: assessment.jurisdictions || [],
         createdAt: assessment.createdAt,
         updatedAt: assessment.updatedAt,
       },
