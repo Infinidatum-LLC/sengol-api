@@ -286,10 +286,21 @@ export async function generateQuestionsController(
       data: responseData
     })
   } catch (error) {
-    console.error('[GENERATE_QUESTIONS] Error:', error)
+    // This catch block should not be reached if inner catch returns properly
+    // But keep it as a safety net
+    request.log.error({
+      err: error,
+      assessmentId: request.params.id,
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      errorStack: error instanceof Error ? error.stack : undefined
+    }, 'Unexpected error in generateQuestionsController')
+    
     return reply.code(500).send({
+      success: false,
       error: 'Failed to generate questions',
-      message: error instanceof Error ? error.message : 'Unknown error'
+      message: error instanceof Error ? error.message : 'Unknown error',
+      code: 'UNEXPECTED_ERROR',
+      statusCode: 500
     })
   }
 }
