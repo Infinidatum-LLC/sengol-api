@@ -257,11 +257,103 @@ async function createProject(request: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * Delete a project
+ *
+ * DELETE /api/projects/:id
+ *
+ * Deletes a project and all associated data (cascade delete).
+ *
+ * Response (200):
+ * ```json
+ * {
+ *   "success": true,
+ *   "message": "Project deleted successfully"
+ * }
+ * ```
+ */
+async function deleteProject(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const userId = request.headers['x-user-id'] as string
+    const { id } = request.params as { id: string }
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    if (!id || typeof id !== 'string') {
+      throw new ValidationError('Project ID is required', 'INVALID_INPUT')
+    }
+
+    // Verify project exists and belongs to user
+    const projectResult = await query(
+      `SELECT "id", "userId" FROM "Project" WHERE "id" = $1 LIMIT 1`,
+      [id]
+    )
+
+    if (projectResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Project not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const project = projectResult.rows[0]
+    if (project.userId !== userId) {
+      return reply.status(403).send({
+        success: false,
+        error: 'You do not have permission to delete this project',
+        code: 'FORBIDDEN',
+        statusCode: 403,
+      })
+    }
+
+    // Delete project (cascade delete will handle related records)
+    await query(
+      `DELETE FROM "Project" WHERE "id" = $1`,
+      [id]
+    )
+
+    request.log.info({ projectId: id, userId }, 'Project deleted')
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Project deleted successfully',
+    })
+
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Delete project error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to delete project',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
  * Register all project routes
  */
 export async function projectsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/projects', listProjects)
   fastify.post('/api/projects', createProject)
+  fastify.delete('/api/projects/:id', deleteProject)
 
   fastify.log.info('Project routes registered')
 }
