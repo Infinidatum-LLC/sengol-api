@@ -687,10 +687,23 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
       let paramIndex = 1
 
       // Save systemDescription to actual column
-      if (body.systemDescription !== undefined) {
+      // ✅ CRITICAL: Always save systemDescription if provided (even empty string to clear it)
+      if (body.systemDescription !== undefined && body.systemDescription !== null) {
         updateFields.push(`"systemDescription" = $${paramIndex}`)
-        updateValues.push(body.systemDescription)
+        updateValues.push(body.systemDescription || '') // Ensure it's a string, not null
         paramIndex++
+        request.log.info({
+          assessmentId: id,
+          systemDescriptionLength: body.systemDescription?.length || 0,
+          systemDescriptionPreview: body.systemDescription?.substring(0, 100) || 'empty'
+        }, 'Adding systemDescription to update')
+      } else {
+        request.log.warn({
+          assessmentId: id,
+          systemDescriptionValue: body.systemDescription,
+          systemDescriptionType: typeof body.systemDescription,
+          bodyKeys: Object.keys(body)
+        }, 'systemDescription is undefined or null - NOT saving')
       }
 
       // Save industry to actual column
