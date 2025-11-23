@@ -1999,25 +1999,38 @@ function findRelatedIncidents(area: string, incidents: IncidentMatch[]): Inciden
 }
 
 function calculateEvidenceWeight(incidents: IncidentMatch[]): number {
-  // ✅ REWRITTEN: Better handling of empty incidents
+  // ✅ REWRITTEN: Better handling of empty or low-quality incidents
   if (incidents.length === 0) {
-    console.log(`[EVIDENCE_WEIGHT] No incidents - returning 0.3 (low evidence weight)`)
-    return 0.3 // Lower weight when no evidence (not 0.5 which is neutral)
+    console.log(`[EVIDENCE_WEIGHT] No incidents - returning 0.25 (low evidence weight, will rely on LLM analysis)`)
+    return 0.25 // Lower weight when no evidence - LLM base weight will dominate
+  }
+
+  // Calculate average similarity to assess relevance
+  const avgSimilarity = incidents.reduce((sum, i) => sum + (i.similarity || 0), 0) / incidents.length
+  
+  // ✅ NEW: If similarity is very low (< 0.4), treat as if no evidence
+  // This handles cases where incidents are found but not really relevant
+  if (avgSimilarity < 0.4 && incidents.length < 5) {
+    console.log(`[EVIDENCE_WEIGHT] Low relevance incidents (avg similarity: ${(avgSimilarity * 100).toFixed(0)}%, count: ${incidents.length}) - returning 0.3`)
+    return 0.3 // Low weight for low-relevance incidents
   }
 
   // Weight based on:
-  // - Number of incidents (more = higher weight, max at 20 incidents)
-  // - Average similarity (how relevant are the incidents)
+  // - Number of incidents (more = higher weight, but quality matters more)
+  // - Average similarity (how relevant are the incidents) - MOST IMPORTANT
   // - Average severity (how bad are the incidents)
   const countWeight = Math.min(incidents.length / 20, 1.0) // Max at 20 incidents
-  const avgSimilarity = incidents.reduce((sum, i) => sum + (i.similarity || 0), 0) / incidents.length
   const severityWeight = calculateSeverityWeight(incidents)
 
-  const evidenceWeight = (countWeight * 0.4) + (avgSimilarity * 0.3) + (severityWeight * 0.3)
+  // ✅ IMPROVED: Similarity is weighted more heavily (50% vs 30%)
+  // If similarity is high, we trust the evidence more
+  // If similarity is low, we rely more on LLM analysis
+  const evidenceWeight = (countWeight * 0.3) + (avgSimilarity * 0.5) + (severityWeight * 0.2)
   
   console.log(`[EVIDENCE_WEIGHT] ${incidents.length} incidents: count=${(countWeight * 100).toFixed(0)}%, similarity=${(avgSimilarity * 100).toFixed(0)}%, severity=${(severityWeight * 100).toFixed(0)}% → final=${(evidenceWeight * 100).toFixed(0)}%`)
   
-  return evidenceWeight
+  // Clamp to valid range
+  return Math.min(Math.max(evidenceWeight, 0), 1)
 }
 
 function calculateSeverityWeight(incidents: IncidentMatch[]): number {
