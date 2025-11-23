@@ -777,12 +777,29 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
         updateValues.push(id)
         // Use the length of updateValues as the parameter index for WHERE clause
         const whereParamIndex = updateValues.length
-        await query(
+        
+        request.log.info({
+          assessmentId: id,
+          updateFieldsCount: updateFields.length,
+          updateFields: updateFields,
+          updateValuesCount: updateValues.length,
+          whereParamIndex,
+          hasSystemDescription: updateFields.some(f => f.includes('systemDescription')),
+          systemDescriptionValue: body.systemDescription?.substring(0, 100) || 'N/A'
+        }, 'Executing UPDATE query for step1')
+        
+        const updateResult = await query(
           `UPDATE "RiskAssessment" 
            SET ${updateFields.join(', ')}
            WHERE "id" = $${whereParamIndex}`,
           updateValues
         )
+        
+        request.log.info({
+          assessmentId: id,
+          rowCount: updateResult.rowCount || 0,
+          command: updateResult.command || 'N/A'
+        }, 'UPDATE query executed - checking if rows were affected')
         
         // Fetch the updated assessment to return saved data
         const updatedResult = await query(
