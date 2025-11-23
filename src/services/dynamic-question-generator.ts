@@ -1149,12 +1149,10 @@ Provide question text and priority weight (0-100) based on the above context.`
     llmPriority = llmResponse.priority || priorityArea.priority
     llmReasoning = llmResponse.reasoning || priorityArea.reasoning
     
-    console.log(`[LLM_QUESTION] Generated: "${questionText.substring(0, 80)}..." (Priority: ${llmPriority})`)
-
     // ✅ Strip any "Based on X incidents" prefix that LLM might include despite instructions
     questionText = stripIncidentPrefix(questionText)
 
-    console.log(`[LLM_QUESTION] Generated: ${questionText.substring(0, 80)}...`)
+    console.log(`[LLM_QUESTION] Generated: "${questionText.substring(0, 80)}..." (Priority: ${llmPriority})`)
   } catch (error) {
     console.error(`[LLM_QUESTION] Failed to generate question for ${priorityArea.area}:`, error)
     // Use fallback question generation
