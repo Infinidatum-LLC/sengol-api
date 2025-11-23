@@ -703,12 +703,22 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Validate userId is a valid UUID format
-    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
-      request.log.warn({ userId }, 'Invalid userId format')
+    // Validate userId format - allow UUID or any non-empty string
+    // Log the actual format for debugging
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+    request.log.info({ 
+      userId, 
+      userIdLength: userId.length,
+      isUUID,
+      firstChars: userId.substring(0, 10)
+    }, 'UserId format check')
+    
+    // Only validate that userId is not empty - database will handle format validation
+    if (!userId || userId.trim().length === 0) {
+      request.log.warn({ userId }, 'Empty userId')
       return reply.status(400).send({
         success: false,
-        error: 'Invalid user ID format',
+        error: 'User ID is required',
         code: 'INVALID_USER_ID',
         statusCode: 400,
       })
