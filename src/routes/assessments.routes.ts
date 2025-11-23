@@ -429,49 +429,103 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
     let sengolScore = assessment.sengolScore
 
     try {
-      const { 
-        calculateRiskScoreFromResponses, 
-        calculateComplianceScoreFromResponses, 
-        calculateSengolScore,
-        calculateLetterGrade 
-      } = await import('../services/score-calculator')
+      const { calculateSengolScore, calculateLetterGrade } = await import('../services/score-calculator')
+
+      // Helper function to convert status to score (0-100, where 0 = best, 100 = worst)
+      const statusToRiskScore = (status: string): number | null => {
+        switch (status) {
+          case 'addressed': return 20 // Low risk (20%)
+          case 'partially_addressed': return 50 // Medium risk (50%)
+          case 'not_addressed': return 80 // High risk (80%)
+          case 'not_applicable': return null // Exclude from calculation
+          default: return null
+        }
+      }
 
       // Calculate risk score from Step 2 responses
       const riskResponses = assessment.riskQuestionResponses || {}
+      let parsedRiskResponses: Record<string, any> = {}
+      
       if (typeof riskResponses === 'string') {
         try {
-          const parsed = JSON.parse(riskResponses)
-          riskScore = calculateRiskScoreFromResponses(parsed)
+          parsedRiskResponses = JSON.parse(riskResponses)
         } catch (e) {
           request.log.warn({ assessmentId: id, error: e }, 'Failed to parse riskQuestionResponses')
         }
       } else if (riskResponses && typeof riskResponses === 'object') {
-        riskScore = calculateRiskScoreFromResponses(riskResponses)
+        parsedRiskResponses = riskResponses
+      }
+
+      // Calculate average risk score from responses
+      const riskScores: number[] = []
+      for (const [questionId, response] of Object.entries(parsedRiskResponses)) {
+        if (!response) continue
+        
+        // Use userRiskScores if available, otherwise calculate from status
+        if (response.riskScore !== undefined && response.riskScore !== null) {
+          riskScores.push(response.riskScore)
+        } else if (response.status) {
+          const score = statusToRiskScore(response.status)
+          if (score !== null) {
+            riskScores.push(score)
+          }
+        }
+      }
+      
+      if (riskScores.length > 0) {
+        riskScore = Math.round(riskScores.reduce((a, b) => a + b, 0) / riskScores.length)
       }
 
       // Calculate compliance score from Step 3 responses
       const complianceResponses = assessment.complianceQuestionResponses || {}
+      let parsedComplianceResponses: Record<string, any> = {}
+      
       if (typeof complianceResponses === 'string') {
         try {
-          const parsed = JSON.parse(complianceResponses)
-          complianceScore = calculateComplianceScoreFromResponses(parsed)
+          parsedComplianceResponses = JSON.parse(complianceResponses)
         } catch (e) {
           request.log.warn({ assessmentId: id, error: e }, 'Failed to parse complianceQuestionResponses')
         }
       } else if (complianceResponses && typeof complianceResponses === 'object') {
-        complianceScore = calculateComplianceScoreFromResponses(complianceResponses)
+        parsedComplianceResponses = complianceResponses
       }
 
-      // Calculate Sengol score (weighted combination)
-      if (riskScore !== null && complianceScore !== null) {
-        sengolScore = calculateSengolScore(riskScore, complianceScore)
+      // Calculate average compliance score from responses (inverted: higher status = better compliance)
+      const complianceScores: number[] = []
+      for (const [questionId, response] of Object.entries(parsedComplianceResponses)) {
+        if (!response) continue
+        
+        // Use userScores if available, otherwise calculate from status
+        if (response.userScore !== undefined && response.userScore !== null) {
+          complianceScores.push(response.userScore)
+        } else if (response.status) {
+          // For compliance, invert the risk score (addressed = 100, not_addressed = 0)
+          const riskScore = statusToRiskScore(response.status)
+          if (riskScore !== null) {
+            complianceScores.push(100 - riskScore) // Invert: 20 -> 80, 50 -> 50, 80 -> 20
+          }
+        }
+      }
+      
+      if (complianceScores.length > 0) {
+        complianceScore = Math.round(complianceScores.reduce((a, b) => a + b, 0) / complianceScores.length)
+      }
+
+      // Calculate Sengol score (weighted combination: 60% risk health, 40% compliance)
+      // Risk health = 100 - riskScore (invert so higher is better)
+      if (riskScore !== null && riskScore !== undefined && 
+          complianceScore !== null && complianceScore !== undefined) {
+        const riskHealth = 100 - riskScore
+        sengolScore = Math.round((riskHealth * 0.6) + (complianceScore * 0.4))
       }
 
       request.log.info({ 
         assessmentId: id, 
         riskScore, 
         complianceScore, 
-        sengolScore 
+        sengolScore,
+        riskResponseCount: Object.keys(parsedRiskResponses).length,
+        complianceResponseCount: Object.keys(parsedComplianceResponses).length
       }, 'Scores calculated for submission')
     } catch (scoreError) {
       request.log.error({ err: scoreError, assessmentId: id }, 'Failed to calculate scores, using existing values')
