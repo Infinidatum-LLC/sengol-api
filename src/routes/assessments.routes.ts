@@ -132,21 +132,168 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         systemDescription: assessment.systemDescription || null,
         industry: assessment.industry || null,
         systemCriticality: assessment.systemCriticality || null,
-        dataTypes: assessment.dataTypes || [],
-        dataSources: assessment.dataSources || [],
-        technologyStack: assessment.technologyStack || [],
-        selectedDomains: assessment.selectedDomains || [],
-        jurisdictions: assessment.jurisdictions || [],
+        // ✅ FIX: Parse array fields if they're JSON strings
+        dataTypes: (() => {
+          const val = assessment.dataTypes
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse dataTypes')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
+        dataSources: (() => {
+          const val = assessment.dataSources
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse dataSources')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
+        technologyStack: (() => {
+          const val = assessment.technologyStack
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse technologyStack')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
+        selectedDomains: (() => {
+          const val = assessment.selectedDomains
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse selectedDomains')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
+        jurisdictions: (() => {
+          const val = assessment.jurisdictions
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse jurisdictions')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
+        regulationIds: (() => {
+          const val = assessment.regulationIds
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse regulationIds')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
         // ✅ FIX: Added Step 2 fields for complete data loading
-        riskQuestionResponses: assessment.riskQuestionResponses || {},
-        userRiskScores: assessment.userRiskScores || {},
-        additionalRiskElements: assessment.additionalRiskElements || [],
+        // ✅ FIX: Parse JSON fields if they're strings
+        riskQuestionResponses: (() => {
+          const val = assessment.riskQuestionResponses
+          if (!val) return {}
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse riskQuestionResponses')
+              return {}
+            }
+          }
+          return val
+        })(),
+        userRiskScores: (() => {
+          const val = assessment.userRiskScores
+          if (!val) return {}
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse userRiskScores')
+              return {}
+            }
+          }
+          return val
+        })(),
+        additionalRiskElements: (() => {
+          const val = assessment.additionalRiskElements
+          if (!val) return []
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse additionalRiskElements')
+              return []
+            }
+          }
+          return Array.isArray(val) ? val : []
+        })(),
         // ✅ FIX: Added Step 3 fields for complete data loading
-        complianceQuestionResponses: assessment.complianceQuestionResponses || {},
-        complianceUserScores: assessment.complianceUserScores || {},
+        complianceQuestionResponses: (() => {
+          const val = assessment.complianceQuestionResponses
+          if (!val) return {}
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse complianceQuestionResponses')
+              return {}
+            }
+          }
+          return val
+        })(),
+        complianceUserScores: (() => {
+          const val = assessment.complianceUserScores
+          if (!val) return {}
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse complianceUserScores')
+              return {}
+            }
+          }
+          return val
+        })(),
         complianceNotes: parsedComplianceNotes, // ✅ FIX: Use parsed complianceNotes
         complianceCoverageScore: assessment.complianceCoverageScore || null,
-        complianceCoverageDetails: assessment.complianceCoverageDetails || null,
+        complianceCoverageDetails: (() => {
+          const val = assessment.complianceCoverageDetails
+          if (!val) return null
+          if (typeof val === 'string') {
+            try {
+              return JSON.parse(val)
+            } catch (e) {
+              request.log.warn({ err: e }, 'Failed to parse complianceCoverageDetails')
+              return null
+            }
+          }
+          return val
+        })(),
         regulationIds: assessment.regulationIds || [],
         createdAt: assessment.createdAt,
         updatedAt: assessment.updatedAt,
