@@ -640,19 +640,109 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
       })
     }
 
-    // Update riskNotes with step data
-    const currentNotes = assessment.riskNotes || {}
-    const updatedNotes = {
-      ...currentNotes,
-      [`step${step}`]: body,
-    }
+    // For step1, save system description and other fields to actual database columns
+    if (step === '1') {
+      const updateFields: string[] = []
+      const updateValues: any[] = []
+      let paramIndex = 1
 
-    await query(
-      `UPDATE "RiskAssessment" 
-       SET "riskNotes" = $1, "updatedAt" = NOW()
-       WHERE "id" = $2`,
-      [JSON.stringify(updatedNotes), id]
-    )
+      // Save systemDescription to actual column
+      if (body.systemDescription !== undefined) {
+        updateFields.push(`"systemDescription" = $${paramIndex}`)
+        updateValues.push(body.systemDescription)
+        paramIndex++
+      }
+
+      // Save industry to actual column
+      if (body.industry !== undefined) {
+        updateFields.push(`"industry" = $${paramIndex}`)
+        updateValues.push(body.industry)
+        paramIndex++
+      }
+
+      // Save systemCriticality to actual column
+      if (body.systemCriticality !== undefined) {
+        updateFields.push(`"systemCriticality" = $${paramIndex}`)
+        updateValues.push(body.systemCriticality)
+        paramIndex++
+      }
+
+      // Save dataTypes array
+      if (body.dataTypes !== undefined) {
+        updateFields.push(`"dataTypes" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.dataTypes) ? body.dataTypes : [])
+        paramIndex++
+      }
+
+      // Save dataSources array
+      if (body.dataSources !== undefined) {
+        updateFields.push(`"dataSources" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.dataSources) ? body.dataSources : [])
+        paramIndex++
+      }
+
+      // Save technologyStack array
+      if (body.technologyStack !== undefined) {
+        updateFields.push(`"technologyStack" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.technologyStack) ? body.technologyStack : [])
+        paramIndex++
+      }
+
+      // Save selectedDomains array
+      if (body.selectedDomains !== undefined) {
+        updateFields.push(`"selectedDomains" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.selectedDomains) ? body.selectedDomains : [])
+        paramIndex++
+      }
+
+      // Save jurisdictions array
+      if (body.jurisdictions !== undefined) {
+        updateFields.push(`"jurisdictions" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.jurisdictions) ? body.jurisdictions : [])
+        paramIndex++
+      }
+
+      // Also save to riskNotes for backward compatibility and additional metadata
+      const currentNotes = assessment.riskNotes || {}
+      const updatedNotes = {
+        ...currentNotes,
+        step1: {
+          ...body,
+          savedAt: new Date().toISOString(),
+        },
+      }
+
+      updateFields.push(`"riskNotes" = $${paramIndex}`)
+      updateValues.push(JSON.stringify(updatedNotes))
+      paramIndex++
+
+      // Always update updatedAt
+      updateFields.push(`"updatedAt" = NOW()`)
+
+      if (updateFields.length > 0) {
+        updateValues.push(id)
+        await query(
+          `UPDATE "RiskAssessment" 
+           SET ${updateFields.join(', ')}
+           WHERE "id" = $${paramIndex}`,
+          updateValues
+        )
+      }
+    } else {
+      // For other steps, just save to riskNotes
+      const currentNotes = assessment.riskNotes || {}
+      const updatedNotes = {
+        ...currentNotes,
+        [`step${step}`]: body,
+      }
+
+      await query(
+        `UPDATE "RiskAssessment" 
+         SET "riskNotes" = $1, "updatedAt" = NOW()
+         WHERE "id" = $2`,
+        [JSON.stringify(updatedNotes), id]
+      )
+    }
 
     request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
 
