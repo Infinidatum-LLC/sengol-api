@@ -525,29 +525,33 @@ async function getUserSubscription(request: FastifyRequest, reply: FastifyReply)
       throw new ValidationError('User ID is required', 'INVALID_INPUT')
     }
 
-    // Fetch subscription data from database
-    // This will be the user's subscription info
+    // Fetch subscription data from ToolSubscription table
     const result = await query(
-      `SELECT "id", "userId", "status", "planId", "tier"
-       FROM "Subscription"
-       WHERE "userId" = $1
+      `SELECT "planId", "status", "currentPeriodStart", "currentPeriodEnd"
+       FROM "ToolSubscription"
+       WHERE "userId" = $1 AND "status" = 'active'
        ORDER BY "createdAt" DESC
        LIMIT 1`,
       [userId]
     )
 
-    // If user has a subscription, return it; otherwise return free tier
+    // If user has a subscription, return it
     if (result.rows.length > 0) {
       const subscription = result.rows[0]
+      const planId = subscription.planId || 'free'
+      const tier = planId.toLowerCase() === 'premium' ? 'premium' : 
+                   planId.toLowerCase() === 'enterprise' ? 'enterprise' :
+                   planId.toLowerCase() === 'professional' ? 'professional' :
+                   planId.toLowerCase() === 'consultant' ? 'consultant' : 'free'
 
-      request.log.info({ userId }, 'User subscription retrieved')
+      request.log.info({ userId, planId, tier }, 'User subscription retrieved')
 
       return reply.status(200).send({
         success: true,
         data: {
           status: subscription.status || 'active',
-          planId: subscription.planId || 'free',
-          tier: subscription.tier || 'free',
+          planId: planId,
+          tier: tier,
           remaining: null,
         },
       })

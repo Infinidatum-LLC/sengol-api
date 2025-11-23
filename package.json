@@ -11,7 +11,9 @@
     "test:watch": "vitest --watch",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
-    "grant-premium": "tsx scripts/grant-premium-access.ts"
+    "grant-premium": "tsx scripts/grant-premium-access.ts",
+    "check-password": "tsx scripts/check-user-password.ts",
+    "reset-password": "tsx scripts/reset-user-password.ts"
   },
   "keywords": [
     "api",
