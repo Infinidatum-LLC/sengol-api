@@ -539,39 +539,59 @@ export async function generateDynamicQuestions(
     }
 
   // ============================================================================
-  // INCIDENT SEARCH - DISABLED FOR PERFORMANCE OPTIMIZATION
-  // Date: 2025-11-13
-  // Reason: Moving incident analysis to Step 3 endpoint for better UX
-  // Previously took 20-25 seconds during question generation
-  // Now deferred to /api/review/:id/incident-analysis endpoint
+  // STEP 1: INCIDENT SEARCH - REWRITTEN FOR PROPER EVIDENCE-BASED WEIGHTING
   // ============================================================================
-  /*
-  const step1Start = Date.now()
-  console.log('\n📊 Step 1: Finding similar historical incidents from Vertex AI...')
-  const similarIncidents = await findSimilarIncidents(
-    request.systemDescription,
-    {
-      limit: 100,
-      minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity,
-      industry: request.industry,
-      severity: ['medium', 'high', 'critical'],
+  // ✅ FIX: Enable incident search but with optimized limits for performance
+  // Previously skipped for performance, but this breaks evidence-based weighting
+  // Solution: Search with reasonable limits (50-100 incidents) for fast but accurate weighting
+  // ============================================================================
+  
+  let similarIncidents: IncidentMatch[] = []
+  let incidentStats = { avgCost: 0, totalCost: 0, mfaAdoptionRate: 0 }
+  let step1Time = '0.0'
+
+  // Only skip if explicitly requested (for testing/debugging)
+  if (request.skipIncidentSearch) {
+    console.log(`[OPTIMIZATION] Step 1 (Incident Search): SKIPPED - skipIncidentSearch=true`)
+    similarIncidents = []
+    incidentStats = { avgCost: 0, totalCost: 0, mfaAdoptionRate: 0 }
+    step1Time = '0.1'
+  } else {
+    const step1Start = Date.now()
+    console.log('\n📊 Step 1: Finding similar historical incidents from 78K+ incident database...')
+    
+    try {
+      // ✅ OPTIMIZED: Search 50-100 incidents (not 0, not 1000) for balance of speed and accuracy
+      similarIncidents = await findSimilarIncidents(
+        request.systemDescription,
+        {
+          limit: 100, // ✅ Increased from 0 to 100 for proper evidence-based weighting
+          minSimilarity: PRE_FILTER_THRESHOLDS.minSimilarity || 0.3, // Lower threshold for more results
+          industry: request.industry,
+          severity: ['medium', 'high', 'critical'],
+        }
+      )
+      
+      step1Time = ((Date.now() - step1Start) / 1000).toFixed(1)
+      console.log(`[TIMING] Step 1 (Vector Search): ${step1Time}s`)
+      
+      incidentStats = calculateIncidentStatistics(similarIncidents)
+      
+      console.log(`✅ Found ${similarIncidents.length} similar incidents from 78K+ database`)
+      console.log(`   Average cost: $${incidentStats.avgCost.toLocaleString()}`)
+      console.log(`   Top incident types: ${Array.from(new Set(similarIncidents.slice(0, 5).map(i => i.incidentType))).join(', ')}`)
+      
+      if (similarIncidents.length === 0) {
+        console.warn(`⚠️  WARNING: No incidents found - evidence-based weighting will be limited`)
+      }
+    } catch (error) {
+      console.error(`❌ Incident search failed:`, error)
+      console.warn(`⚠️  Continuing without incidents - evidence-based weighting will be limited`)
+      similarIncidents = []
+      incidentStats = { avgCost: 0, totalCost: 0, mfaAdoptionRate: 0 }
+      step1Time = '0.0'
     }
-  )
-  const step1Time = ((Date.now() - step1Start) / 1000).toFixed(1)
-  console.log(`[TIMING] Step 1 (Vector Search): ${step1Time}s`)
-
-  const incidentStats = calculateIncidentStatistics(similarIncidents)
-
-  console.log(`Found ${similarIncidents.length} similar incidents`)
-  console.log(`Average cost: $${incidentStats.avgCost.toLocaleString()}`)
-  console.log(`Top incident types: ${Array.from(new Set(similarIncidents.slice(0, 5).map(i => i.incidentType))).join(', ')}`)
-  */
-
-  // Use empty incidents list for fast generation
-  const similarIncidents: IncidentMatch[] = []
-  const incidentStats = { avgCost: 0, totalCost: 0, mfaAdoptionRate: 0 }
-  const step1Time = '0.1' // Minimal time when skipped
-  console.log(`[OPTIMIZATION] Step 1 (Incident Search): SKIPPED - Deferred to Step 3 endpoint`)
+  }
 
   // Step 2: Analyze system description with LLM
   const step2Start = Date.now()
@@ -1024,12 +1044,14 @@ async function generateSingleRiskQuestion(
 
   console.log(`[LLM_ONLY] Generating question for "${priorityArea.area}" (incident search deferred)`)
 
-  // Use the incidents passed from main function (normally empty for fast generation)
-  // When incidents are provided later (in step 3), they can be used for enhanced context
-  const relevantIncidents = relatedIncidents
+  // ✅ REWRITTEN: Use incidents passed from main function (now properly populated)
+  // Find incidents specifically related to this risk area
+  const relevantIncidents = findRelatedIncidents(priorityArea.area, relatedIncidents)
 
-  // Calculate average multi-factor relevance (will be 0 for empty incidents array during LLM-only phase)
-  const avgMultiFactorRelevance = relevantIncidents.length > 0 ? 0.5 : 0
+  // Calculate average multi-factor relevance (properly calculated from actual incidents)
+  const avgMultiFactorRelevance = relevantIncidents.length > 0
+    ? relevantIncidents.reduce((sum, i) => sum + calculateMultiFactorRelevance(i, request), 0) / relevantIncidents.length
+    : 0
 
   // ✅ NEW: Generate formalized question using LLM
   console.log(`[LLM_QUESTION] Generating formalized question for "${priorityArea.area}"...`)
@@ -1058,49 +1080,76 @@ Data: ${(request.dataTypes || []).slice(0, 2).join(', ') || 'General data'}
 `.trim()
 
   let questionText = priorityArea.area // Fallback
+  let llmPriority = priorityArea.priority // Will be updated from LLM response
+  let llmReasoning = priorityArea.reasoning // Will be updated from LLM response
 
   try {
+    // ✅ REWRITTEN: LLM now generates question WITH explicit weight request
     const completion = await gemini.chat.completions.create({
       messages: [
         {
           role: 'system',
-          content: `You are a cybersecurity risk assessment expert. Generate a clear, focused, and concise risk assessment question.
+          content: `You are a cybersecurity risk assessment expert. Generate a risk assessment question WITH a priority weight.
 
 CRITICAL REQUIREMENTS:
-1. **Be concise** - Keep question to 1-2 sentences maximum (NOT 3-4 sentences)
-2. **Be direct** - Ask about specific controls without lengthy setup
-3. **Be actionable** - Focus on what controls should exist
-4. **NO incident prefixes** - Do NOT mention "based on X incidents" or similar phrases in the question text
+1. **Question Text**: Be concise (1-2 sentences), direct, actionable. NO "based on X incidents" prefixes.
+2. **Priority Weight**: Provide a weight (0-100) indicating how critical this risk area is for this system.
+   - 90-100: Critical - System would be severely compromised if this fails
+   - 70-89: High - Significant impact on security/compliance
+   - 50-69: Medium - Moderate risk, should be addressed
+   - 30-49: Low - Minor risk, nice to have
+   - 0-29: Very Low - Minimal impact
 
-AVOID:
-- Phrases like "based on X incidents", "based on evidence", "according to data"
-- Lengthy system descriptions or repetitive context
-- Multiple compound clauses or run-on sentences
-- Verbose incident analysis narratives
-- Excessive examples or background information
+WEIGHT FACTORS TO CONSIDER:
+- System criticality (High/Medium/Low)
+- Data types processed (PII, Financial, Health = higher weight)
+- Technology stack vulnerabilities
+- Industry-specific risks
+- Regulatory requirements
+- Incident frequency (if provided)
 
-TONE:
-- Professional and clear
-- Practical and specific
-- Actionable
+RESPONSE FORMAT (JSON):
+{
+  "question": "What MFA, RBAC, and audit mechanisms protect [data] in your [system]?",
+  "priority": 85,
+  "reasoning": "High priority because [system] processes [sensitive data] and [industry] has strict requirements"
+}
 
-GOOD EXAMPLES (concise, no incident prefixes):
-- "What MFA, RBAC, and audit mechanisms protect ${(request.dataTypes || ['sensitive data'])[0]} in your ${(request.techStack || ['system'])[0]}?"
-- "How does your ${request.deployment || 'system'} validate AI model outputs before using them in decisions?"
-- "What encryption and access controls protect your ${(request.dataTypes || ['data'])[0]} at rest and in transit?"
+GOOD EXAMPLES:
+- High weight (85-95): Access control for PII in financial systems
+- Medium weight (60-75): Monitoring for general business systems
+- Lower weight (40-55): Nice-to-have security features
 
-Format: Return ONLY the complete question text. No preamble, no explanation, just the question. Never start with "Based on" or similar incident references.`
+Return ONLY valid JSON. No markdown, no code blocks.`
         },
         {
           role: 'user',
-          content: evidenceSummary
+          content: `Generate a risk assessment question for: ${priorityArea.area}
+
+System Context:
+${request.systemDescription.substring(0, 500)}
+
+Tech Stack: ${(request.techStack || []).join(', ') || 'General'}
+Data Types: ${(request.dataTypes || []).join(', ') || 'General data'}
+Industry: ${request.industry || 'General'}
+System Criticality: ${request.systemCriticality || 'Medium'}
+
+${relevantIncidents.length > 0 ? `\nHistorical Evidence:\n- ${relevantIncidents.length} similar incidents found\n- Average cost: $${(avgCost / 1000).toFixed(0)}K\n- Average severity: ${avgSeverity.toFixed(1)}/10` : '\nNote: Limited historical evidence available - base weight on system context'}
+
+Provide question text and priority weight (0-100) based on the above context.`
         }
       ],
+      responseFormat: { type: 'json_object' },
       temperature: 0.7,
-      maxTokens: 200 // Reduced from 600 to 200 for concise questions (1-2 sentences)
+      maxTokens: 300
     })
 
-    questionText = completion.choices[0].message.content?.trim() || questionText
+    const llmResponse = JSON.parse(completion.choices[0].message.content || '{}')
+    questionText = llmResponse.question || questionText
+    llmPriority = llmResponse.priority || priorityArea.priority
+    llmReasoning = llmResponse.reasoning || priorityArea.reasoning
+    
+    console.log(`[LLM_QUESTION] Generated: "${questionText.substring(0, 80)}..." (Priority: ${llmPriority})`)
 
     // ✅ Strip any "Based on X incidents" prefix that LLM might include despite instructions
     questionText = stripIncidentPrefix(questionText)
@@ -1140,11 +1189,20 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     console.log(`[VALIDATION] Generated fallback: ${questionText.substring(0, 80)}...`)
   }
 
-  // Calculate weights
-  const baseWeight = priorityArea.priority / 100 // LLM priority as weight
-  const evidenceWeight = calculateEvidenceWeight(relatedIncidents)
-  const industryWeight = request.industry ? 0.9 : 0.7 // Higher if industry specified
+  // ✅ REWRITTEN: Calculate weights using LLM-generated priority + evidence + industry
+  // Use LLM-generated priority (already extracted above)
+  const baseWeight = Math.min(Math.max(llmPriority / 100, 0), 1) // Normalize 0-100 to 0-1, clamp to valid range
+  
+  // ✅ FIX: Calculate evidence weight from actual incidents (not empty array)
+  const evidenceWeight = calculateEvidenceWeight(relevantIncidents)
+  
+  // Industry weight: Higher if industry specified AND matches system context
+  const industryWeight = request.industry ? 0.9 : 0.7
+  
+  // ✅ Final weight formula: Base (50%) + Evidence (30%) + Industry (20%)
   const finalWeight = (baseWeight * 0.5) + (evidenceWeight * 0.3) + (industryWeight * 0.2)
+  
+  console.log(`[WEIGHT_CALC] "${priorityArea.area}": base=${(baseWeight * 100).toFixed(0)}%, evidence=${(evidenceWeight * 100).toFixed(0)}%, industry=${(industryWeight * 100).toFixed(0)}%, final=${(finalWeight * 100).toFixed(0)}%`)
 
   // Extract real examples from incidents
   const examples = relatedIncidents.slice(0, 5).map(incident => {
@@ -1226,8 +1284,12 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     description: priorityArea.area,
     priority: determinePriority(finalWeight),
 
-    importance: `${relevantIncidents.length} incidents found (severity ${avgSeverity.toFixed(1)}/10, relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}%, avg cost $${(avgCost / 1000).toFixed(0)}K).`,
-    reasoning: `${relevantIncidents.length} incidents | Severity ${avgSeverity.toFixed(1)}/10 | Relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}% | Cost $${(avgCost / 1000).toFixed(0)}K`,
+    importance: relevantIncidents.length > 0 
+      ? `${relevantIncidents.length} incidents found (severity ${avgSeverity.toFixed(1)}/10, relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}%, avg cost $${(avgCost / 1000).toFixed(0)}K). ${llmReasoning || priorityArea.reasoning}`
+      : `${llmReasoning || priorityArea.reasoning} (Limited historical evidence - weight based on system context)`,
+    reasoning: relevantIncidents.length > 0
+      ? `${relevantIncidents.length} incidents | Severity ${avgSeverity.toFixed(1)}/10 | Relevance ${(avgMultiFactorRelevance * 100).toFixed(0)}% | Cost $${(avgCost / 1000).toFixed(0)}K | ${llmReasoning || priorityArea.reasoning}`
+      : `LLM Priority: ${llmPriority}/100 | ${llmReasoning || priorityArea.reasoning} (No historical incidents found)`,
     examples,
     mitigations: generateMitigations(priorityArea.area, relevantIncidents),
     regulations: extractRegulations(relevantIncidents, llmAnalysis),
@@ -1241,7 +1303,13 @@ Format: Return ONLY the complete question text. No preamble, no explanation, jus
     finalWeight,
     weight: finalWeight, // ✅ 0-1 scale (normalized for frontend display as percentage)
 
-    weightageExplanation: createWeightageExplanation(baseWeight, evidenceWeight, industryWeight, finalWeight, `${priorityArea.reasoning}. Multi-factor relevance: ${(avgMultiFactorRelevance * 100).toFixed(0)}%`),
+    weightageExplanation: createWeightageExplanation(
+      baseWeight, 
+      evidenceWeight, 
+      industryWeight, 
+      finalWeight, 
+      `${llmReasoning || priorityArea.reasoning}. ${relevantIncidents.length > 0 ? `Evidence: ${relevantIncidents.length} incidents, ${(avgMultiFactorRelevance * 100).toFixed(0)}% relevance` : 'Limited evidence - weight based on system analysis'}.`
+    ),
     evidenceQuery: priorityArea.area,
     relatedIncidents: relevantIncidents.slice(0, 10),
     similarIncidents: relevantIncidents.slice(0, 10),
@@ -1822,17 +1890,25 @@ function findRelatedIncidents(area: string, incidents: IncidentMatch[]): Inciden
 }
 
 function calculateEvidenceWeight(incidents: IncidentMatch[]): number {
-  if (incidents.length === 0) return 0.5 // Neutral if no evidence
+  // ✅ REWRITTEN: Better handling of empty incidents
+  if (incidents.length === 0) {
+    console.log(`[EVIDENCE_WEIGHT] No incidents - returning 0.3 (low evidence weight)`)
+    return 0.3 // Lower weight when no evidence (not 0.5 which is neutral)
+  }
 
   // Weight based on:
-  // - Number of incidents (more = higher weight)
-  // - Average severity
-  // - Average similarity
+  // - Number of incidents (more = higher weight, max at 20 incidents)
+  // - Average similarity (how relevant are the incidents)
+  // - Average severity (how bad are the incidents)
   const countWeight = Math.min(incidents.length / 20, 1.0) // Max at 20 incidents
-  const avgSimilarity = incidents.reduce((sum, i) => sum + i.similarity, 0) / incidents.length
+  const avgSimilarity = incidents.reduce((sum, i) => sum + (i.similarity || 0), 0) / incidents.length
   const severityWeight = calculateSeverityWeight(incidents)
 
-  return (countWeight * 0.4) + (avgSimilarity * 0.3) + (severityWeight * 0.3)
+  const evidenceWeight = (countWeight * 0.4) + (avgSimilarity * 0.3) + (severityWeight * 0.3)
+  
+  console.log(`[EVIDENCE_WEIGHT] ${incidents.length} incidents: count=${(countWeight * 100).toFixed(0)}%, similarity=${(avgSimilarity * 100).toFixed(0)}%, severity=${(severityWeight * 100).toFixed(0)}% → final=${(evidenceWeight * 100).toFixed(0)}%`)
+  
+  return evidenceWeight
 }
 
 function calculateSeverityWeight(incidents: IncidentMatch[]): number {
