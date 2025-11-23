@@ -748,7 +748,7 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
 
       await query(
         `UPDATE "RiskAssessment" 
-         SET "riskNotes" = $1, "updatedAt" = NOW()
+         SET "riskNotes" = $1::jsonb, "updatedAt" = NOW()
          WHERE "id" = $2`,
         [JSON.stringify(updatedNotes), id]
       )
