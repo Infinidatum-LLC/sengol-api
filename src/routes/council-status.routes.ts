@@ -1,7 +1,5 @@
 /**
  * AI Risk Council - Status Routes
- *
- * Provides status and feature usage information for AI Risk Council module
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
@@ -9,13 +7,6 @@ import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { AuthenticationError } from '../lib/errors'
 
-/**
- * Get council status
- *
- * GET /api/council/status
- *
- * Returns AI Risk Council module access status and feature usage counts.
- */
 async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -25,7 +16,6 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
       throw new AuthenticationError('User ID not found in token')
     }
 
-    // Get feature counts
     const [policiesCount, vendorsCount, schedulesCount, violationsCount] = await Promise.all([
       query(
         `SELECT COUNT(*) as count FROM "Policy" 
@@ -49,7 +39,6 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
       ),
     ])
 
-    // Check product access
     let hasAccess = false
     try {
       const accessResult = await query(
@@ -63,7 +52,6 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
       )
       hasAccess = accessResult.rows.length > 0
     } catch (e: any) {
-      // Table may not exist, assume no access
       if (e.message && e.message.includes('does not exist')) {
         request.log.debug('ProductAccess table does not exist')
       } else {
@@ -76,15 +64,15 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
       features: {
         policies: {
           count: parseInt(policiesCount.rows[0]?.count || '0', 10),
-          limit: -1, // Unlimited for premium
+          limit: -1,
         },
         vendors: {
           count: parseInt(vendorsCount.rows[0]?.count || '0', 10),
-          limit: -1, // Unlimited for premium
+          limit: -1,
         },
         schedules: {
           count: parseInt(schedulesCount.rows[0]?.count || '0', 10),
-          limit: -1, // Unlimited for premium
+          limit: -1,
         },
         violations: {
           count: parseInt(violationsCount.rows[0]?.count || '0', 10),
@@ -92,8 +80,6 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
         },
       },
     }
-
-    request.log.info({ userId, geographyAccountId }, 'Council status retrieved')
 
     return reply.status(200).send({
       success: true,
@@ -119,9 +105,6 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Register status routes
- */
 export async function councilStatusRoutes(fastify: FastifyInstance) {
   fastify.get('/api/council/status', { onRequest: jwtAuthMiddleware }, getCouncilStatus)
 

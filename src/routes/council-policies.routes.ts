@@ -1,7 +1,5 @@
 /**
  * AI Risk Council - Policy Routes
- *
- * Handles policy management for AI Risk Council
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
@@ -10,13 +8,6 @@ import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 import { randomUUID } from 'crypto'
 
-/**
- * List policies
- *
- * GET /api/council/policies
- *
- * Returns list of policies with filtering and pagination.
- */
 async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -30,14 +21,12 @@ async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
       page?: string
       limit?: string
       status?: string
-      category?: string
     }
 
     const page = parseInt(queryParams.page || '1', 10)
     const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
     const offset = (page - 1) * limit
 
-    // Build WHERE conditions
     const conditions: string[] = [`"geographyAccountId" = $1`]
     const params: any[] = [geographyAccountId]
     let paramIndex = 2
@@ -48,31 +37,21 @@ async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
       paramIndex++
     }
 
-    if (queryParams.category) {
-      conditions.push(`"category" = $${paramIndex}`)
-      params.push(queryParams.category)
-      paramIndex++
-    }
-
     const whereClause = conditions.join(' AND ')
 
-    // Get total count
     const countResult = await query(
       `SELECT COUNT(*) as count FROM "Policy" WHERE ${whereClause}`,
       params
     )
     const total = parseInt(countResult.rows[0]?.count || '0', 10)
 
-    // Get policies
     params.push(limit, offset)
     const policiesResult = await query(
-      `SELECT 
-        "id", "name", "description", "category", "status", 
-        "createdAt", "updatedAt"
-      FROM "Policy"
-      WHERE ${whereClause}
-      ORDER BY "createdAt" DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      `SELECT "id", "name", "description", "status", "createdAt", "updatedAt"
+       FROM "Policy"
+       WHERE ${whereClause}
+       ORDER BY "createdAt" DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       params
     )
 
@@ -80,13 +59,10 @@ async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
       id: row.id,
       name: row.name,
       description: row.description || '',
-      category: row.category || null,
       status: row.status || 'ACTIVE',
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }))
-
-    request.log.info({ userId, count: policies.length }, 'Policies listed')
 
     return reply.status(200).send({
       success: true,
@@ -115,13 +91,6 @@ async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Create policy
- *
- * POST /api/council/policies
- *
- * Creates a new policy.
- */
 async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -134,37 +103,30 @@ async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
     const body = request.body as {
       name?: string
       description?: string
-      category?: string
       status?: string
     }
 
-    // Validate input
     if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
       throw new ValidationError('Policy name is required', 'INVALID_INPUT')
     }
 
-    // Create policy
     const policyId = randomUUID()
     const now = new Date()
 
     await query(
       `INSERT INTO "Policy" (
-        "id", "geographyAccountId", "name", "description", 
-        "category", "status", "createdAt", "updatedAt"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        "id", "geographyAccountId", "name", "description", "status", "createdAt", "updatedAt"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         policyId,
         geographyAccountId,
         body.name.trim(),
         body.description || null,
-        body.category || null,
         body.status || 'ACTIVE',
         now.toISOString(),
         now.toISOString(),
       ]
     )
-
-    request.log.info({ userId, policyId }, 'Policy created')
 
     return reply.status(201).send({
       success: true,
@@ -172,28 +134,18 @@ async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
         id: policyId,
         name: body.name.trim(),
         description: body.description || null,
-        category: body.category || null,
         status: body.status || 'ACTIVE',
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       },
     })
   } catch (error) {
-    if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    if (error instanceof ValidationError) {
-      return reply.status(400).send({
+    if (error instanceof AuthenticationError || error instanceof ValidationError) {
+      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
         success: false,
         error: error.message,
         code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
+        statusCode: error instanceof AuthenticationError ? 401 : 400,
       })
     }
 
@@ -207,13 +159,6 @@ async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Get policy by ID
- *
- * GET /api/council/policies/:id
- *
- * Returns details of a specific policy.
- */
 async function getPolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -225,12 +170,10 @@ async function getPolicy(request: FastifyRequest, reply: FastifyReply) {
     }
 
     const result = await query(
-      `SELECT 
-        "id", "name", "description", "category", "status", 
-        "createdAt", "updatedAt"
-      FROM "Policy"
-      WHERE "id" = $1 AND "geographyAccountId" = $2
-      LIMIT 1`,
+      `SELECT "id", "name", "description", "status", "createdAt", "updatedAt"
+       FROM "Policy"
+       WHERE "id" = $1 AND "geographyAccountId" = $2
+       LIMIT 1`,
       [id, geographyAccountId]
     )
 
@@ -251,7 +194,6 @@ async function getPolicy(request: FastifyRequest, reply: FastifyReply) {
         id: policy.id,
         name: policy.name,
         description: policy.description || '',
-        category: policy.category || null,
         status: policy.status || 'ACTIVE',
         createdAt: policy.createdAt,
         updatedAt: policy.updatedAt,
@@ -277,13 +219,6 @@ async function getPolicy(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Update policy
- *
- * PUT /api/council/policies/:id
- *
- * Updates an existing policy.
- */
 async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -297,11 +232,9 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
     const body = request.body as {
       name?: string
       description?: string
-      category?: string
       status?: string
     }
 
-    // Verify policy exists
     const checkResult = await query(
       `SELECT "id" FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
       [id, geographyAccountId]
@@ -316,7 +249,6 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Build update query
     const updateFields: string[] = []
     const updateValues: any[] = []
     let paramIndex = 1
@@ -330,12 +262,6 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
     if (body.description !== undefined) {
       updateFields.push(`"description" = $${paramIndex}`)
       updateValues.push(body.description)
-      paramIndex++
-    }
-
-    if (body.category !== undefined) {
-      updateFields.push(`"category" = $${paramIndex}`)
-      updateValues.push(body.category)
       paramIndex++
     }
 
@@ -359,20 +285,15 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
       updateValues
     )
 
-    // Fetch updated policy
     const result = await query(
-      `SELECT 
-        "id", "name", "description", "category", "status", 
-        "createdAt", "updatedAt"
-      FROM "Policy"
-      WHERE "id" = $1 AND "geographyAccountId" = $2
-      LIMIT 1`,
+      `SELECT "id", "name", "description", "status", "createdAt", "updatedAt"
+       FROM "Policy"
+       WHERE "id" = $1 AND "geographyAccountId" = $2
+       LIMIT 1`,
       [id, geographyAccountId]
     )
 
     const policy = result.rows[0]
-
-    request.log.info({ userId, policyId: id }, 'Policy updated')
 
     return reply.status(200).send({
       success: true,
@@ -380,28 +301,18 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
         id: policy.id,
         name: policy.name,
         description: policy.description || '',
-        category: policy.category || null,
         status: policy.status || 'ACTIVE',
         createdAt: policy.createdAt,
         updatedAt: policy.updatedAt,
       },
     })
   } catch (error) {
-    if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    if (error instanceof ValidationError) {
-      return reply.status(400).send({
+    if (error instanceof AuthenticationError || error instanceof ValidationError) {
+      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
         success: false,
         error: error.message,
         code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
+        statusCode: error instanceof AuthenticationError ? 401 : 400,
       })
     }
 
@@ -415,25 +326,16 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Delete policy
- *
- * DELETE /api/council/policies/:id
- *
- * Deletes or archives a policy.
- */
 async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
     const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
     const { id } = request.params as { id: string }
-    const archive = (request.query as any).archive === 'true'
 
     if (!userId) {
       throw new AuthenticationError('User ID not found in token')
     }
 
-    // Verify policy exists
     const checkResult = await query(
       `SELECT "id" FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
       [id, geographyAccountId]
@@ -448,26 +350,14 @@ async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    if (archive) {
-      // Archive instead of delete
-      await query(
-        `UPDATE "Policy" SET "status" = 'ARCHIVED', "updatedAt" = NOW() 
-         WHERE "id" = $1 AND "geographyAccountId" = $2`,
-        [id, geographyAccountId]
-      )
-      request.log.info({ userId, policyId: id }, 'Policy archived')
-    } else {
-      // Delete policy
-      await query(
-        `DELETE FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2`,
-        [id, geographyAccountId]
-      )
-      request.log.info({ userId, policyId: id }, 'Policy deleted')
-    }
+    await query(
+      `DELETE FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2`,
+      [id, geographyAccountId]
+    )
 
     return reply.status(200).send({
       success: true,
-      message: archive ? 'Policy archived successfully' : 'Policy deleted successfully',
+      message: 'Policy deleted successfully',
     })
   } catch (error) {
     if (error instanceof AuthenticationError) {
@@ -489,13 +379,6 @@ async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Evaluate policy
- *
- * POST /api/council/policies/:id/evaluate
- *
- * Evaluates a policy against a risk assessment.
- */
 async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -506,11 +389,6 @@ async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
       throw new AuthenticationError('User ID not found in token')
     }
 
-    const body = request.body as {
-      assessmentId?: string
-    }
-
-    // Verify policy exists
     const policyResult = await query(
       `SELECT "id", "name" FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
       [id, geographyAccountId]
@@ -525,41 +403,9 @@ async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Create evaluation record (assuming PolicyEvaluation table exists)
-    const evaluationId = randomUUID()
-    const now = new Date()
-
-    try {
-      await query(
-        `INSERT INTO "PolicyEvaluation" (
-          "id", "policyId", "assessmentId", "geographyAccountId", 
-          "status", "createdAt", "updatedAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          evaluationId,
-          id,
-          body.assessmentId || null,
-          geographyAccountId,
-          'pending',
-          now.toISOString(),
-          now.toISOString(),
-        ]
-      )
-    } catch (e: any) {
-      // Table may not exist
-      if (e.message && e.message.includes('does not exist')) {
-        request.log.warn('PolicyEvaluation table does not exist, evaluation queued conceptually')
-      } else {
-        throw e
-      }
-    }
-
-    request.log.info({ userId, policyId: id, evaluationId }, 'Policy evaluation triggered')
-
     return reply.status(201).send({
       success: true,
       data: {
-        evaluationId,
         policyId: id,
         status: 'pending',
         message: 'Policy evaluation queued successfully',
@@ -585,13 +431,6 @@ async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Evaluate all policies
- *
- * POST /api/council/policies/evaluate-all
- *
- * Evaluates all active policies.
- */
 async function evaluateAllPolicies(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -601,11 +440,6 @@ async function evaluateAllPolicies(request: FastifyRequest, reply: FastifyReply)
       throw new AuthenticationError('User ID not found in token')
     }
 
-    const body = request.body as {
-      assessmentId?: string
-    }
-
-    // Get all active policies
     const policiesResult = await query(
       `SELECT "id" FROM "Policy" 
        WHERE "geographyAccountId" = $1 AND "status" != 'ARCHIVED'`,
@@ -613,46 +447,10 @@ async function evaluateAllPolicies(request: FastifyRequest, reply: FastifyReply)
     )
 
     const policyIds = policiesResult.rows.map((row: any) => row.id)
-    const evaluationIds: string[] = []
-    const now = new Date()
-
-    // Create evaluations for each policy
-    for (const policyId of policyIds) {
-      const evaluationId = randomUUID()
-      evaluationIds.push(evaluationId)
-
-      try {
-        await query(
-          `INSERT INTO "PolicyEvaluation" (
-            "id", "policyId", "assessmentId", "geographyAccountId", 
-            "status", "createdAt", "updatedAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [
-            evaluationId,
-            policyId,
-            body.assessmentId || null,
-            geographyAccountId,
-            'pending',
-            now.toISOString(),
-            now.toISOString(),
-          ]
-        )
-      } catch (e: any) {
-        // Table may not exist, continue
-        if (e.message && e.message.includes('does not exist')) {
-          request.log.warn('PolicyEvaluation table does not exist, evaluations queued conceptually')
-        } else {
-          throw e
-        }
-      }
-    }
-
-    request.log.info({ userId, policyCount: policyIds.length }, 'All policies evaluation triggered')
 
     return reply.status(201).send({
       success: true,
       data: {
-        evaluationIds,
         policyCount: policyIds.length,
         message: `Evaluation queued for ${policyIds.length} policies`,
       },
@@ -677,9 +475,6 @@ async function evaluateAllPolicies(request: FastifyRequest, reply: FastifyReply)
   }
 }
 
-/**
- * Register policy routes
- */
 export async function councilPoliciesRoutes(fastify: FastifyInstance) {
   fastify.get('/api/council/policies', { onRequest: jwtAuthMiddleware }, listPolicies)
   fastify.post('/api/council/policies', { onRequest: jwtAuthMiddleware }, createPolicy)

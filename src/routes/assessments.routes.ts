@@ -8,6 +8,7 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { query } from '../lib/db'
 import { ValidationError, DatabaseError } from '../lib/errors'
+import { randomUUID } from 'crypto'
 
 /**
  * Get assessment by ID endpoint
@@ -340,17 +341,14 @@ async function getAssessmentProgress(request: FastifyRequest, reply: FastifyRepl
 }
 
 /**
- * Submit assessment
+ * Submit assessment for analysis
  *
  * POST /api/assessments/:id/submit
- *
- * Submits a completed assessment for analysis.
  */
 async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
-    const body = request.body as { userId?: string }
-    const userId = request.headers['x-user-id'] as string || body.userId
+    const userId = request.headers['x-user-id'] as string
 
     if (!userId) {
       return reply.status(401).send({
@@ -386,7 +384,7 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Update assessment status to submitted
+    // Update assessment status to completed
     await query(
       `UPDATE "RiskAssessment" 
        SET "status" = 'completed', "updatedAt" = NOW()
@@ -419,15 +417,13 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
  * Get assessment scores
  *
  * GET /api/assessments/:id/scores
- *
- * Returns assessment scores and metrics.
  */
 async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
-    const userId = request.query as { userId?: string }
+    const userId = (request.query as { userId?: string }).userId || request.headers['x-user-id'] as string
 
-    if (!userId.userId) {
+    if (!userId) {
       return reply.status(401).send({
         success: false,
         error: 'User authentication required',
@@ -442,7 +438,7 @@ async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply)
        FROM "RiskAssessment" 
        WHERE "id" = $1 AND "userId" = $2
        LIMIT 1`,
-      [id, userId.userId]
+      [id, userId]
     )
 
     if (result.rows.length === 0) {
@@ -481,15 +477,13 @@ async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply)
  * Get assessment benchmark
  *
  * GET /api/assessments/:id/benchmark
- *
- * Returns industry benchmark data for the assessment.
  */
 async function getAssessmentBenchmark(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
-    const userId = request.query as { userId?: string }
+    const userId = (request.query as { userId?: string }).userId || request.headers['x-user-id'] as string
 
-    if (!userId.userId) {
+    if (!userId) {
       return reply.status(401).send({
         success: false,
         error: 'User authentication required',
@@ -500,8 +494,8 @@ async function getAssessmentBenchmark(request: FastifyRequest, reply: FastifyRep
 
     // Verify assessment exists
     const checkResult = await query(
-      `SELECT "id" FROM "RiskAssessment" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
-      [id, userId.userId]
+      `SELECT "id", "riskScore" FROM "RiskAssessment" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
+      [id, userId]
     )
 
     if (checkResult.rows.length === 0) {
@@ -513,13 +507,16 @@ async function getAssessmentBenchmark(request: FastifyRequest, reply: FastifyRep
       })
     }
 
-    // Return benchmark data (placeholder - would calculate from industry data)
+    const assessment = checkResult.rows[0]
+    const riskScore = assessment.riskScore || 0
+
+    // Return benchmark data (simplified - would calculate from industry data)
     return reply.status(200).send({
       success: true,
       data: {
         assessmentId: id,
         industryAverage: 65.5,
-        percentile: 75,
+        percentile: riskScore > 65.5 ? 75 : 50,
         benchmark: {
           low: 40,
           medium: 60,
@@ -542,15 +539,14 @@ async function getAssessmentBenchmark(request: FastifyRequest, reply: FastifyRep
  * Get similar cases
  *
  * GET /api/assessments/:id/similar-cases
- *
- * Returns similar case studies for the assessment.
  */
 async function getSimilarCases(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
-    const userId = request.query as { userId?: string; limit?: string }
+    const queryParams = request.query as { userId?: string; limit?: string }
+    const userId = queryParams.userId || request.headers['x-user-id'] as string
 
-    if (!userId.userId) {
+    if (!userId) {
       return reply.status(401).send({
         success: false,
         error: 'User authentication required',
@@ -562,7 +558,7 @@ async function getSimilarCases(request: FastifyRequest, reply: FastifyReply) {
     // Verify assessment exists
     const checkResult = await query(
       `SELECT "id" FROM "RiskAssessment" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
-      [id, userId.userId]
+      [id, userId]
     )
 
     if (checkResult.rows.length === 0) {
@@ -574,7 +570,7 @@ async function getSimilarCases(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    const limit = Math.min(parseInt(userId.limit || '10', 10), 50)
+    const limit = Math.min(parseInt(queryParams.limit || '10', 10), 50)
 
     // Return similar cases (placeholder - would use vector search)
     return reply.status(200).send({
@@ -598,100 +594,14 @@ async function getSimilarCases(request: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * Save assessment step 1
+ * Save assessment step
  *
- * PUT /api/assessments/:id/step1
- *
- * Saves progress for step 1 of the assessment.
+ * PUT /api/assessments/:id/step1, step2, step3
  */
-async function saveAssessmentStep1(request: FastifyRequest, reply: FastifyReply) {
+async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
-    const userId = request.headers['x-user-id'] as string
-
-    if (!userId) {
-      return reply.status(401).send({
-        success: false,
-        error: 'User authentication required',
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    const body = request.body as Record<string, any>
-
-    const body = request.body as Record<string, any>
-
-    // Verify assessment exists
-    const checkResult = await query(
-      `SELECT "id", "userId", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
-      [id]
-    )
-
-    if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Assessment not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
-    }
-
-    const assessment = checkResult.rows[0]
-    if (assessment.userId !== userId) {
-      return reply.status(403).send({
-        success: false,
-        error: 'You do not have permission to update this assessment',
-        code: 'FORBIDDEN',
-        statusCode: 403,
-      })
-    }
-
-    // Update riskNotes with step 1 data
-    const currentNotes = assessment.riskNotes || {}
-    const updatedNotes = {
-      ...currentNotes,
-      step1: body,
-    }
-
-    await query(
-      `UPDATE "RiskAssessment" 
-       SET "riskNotes" = $1, "updatedAt" = NOW()
-       WHERE "id" = $2`,
-      [JSON.stringify(updatedNotes), id]
-    )
-
-    request.log.info({ assessmentId: id, step: 1, userId }, 'Assessment step 1 saved')
-
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id,
-        step: 1,
-        message: 'Step 1 saved successfully',
-      },
-    })
-  } catch (error) {
-    request.log.error({ err: error }, 'Save assessment step 1 error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to save assessment step 1',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
-  }
-}
-
-/**
- * Save assessment step 2
- *
- * PUT /api/assessments/:id/step2
- *
- * Saves progress for step 2 of the assessment.
- */
-async function saveAssessmentStep2(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { id } = request.params as { id: string }
+    const step = (request.url.match(/step(\d+)/) || [])[1] || '1'
     const userId = request.headers['x-user-id'] as string
 
     if (!userId) {
@@ -730,11 +640,11 @@ async function saveAssessmentStep2(request: FastifyRequest, reply: FastifyReply)
       })
     }
 
-    // Update riskNotes with step 2 data
+    // Update riskNotes with step data
     const currentNotes = assessment.riskNotes || {}
     const updatedNotes = {
       ...currentNotes,
-      step2: body,
+      [`step${step}`]: body,
     }
 
     await query(
@@ -744,104 +654,21 @@ async function saveAssessmentStep2(request: FastifyRequest, reply: FastifyReply)
       [JSON.stringify(updatedNotes), id]
     )
 
-    request.log.info({ assessmentId: id, step: 2, userId }, 'Assessment step 2 saved')
+    request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
 
     return reply.status(200).send({
       success: true,
       data: {
         id,
-        step: 2,
-        message: 'Step 2 saved successfully',
+        step: parseInt(step, 10),
+        message: `Step ${step} saved successfully`,
       },
     })
   } catch (error) {
-    request.log.error({ err: error }, 'Save assessment step 2 error')
+    request.log.error({ err: error }, 'Save assessment step error')
     return reply.status(500).send({
       success: false,
-      error: 'Failed to save assessment step 2',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
-  }
-}
-
-/**
- * Save assessment step 3
- *
- * PUT /api/assessments/:id/step3
- *
- * Saves progress for step 3 of the assessment.
- */
-async function saveAssessmentStep3(request: FastifyRequest, reply: FastifyReply) {
-  try {
-    const { id } = request.params as { id: string }
-    const userId = request.headers['x-user-id'] as string
-
-    if (!userId) {
-      return reply.status(401).send({
-        success: false,
-        error: 'User authentication required',
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    const body = request.body as Record<string, any>
-
-    // Verify assessment exists
-    const checkResult = await query(
-      `SELECT "id", "userId", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
-      [id]
-    )
-
-    if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Assessment not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
-    }
-
-    const assessment = checkResult.rows[0]
-    if (assessment.userId !== userId) {
-      return reply.status(403).send({
-        success: false,
-        error: 'You do not have permission to update this assessment',
-        code: 'FORBIDDEN',
-        statusCode: 403,
-      })
-    }
-
-    // Update riskNotes with step 3 data
-    const currentNotes = assessment.riskNotes || {}
-    const updatedNotes = {
-      ...currentNotes,
-      step3: body,
-    }
-
-    await query(
-      `UPDATE "RiskAssessment" 
-       SET "riskNotes" = $1, "updatedAt" = NOW()
-       WHERE "id" = $2`,
-      [JSON.stringify(updatedNotes), id]
-    )
-
-    request.log.info({ assessmentId: id, step: 3, userId }, 'Assessment step 3 saved')
-
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id,
-        step: 3,
-        message: 'Step 3 saved successfully',
-      },
-    })
-  } catch (error) {
-    request.log.error({ err: error }, 'Save assessment step 3 error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to save assessment step 3',
+      error: 'Failed to save assessment step',
       code: 'INTERNAL_ERROR',
       statusCode: 500,
     })
@@ -852,16 +679,10 @@ async function saveAssessmentStep3(request: FastifyRequest, reply: FastifyReply)
  * Create new assessment
  *
  * POST /api/assessments
- *
- * Creates a new risk assessment.
  */
 async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const body = request.body as {
-      userId?: string
-      projectId?: string
-      name?: string
-    }
+    const body = request.body as { userId?: string; projectId?: string; name?: string }
     const userId = request.headers['x-user-id'] as string || body.userId
 
     if (!userId) {
@@ -927,9 +748,9 @@ export async function assessmentsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/assessments/:id/scores', getAssessmentScores)
   fastify.get('/api/assessments/:id/benchmark', getAssessmentBenchmark)
   fastify.get('/api/assessments/:id/similar-cases', getSimilarCases)
-  fastify.put('/api/assessments/:id/step1', saveAssessmentStep1)
-  fastify.put('/api/assessments/:id/step2', saveAssessmentStep2)
-  fastify.put('/api/assessments/:id/step3', saveAssessmentStep3)
+  fastify.put('/api/assessments/:id/step1', saveAssessmentStep)
+  fastify.put('/api/assessments/:id/step2', saveAssessmentStep)
+  fastify.put('/api/assessments/:id/step3', saveAssessmentStep)
 
   fastify.log.info('Assessment routes registered')
 }

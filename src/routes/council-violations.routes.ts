@@ -1,7 +1,5 @@
 /**
  * AI Risk Council - Violation Routes
- *
- * Handles policy violation management for AI Risk Council
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
@@ -9,13 +7,6 @@ import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 
-/**
- * List violations
- *
- * GET /api/council/violations
- *
- * Returns list of policy violations with filtering and pagination.
- */
 async function listViolations(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -36,7 +27,6 @@ async function listViolations(request: FastifyRequest, reply: FastifyReply) {
     const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
     const offset = (page - 1) * limit
 
-    // Build WHERE conditions
     const conditions: string[] = [`"geographyAccountId" = $1`]
     const params: any[] = [geographyAccountId]
     let paramIndex = 2
@@ -55,23 +45,20 @@ async function listViolations(request: FastifyRequest, reply: FastifyReply) {
 
     const whereClause = conditions.join(' AND ')
 
-    // Get total count
     const countResult = await query(
       `SELECT COUNT(*) as count FROM "PolicyViolation" WHERE ${whereClause}`,
       params
     )
     const total = parseInt(countResult.rows[0]?.count || '0', 10)
 
-    // Get violations
     params.push(limit, offset)
     const violationsResult = await query(
-      `SELECT 
-        "id", "policyId", "assessmentId", "severity", "status", 
-        "description", "createdAt", "updatedAt"
-      FROM "PolicyViolation"
-      WHERE ${whereClause}
-      ORDER BY "createdAt" DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      `SELECT "id", "policyId", "assessmentId", "severity", "status", 
+              "description", "createdAt", "updatedAt"
+       FROM "PolicyViolation"
+       WHERE ${whereClause}
+       ORDER BY "createdAt" DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       params
     )
 
@@ -85,8 +72,6 @@ async function listViolations(request: FastifyRequest, reply: FastifyReply) {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }))
-
-    request.log.info({ userId, count: violations.length }, 'Violations listed')
 
     return reply.status(200).send({
       success: true,
@@ -115,13 +100,6 @@ async function listViolations(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Update violation status
- *
- * PATCH /api/council/violations/:id
- *
- * Updates the status of a policy violation.
- */
 async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -137,7 +115,6 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
       resolution?: string
     }
 
-    // Verify violation exists
     const checkResult = await query(
       `SELECT "id" FROM "PolicyViolation" WHERE "id" = $1 LIMIT 1`,
       [id]
@@ -152,7 +129,6 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Build update query
     const updateFields: string[] = []
     const updateValues: any[] = []
     let paramIndex = 1
@@ -190,20 +166,16 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
       updateValues
     )
 
-    // Fetch updated violation
     const result = await query(
-      `SELECT 
-        "id", "policyId", "assessmentId", "severity", "status", 
-        "description", "resolution", "createdAt", "updatedAt"
-      FROM "PolicyViolation"
-      WHERE "id" = $1
-      LIMIT 1`,
+      `SELECT "id", "policyId", "assessmentId", "severity", "status", 
+              "description", "resolution", "createdAt", "updatedAt"
+       FROM "PolicyViolation"
+       WHERE "id" = $1
+       LIMIT 1`,
       [id]
     )
 
     const violation = result.rows[0]
-
-    request.log.info({ userId, violationId: id }, 'Violation updated')
 
     return reply.status(200).send({
       success: true,
@@ -220,21 +192,12 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
       },
     })
   } catch (error) {
-    if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    if (error instanceof ValidationError) {
-      return reply.status(400).send({
+    if (error instanceof AuthenticationError || error instanceof ValidationError) {
+      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
         success: false,
         error: error.message,
         code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
+        statusCode: error instanceof AuthenticationError ? 401 : 400,
       })
     }
 
@@ -248,9 +211,6 @@ async function updateViolation(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Register violation routes
- */
 export async function councilViolationsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/council/violations', { onRequest: jwtAuthMiddleware }, listViolations)
   fastify.patch('/api/council/violations/:id', { onRequest: jwtAuthMiddleware }, updateViolation)

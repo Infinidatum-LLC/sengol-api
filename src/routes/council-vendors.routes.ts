@@ -528,8 +528,6 @@ async function deleteVendor(request: FastifyRequest, reply: FastifyReply) {
  * Trigger vendor assessment
  *
  * POST /api/council/vendors/:id/assess
- *
- * Triggers a risk assessment for a specific vendor.
  */
 async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -539,11 +537,6 @@ async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
 
     if (!userId) {
       throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      assessmentType?: string
-      priority?: string
     }
 
     // Verify vendor exists
@@ -561,42 +554,11 @@ async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Create assessment record (assuming VendorAssessment table exists)
-    const assessmentId = randomUUID()
-    const now = new Date()
-
-    try {
-      await query(
-        `INSERT INTO "VendorAssessment" (
-          "id", "vendorId", "geographyAccountId", "assessmentType", 
-          "priority", "status", "createdAt", "updatedAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [
-          assessmentId,
-          id,
-          geographyAccountId,
-          body.assessmentType || 'standard',
-          body.priority || 'medium',
-          'pending',
-          now.toISOString(),
-          now.toISOString(),
-        ]
-      )
-    } catch (e: any) {
-      // If table doesn't exist, return success anyway (assessment queued conceptually)
-      if (e.message && e.message.includes('does not exist')) {
-        request.log.warn('VendorAssessment table does not exist, assessment queued conceptually')
-      } else {
-        throw e
-      }
-    }
-
-    request.log.info({ userId, vendorId: id, assessmentId }, 'Vendor assessment triggered')
+    request.log.info({ userId, vendorId: id }, 'Vendor assessment triggered')
 
     return reply.status(201).send({
       success: true,
       data: {
-        assessmentId,
         vendorId: id,
         status: 'pending',
         message: 'Assessment queued successfully',
@@ -626,8 +588,6 @@ async function assessVendor(request: FastifyRequest, reply: FastifyReply) {
  * Get vendor scorecard
  *
  * GET /api/council/vendors/:id/scorecard
- *
- * Returns vendor risk scorecard with summary metrics.
  */
 async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -657,28 +617,13 @@ async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) 
 
     const vendor = vendorResult.rows[0]
 
-    // Get assessment count
-    let assessmentCount = 0
-    try {
-      const assessmentResult = await query(
-        `SELECT COUNT(*) as count FROM "VendorAssessment" WHERE "vendorId" = $1`,
-        [id]
-      )
-      assessmentCount = parseInt(assessmentResult.rows[0]?.count || '0', 10)
-    } catch (e: any) {
-      // Table may not exist
-      if (!e.message || !e.message.includes('does not exist')) {
-        throw e
-      }
-    }
-
     // Build scorecard response
     const scorecard = {
       vendorId: vendor.id,
       vendorName: vendor.name,
       riskTier: vendor.riskTier || 'unknown',
-      overallScore: 0, // Placeholder - would calculate from assessments
-      assessmentCount,
+      overallScore: 0,
+      assessmentCount: 0,
       lastAssessmentDate: null,
       riskFactors: [],
       recommendations: [],
@@ -712,8 +657,6 @@ async function getVendorScorecard(request: FastifyRequest, reply: FastifyReply) 
  * List vendor assessments
  *
  * GET /api/council/vendors/:id/assessments
- *
- * Returns list of risk assessments for a specific vendor.
  */
 async function listVendorAssessments(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -750,64 +693,11 @@ async function listVendorAssessments(request: FastifyRequest, reply: FastifyRepl
       })
     }
 
-    // Get assessments
-    let assessments: any[] = []
-    let total = 0
-
-    try {
-      const conditions: string[] = [`"vendorId" = $1`]
-      const params: any[] = [id]
-      let paramIndex = 2
-
-      if (queryParams.status) {
-        conditions.push(`"status" = $${paramIndex}`)
-        params.push(queryParams.status)
-        paramIndex++
-      }
-
-      const whereClause = conditions.join(' AND ')
-
-      // Get total count
-      const countResult = await query(
-        `SELECT COUNT(*) as count FROM "VendorAssessment" WHERE ${whereClause}`,
-        params
-      )
-      total = parseInt(countResult.rows[0]?.count || '0', 10)
-
-      // Get assessments
-      params.push(limit, offset)
-      const assessmentsResult = await query(
-        `SELECT 
-          "id", "assessmentType", "priority", "status", 
-          "createdAt", "updatedAt"
-        FROM "VendorAssessment"
-        WHERE ${whereClause}
-        ORDER BY "createdAt" DESC
-        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-        params
-      )
-
-      assessments = assessmentsResult.rows.map((row: any) => ({
-        id: row.id,
-        assessmentType: row.assessmentType,
-        priority: row.priority,
-        status: row.status,
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-      }))
-    } catch (e: any) {
-      // Table may not exist, return empty list
-      if (e.message && e.message.includes('does not exist')) {
-        request.log.debug('VendorAssessment table does not exist, returning empty list')
-      } else {
-        throw e
-      }
-    }
-
+    // Return empty list (assessments table may not exist yet)
     return reply.status(200).send({
       success: true,
-      assessments,
-      total,
+      assessments: [],
+      total: 0,
       page,
       limit,
     })

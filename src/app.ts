@@ -38,7 +38,6 @@ import { councilStatusRoutes } from './routes/council-status.routes' // Council 
 import { userOnboardingRoutes } from './routes/user-onboarding.routes' // User onboarding routes
 import { userChangePasswordRoutes } from './routes/user-change-password.routes' // User change password routes
 import { userUsageRoutes } from './routes/user-usage.routes' // User usage routes
-import { councilVendorsRoutes } from './routes/council-vendors.routes' // Council vendor routes
 import { cronArchiveArticlesRoutes } from './routes/cron-archive-articles.routes' // Cron archive articles routes
 import { requestTimeoutMiddleware } from './middleware/request-timeout'
 import { requestLoggingMiddleware } from './middleware/request-logging'
@@ -131,7 +130,6 @@ export async function build() {
   await fastify.register(userOnboardingRoutes) // User onboarding routes (ENABLED)
   await fastify.register(userChangePasswordRoutes) // User change password routes (ENABLED)
   await fastify.register(userUsageRoutes) // User usage routes (ENABLED)
-  await fastify.register(councilVendorsRoutes) // Council vendor routes (ENABLED)
   await fastify.register(cronArchiveArticlesRoutes) // Cron archive articles routes (ENABLED)
   // await fastify.register(projectsGatedRoutes) // DISABLED: Pending implementation
   // await fastify.register(questionsRoutes) // DISABLED: Pending implementation

@@ -1,7 +1,5 @@
 /**
  * AI Risk Council - Schedule Routes
- *
- * Handles assessment schedule management for AI Risk Council
  */
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
@@ -10,13 +8,6 @@ import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 import { randomUUID } from 'crypto'
 
-/**
- * List schedules
- *
- * GET /api/council/schedules
- *
- * Returns list of assessment schedules with filtering and pagination.
- */
 async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -36,7 +27,6 @@ async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
     const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
     const offset = (page - 1) * limit
 
-    // Build WHERE conditions
     const conditions: string[] = [`"geographyAccountId" = $1`]
     const params: any[] = [geographyAccountId]
     let paramIndex = 2
@@ -49,23 +39,20 @@ async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
 
     const whereClause = conditions.join(' AND ')
 
-    // Get total count
     const countResult = await query(
       `SELECT COUNT(*) as count FROM "AssessmentSchedule" WHERE ${whereClause}`,
       params
     )
     const total = parseInt(countResult.rows[0]?.count || '0', 10)
 
-    // Get schedules
     params.push(limit, offset)
     const schedulesResult = await query(
-      `SELECT 
-        "id", "name", "description", "frequency", "status", 
-        "nextRunAt", "lastRunAt", "createdAt", "updatedAt"
-      FROM "AssessmentSchedule"
-      WHERE ${whereClause}
-      ORDER BY "createdAt" DESC
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      `SELECT "id", "name", "description", "frequency", "status", 
+              "nextRunAt", "lastRunAt", "createdAt", "updatedAt"
+       FROM "AssessmentSchedule"
+       WHERE ${whereClause}
+       ORDER BY "createdAt" DESC
+       LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
       params
     )
 
@@ -80,8 +67,6 @@ async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }))
-
-    request.log.info({ userId, count: schedules.length }, 'Schedules listed')
 
     return reply.status(200).send({
       success: true,
@@ -110,13 +95,6 @@ async function listSchedules(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Create schedule
- *
- * POST /api/council/schedules
- *
- * Creates a new assessment schedule.
- */
 async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -133,12 +111,10 @@ async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
       status?: string
     }
 
-    // Validate input
     if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
       throw new ValidationError('Schedule name is required', 'INVALID_INPUT')
     }
 
-    // Create schedule
     const scheduleId = randomUUID()
     const now = new Date()
 
@@ -159,8 +135,6 @@ async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
       ]
     )
 
-    request.log.info({ userId, scheduleId }, 'Schedule created')
-
     return reply.status(201).send({
       success: true,
       data: {
@@ -174,21 +148,12 @@ async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
       },
     })
   } catch (error) {
-    if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    if (error instanceof ValidationError) {
-      return reply.status(400).send({
+    if (error instanceof AuthenticationError || error instanceof ValidationError) {
+      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
         success: false,
         error: error.message,
         code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
+        statusCode: error instanceof AuthenticationError ? 401 : 400,
       })
     }
 
@@ -202,13 +167,6 @@ async function createSchedule(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Get schedule by ID
- *
- * GET /api/council/schedules/:id
- *
- * Returns details of a specific schedule.
- */
 async function getSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -220,12 +178,11 @@ async function getSchedule(request: FastifyRequest, reply: FastifyReply) {
     }
 
     const result = await query(
-      `SELECT 
-        "id", "name", "description", "frequency", "status", 
-        "nextRunAt", "lastRunAt", "createdAt", "updatedAt"
-      FROM "AssessmentSchedule"
-      WHERE "id" = $1 AND "geographyAccountId" = $2
-      LIMIT 1`,
+      `SELECT "id", "name", "description", "frequency", "status", 
+              "nextRunAt", "lastRunAt", "createdAt", "updatedAt"
+       FROM "AssessmentSchedule"
+       WHERE "id" = $1 AND "geographyAccountId" = $2
+       LIMIT 1`,
       [id, geographyAccountId]
     )
 
@@ -274,13 +231,6 @@ async function getSchedule(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Update schedule
- *
- * PUT /api/council/schedules/:id
- *
- * Updates an existing schedule.
- */
 async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -298,7 +248,6 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
       status?: string
     }
 
-    // Verify schedule exists
     const checkResult = await query(
       `SELECT "id" FROM "AssessmentSchedule" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
       [id, geographyAccountId]
@@ -313,7 +262,6 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Build update query
     const updateFields: string[] = []
     const updateValues: any[] = []
     let paramIndex = 1
@@ -356,20 +304,16 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
       updateValues
     )
 
-    // Fetch updated schedule
     const result = await query(
-      `SELECT 
-        "id", "name", "description", "frequency", "status", 
-        "nextRunAt", "lastRunAt", "createdAt", "updatedAt"
-      FROM "AssessmentSchedule"
-      WHERE "id" = $1 AND "geographyAccountId" = $2
-      LIMIT 1`,
+      `SELECT "id", "name", "description", "frequency", "status", 
+              "nextRunAt", "lastRunAt", "createdAt", "updatedAt"
+       FROM "AssessmentSchedule"
+       WHERE "id" = $1 AND "geographyAccountId" = $2
+       LIMIT 1`,
       [id, geographyAccountId]
     )
 
     const schedule = result.rows[0]
-
-    request.log.info({ userId, scheduleId: id }, 'Schedule updated')
 
     return reply.status(200).send({
       success: true,
@@ -386,21 +330,12 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
       },
     })
   } catch (error) {
-    if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
-    }
-
-    if (error instanceof ValidationError) {
-      return reply.status(400).send({
+    if (error instanceof AuthenticationError || error instanceof ValidationError) {
+      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
         success: false,
         error: error.message,
         code: error.code || 'VALIDATION_ERROR',
-        statusCode: 400,
+        statusCode: error instanceof AuthenticationError ? 401 : 400,
       })
     }
 
@@ -414,13 +349,6 @@ async function updateSchedule(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Delete schedule
- *
- * DELETE /api/council/schedules/:id
- *
- * Deletes a schedule.
- */
 async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -431,7 +359,6 @@ async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
       throw new AuthenticationError('User ID not found in token')
     }
 
-    // Verify schedule exists
     const checkResult = await query(
       `SELECT "id" FROM "AssessmentSchedule" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
       [id, geographyAccountId]
@@ -446,13 +373,10 @@ async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Delete schedule
     await query(
       `DELETE FROM "AssessmentSchedule" WHERE "id" = $1 AND "geographyAccountId" = $2`,
       [id, geographyAccountId]
     )
-
-    request.log.info({ userId, scheduleId: id }, 'Schedule deleted')
 
     return reply.status(200).send({
       success: true,
@@ -478,13 +402,6 @@ async function deleteSchedule(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Run schedule now
- *
- * POST /api/council/schedules/:id/run-now
- *
- * Manually triggers a schedule to run immediately.
- */
 async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
   try {
     const userId = (request as any).userId
@@ -495,7 +412,6 @@ async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
       throw new AuthenticationError('User ID not found in token')
     }
 
-    // Verify schedule exists
     const scheduleResult = await query(
       `SELECT "id", "name", "status" FROM "AssessmentSchedule" 
        WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
@@ -522,7 +438,6 @@ async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    // Update schedule to mark as running
     const now = new Date()
     await query(
       `UPDATE "AssessmentSchedule" 
@@ -530,8 +445,6 @@ async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
        WHERE "id" = $3 AND "geographyAccountId" = $4`,
       [now.toISOString(), now.toISOString(), id, geographyAccountId]
     )
-
-    request.log.info({ userId, scheduleId: id }, 'Schedule run triggered')
 
     return reply.status(200).send({
       success: true,
@@ -562,9 +475,6 @@ async function runScheduleNow(request: FastifyRequest, reply: FastifyReply) {
   }
 }
 
-/**
- * Register schedule routes
- */
 export async function councilSchedulesRoutes(fastify: FastifyInstance) {
   fastify.get('/api/council/schedules', { onRequest: jwtAuthMiddleware }, listSchedules)
   fastify.post('/api/council/schedules', { onRequest: jwtAuthMiddleware }, createSchedule)
