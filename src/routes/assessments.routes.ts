@@ -46,8 +46,9 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
     }
 
     // Fetch assessment from database
+    // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
     const result = await query(
-      `SELECT "id", "userId", "projectId", "status", "riskScore", "complianceScore",
+      `SELECT "id", "userId", "projectId", "riskScore", "complianceScore",
               "sengolScore", "riskNotes", "systemDescription", "industry", 
               "systemCriticality", "dataTypes", "dataSources", "technologyStack",
               "selectedDomains", "jurisdictions", "createdAt", "updatedAt"
@@ -83,7 +84,7 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         id: assessment.id,
         userId: assessment.userId,
         projectId: assessment.projectId || null,
-        status: assessment.status || 'draft',
+        // ✅ FIX: Removed status field - it doesn't exist in RiskAssessment table
         riskScore: assessment.riskScore || null,
         complianceScore: assessment.complianceScore || null,
         sengolScore: assessment.sengolScore || null,
