@@ -604,7 +604,40 @@ export async function generateDynamicQuestions(
       console.log(`   Top incident types: ${Array.from(new Set(similarIncidents.slice(0, 5).map(i => i.incidentType))).join(', ')}`)
       
       if (similarIncidents.length === 0) {
-        console.warn(`⚠️  WARNING: No incidents found - evidence-based weighting will be limited`)
+        console.warn(`⚠️  WARNING: No incidents found with similarity >= ${PRE_FILTER_THRESHOLDS.minSimilarity || 0.3}`)
+        console.log(`[FALLBACK] Attempting broader search with lower similarity threshold...`)
+        
+        // ✅ FALLBACK: Try broader search with lower threshold if no results
+        try {
+          const broaderResults = await findSimilarIncidents(
+            request.systemDescription,
+            {
+              limit: 50, // Fewer results for broader search
+              minSimilarity: 0.2, // Lower threshold (20% similarity)
+              industry: request.industry, // Keep industry filter
+              severity: ['medium', 'high', 'critical'],
+            }
+          )
+          
+          if (broaderResults.length > 0) {
+            console.log(`[FALLBACK] Found ${broaderResults.length} incidents with lower similarity threshold (0.2)`)
+            similarIncidents = broaderResults
+            // Recalculate stats with broader results
+            incidentStats = calculateIncidentStatistics(similarIncidents)
+          } else {
+            console.warn(`[FALLBACK] Still no incidents found even with lower threshold`)
+            console.log(`[FALLBACK] Will use LLM-only analysis with general industry patterns`)
+          }
+        } catch (fallbackError) {
+          console.warn(`[FALLBACK] Broader search also failed:`, fallbackError)
+        }
+      } else {
+        // Check if similarity scores are very low (might not be relevant)
+        const avgSimilarity = similarIncidents.reduce((sum, i) => sum + (i.similarity || 0), 0) / similarIncidents.length
+        if (avgSimilarity < 0.4) {
+          console.warn(`⚠️  WARNING: Found incidents but average similarity is low (${(avgSimilarity * 100).toFixed(0)}%)`)
+          console.log(`[FALLBACK] Incidents may not be highly relevant - will rely more on LLM analysis`)
+        }
       }
     } catch (error) {
       console.error(`❌ Incident search failed:`, error)
@@ -783,8 +816,10 @@ ${request.systemDescription}
 - Selected Domains: ${request.selectedDomains?.join(', ') || 'Not specified'}
 - Jurisdictions: ${request.jurisdictions?.join(', ') || 'Not specified'}
 
-**SIMILAR HISTORICAL INCIDENTS (Top 10 most similar):**
-${JSON.stringify(incidentSummary, null, 2)}
+**SIMILAR HISTORICAL INCIDENTS:**
+${similarIncidents.length > 0 
+  ? `Found ${similarIncidents.length} similar incidents from 78K+ database:\n${JSON.stringify(incidentSummary, null, 2)}`
+  : `No similar incidents found in 78K+ database for this specific system profile.\nThis may indicate a unique/novel system or emerging technology stack.\nBase analysis on industry best practices and system characteristics.`}
 
 **TASK:**
 Based on the system description and these real historical incidents, identify:
@@ -1159,7 +1194,21 @@ Data Types: ${(request.dataTypes || []).join(', ') || 'General data'}
 Industry: ${request.industry || 'General'}
 System Criticality: ${request.systemCriticality || 'Medium'}
 
-${relevantIncidents.length > 0 ? `\nHistorical Evidence:\n- ${relevantIncidents.length} similar incidents found\n- Average cost: $${(avgCost / 1000).toFixed(0)}K\n- Average severity: ${avgSeverity.toFixed(1)}/10` : '\nNote: Limited historical evidence available - base weight on system context'}
+${relevantIncidents.length > 0 
+  ? `\nHistorical Evidence:\n- ${relevantIncidents.length} similar incidents found\n- Average cost: $${(avgCost / 1000).toFixed(0)}K\n- Average severity: ${avgSeverity.toFixed(1)}/10\n- Average similarity: ${(relevantIncidents.reduce((sum, i) => sum + (i.similarity || 0), 0) / relevantIncidents.length * 100).toFixed(0)}%`
+  : `\nNote: No similar historical incidents found in our 78K+ database for this specific system profile.
+This could mean:
+1. Your system is unique/novel (positive - lower risk profile)
+2. Your system uses emerging technologies not yet in our database
+3. Your system description needs more detail for better matching
+
+WEIGHTING STRATEGY WITHOUT INCIDENTS:
+- Base weight on system criticality (High=90, Medium=70, Low=50)
+- Consider data types (PII/Financial/Health = +10-20 points)
+- Consider industry standards (regulated industries = +10-15 points)
+- Consider technology stack vulnerabilities (known risks = +5-10 points)
+
+Provide question text and priority weight (0-100) based primarily on system context and industry best practices.`}
 
 Provide question text and priority weight (0-100) based on the above context.`
         }
