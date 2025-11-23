@@ -30,6 +30,11 @@ import { toolUsageRoutes } from './routes/tool-usage.routes' // Tool usage route
 import { geographyRoutes } from './routes/geography.routes' // Geography account routes
 import { contextAnalysisRoutes } from './routes/context-analysis.routes' // Context analysis cache routes
 import { councilRoutes } from './routes/council.routes' // Council feature routes
+import { councilVendorsRoutes } from './routes/council-vendors.routes' // Council vendor routes
+import { councilPoliciesRoutes } from './routes/council-policies.routes' // Council policy routes
+import { councilSchedulesRoutes } from './routes/council-schedules.routes' // Council schedule routes
+import { councilViolationsRoutes } from './routes/council-violations.routes' // Council violation routes
+import { councilStatusRoutes } from './routes/council-status.routes' // Council status routes
 import { userOnboardingRoutes } from './routes/user-onboarding.routes' // User onboarding routes
 import { userChangePasswordRoutes } from './routes/user-change-password.routes' // User change password routes
 import { userUsageRoutes } from './routes/user-usage.routes' // User usage routes
@@ -118,6 +123,11 @@ export async function build() {
   await fastify.register(geographyRoutes) // Geography account routes (ENABLED)
   await fastify.register(contextAnalysisRoutes) // Context analysis cache routes (ENABLED)
   await fastify.register(councilRoutes) // Council feature routes (ENABLED)
+  await fastify.register(councilVendorsRoutes) // Council vendor routes (ENABLED)
+  await fastify.register(councilPoliciesRoutes) // Council policy routes (ENABLED)
+  await fastify.register(councilSchedulesRoutes) // Council schedule routes (ENABLED)
+  await fastify.register(councilViolationsRoutes) // Council violation routes (ENABLED)
+  await fastify.register(councilStatusRoutes) // Council status routes (ENABLED)
   await fastify.register(userOnboardingRoutes) // User onboarding routes (ENABLED)
   await fastify.register(userChangePasswordRoutes) // User change password routes (ENABLED)
   await fastify.register(userUsageRoutes) // User usage routes (ENABLED)

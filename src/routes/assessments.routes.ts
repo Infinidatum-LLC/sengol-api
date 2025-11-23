@@ -340,12 +340,596 @@ async function getAssessmentProgress(request: FastifyRequest, reply: FastifyRepl
 }
 
 /**
+ * Submit assessment
+ *
+ * POST /api/assessments/:id/submit
+ *
+ * Submits a completed assessment for analysis.
+ */
+async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const body = request.body as { userId?: string }
+    const userId = request.headers['x-user-id'] as string || body.userId
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    // Verify assessment exists and belongs to user
+    const checkResult = await query(
+      `SELECT "id", "userId", "status" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      [id]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const assessment = checkResult.rows[0]
+    if (assessment.userId !== userId) {
+      return reply.status(403).send({
+        success: false,
+        error: 'You do not have permission to submit this assessment',
+        code: 'FORBIDDEN',
+        statusCode: 403,
+      })
+    }
+
+    // Update assessment status to submitted
+    await query(
+      `UPDATE "RiskAssessment" 
+       SET "status" = 'completed', "updatedAt" = NOW()
+       WHERE "id" = $1`,
+      [id]
+    )
+
+    request.log.info({ assessmentId: id, userId }, 'Assessment submitted')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id,
+        status: 'completed',
+        message: 'Assessment submitted successfully',
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Submit assessment error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to submit assessment',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Get assessment scores
+ *
+ * GET /api/assessments/:id/scores
+ *
+ * Returns assessment scores and metrics.
+ */
+async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.query as { userId?: string }
+
+    if (!userId.userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    // Fetch assessment with scores
+    const result = await query(
+      `SELECT "id", "riskScore", "complianceScore", "sengolScore", "status"
+       FROM "RiskAssessment" 
+       WHERE "id" = $1 AND "userId" = $2
+       LIMIT 1`,
+      [id, userId.userId]
+    )
+
+    if (result.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const assessment = result.rows[0]
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id: assessment.id,
+        riskScore: assessment.riskScore || null,
+        complianceScore: assessment.complianceScore || null,
+        sengolScore: assessment.sengolScore || null,
+        status: assessment.status || 'draft',
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Get assessment scores error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to fetch assessment scores',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Get assessment benchmark
+ *
+ * GET /api/assessments/:id/benchmark
+ *
+ * Returns industry benchmark data for the assessment.
+ */
+async function getAssessmentBenchmark(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.query as { userId?: string }
+
+    if (!userId.userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    // Verify assessment exists
+    const checkResult = await query(
+      `SELECT "id" FROM "RiskAssessment" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
+      [id, userId.userId]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    // Return benchmark data (placeholder - would calculate from industry data)
+    return reply.status(200).send({
+      success: true,
+      data: {
+        assessmentId: id,
+        industryAverage: 65.5,
+        percentile: 75,
+        benchmark: {
+          low: 40,
+          medium: 60,
+          high: 80,
+        },
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Get assessment benchmark error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to fetch benchmark',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Get similar cases
+ *
+ * GET /api/assessments/:id/similar-cases
+ *
+ * Returns similar case studies for the assessment.
+ */
+async function getSimilarCases(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.query as { userId?: string; limit?: string }
+
+    if (!userId.userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    // Verify assessment exists
+    const checkResult = await query(
+      `SELECT "id" FROM "RiskAssessment" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
+      [id, userId.userId]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const limit = Math.min(parseInt(userId.limit || '10', 10), 50)
+
+    // Return similar cases (placeholder - would use vector search)
+    return reply.status(200).send({
+      success: true,
+      data: {
+        assessmentId: id,
+        cases: [],
+        total: 0,
+        limit,
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Get similar cases error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to fetch similar cases',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Save assessment step 1
+ *
+ * PUT /api/assessments/:id/step1
+ *
+ * Saves progress for step 1 of the assessment.
+ */
+async function saveAssessmentStep1(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.headers['x-user-id'] as string
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    const body = request.body as Record<string, any>
+
+    const body = request.body as Record<string, any>
+
+    // Verify assessment exists
+    const checkResult = await query(
+      `SELECT "id", "userId", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      [id]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const assessment = checkResult.rows[0]
+    if (assessment.userId !== userId) {
+      return reply.status(403).send({
+        success: false,
+        error: 'You do not have permission to update this assessment',
+        code: 'FORBIDDEN',
+        statusCode: 403,
+      })
+    }
+
+    // Update riskNotes with step 1 data
+    const currentNotes = assessment.riskNotes || {}
+    const updatedNotes = {
+      ...currentNotes,
+      step1: body,
+    }
+
+    await query(
+      `UPDATE "RiskAssessment" 
+       SET "riskNotes" = $1, "updatedAt" = NOW()
+       WHERE "id" = $2`,
+      [JSON.stringify(updatedNotes), id]
+    )
+
+    request.log.info({ assessmentId: id, step: 1, userId }, 'Assessment step 1 saved')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id,
+        step: 1,
+        message: 'Step 1 saved successfully',
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Save assessment step 1 error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to save assessment step 1',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Save assessment step 2
+ *
+ * PUT /api/assessments/:id/step2
+ *
+ * Saves progress for step 2 of the assessment.
+ */
+async function saveAssessmentStep2(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.headers['x-user-id'] as string
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    const body = request.body as Record<string, any>
+
+    // Verify assessment exists
+    const checkResult = await query(
+      `SELECT "id", "userId", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      [id]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const assessment = checkResult.rows[0]
+    if (assessment.userId !== userId) {
+      return reply.status(403).send({
+        success: false,
+        error: 'You do not have permission to update this assessment',
+        code: 'FORBIDDEN',
+        statusCode: 403,
+      })
+    }
+
+    // Update riskNotes with step 2 data
+    const currentNotes = assessment.riskNotes || {}
+    const updatedNotes = {
+      ...currentNotes,
+      step2: body,
+    }
+
+    await query(
+      `UPDATE "RiskAssessment" 
+       SET "riskNotes" = $1, "updatedAt" = NOW()
+       WHERE "id" = $2`,
+      [JSON.stringify(updatedNotes), id]
+    )
+
+    request.log.info({ assessmentId: id, step: 2, userId }, 'Assessment step 2 saved')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id,
+        step: 2,
+        message: 'Step 2 saved successfully',
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Save assessment step 2 error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to save assessment step 2',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Save assessment step 3
+ *
+ * PUT /api/assessments/:id/step3
+ *
+ * Saves progress for step 3 of the assessment.
+ */
+async function saveAssessmentStep3(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const { id } = request.params as { id: string }
+    const userId = request.headers['x-user-id'] as string
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    const body = request.body as Record<string, any>
+
+    // Verify assessment exists
+    const checkResult = await query(
+      `SELECT "id", "userId", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      [id]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const assessment = checkResult.rows[0]
+    if (assessment.userId !== userId) {
+      return reply.status(403).send({
+        success: false,
+        error: 'You do not have permission to update this assessment',
+        code: 'FORBIDDEN',
+        statusCode: 403,
+      })
+    }
+
+    // Update riskNotes with step 3 data
+    const currentNotes = assessment.riskNotes || {}
+    const updatedNotes = {
+      ...currentNotes,
+      step3: body,
+    }
+
+    await query(
+      `UPDATE "RiskAssessment" 
+       SET "riskNotes" = $1, "updatedAt" = NOW()
+       WHERE "id" = $2`,
+      [JSON.stringify(updatedNotes), id]
+    )
+
+    request.log.info({ assessmentId: id, step: 3, userId }, 'Assessment step 3 saved')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id,
+        step: 3,
+        message: 'Step 3 saved successfully',
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Save assessment step 3 error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to save assessment step 3',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Create new assessment
+ *
+ * POST /api/assessments
+ *
+ * Creates a new risk assessment.
+ */
+async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const body = request.body as {
+      userId?: string
+      projectId?: string
+      name?: string
+    }
+    const userId = request.headers['x-user-id'] as string || body.userId
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    // Create assessment
+    const assessmentId = randomUUID()
+    const now = new Date()
+
+    await query(
+      `INSERT INTO "RiskAssessment" (
+        "id", "userId", "projectId", "status", "createdAt", "updatedAt"
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        assessmentId,
+        userId,
+        body.projectId || null,
+        'draft',
+        now.toISOString(),
+        now.toISOString(),
+      ]
+    )
+
+    request.log.info({ assessmentId, userId }, 'Assessment created')
+
+    return reply.status(201).send({
+      success: true,
+      data: {
+        id: assessmentId,
+        userId,
+        projectId: body.projectId || null,
+        status: 'draft',
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      },
+    })
+  } catch (error) {
+    request.log.error({ err: error }, 'Create assessment error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to create assessment',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
  * Register all assessment routes
  */
 export async function assessmentsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/assessments/:id', getAssessmentById)
+  fastify.post('/api/assessments', createAssessment)
   fastify.post('/api/assessments/:id/save-progress', saveAssessmentProgress)
   fastify.get('/api/assessments/:id/progress', getAssessmentProgress)
+  fastify.post('/api/assessments/:id/submit', submitAssessment)
+  fastify.get('/api/assessments/:id/scores', getAssessmentScores)
+  fastify.get('/api/assessments/:id/benchmark', getAssessmentBenchmark)
+  fastify.get('/api/assessments/:id/similar-cases', getSimilarCases)
+  fastify.put('/api/assessments/:id/step1', saveAssessmentStep1)
+  fastify.put('/api/assessments/:id/step2', saveAssessmentStep2)
+  fastify.put('/api/assessments/:id/step3', saveAssessmentStep3)
 
   fastify.log.info('Assessment routes registered')
 }

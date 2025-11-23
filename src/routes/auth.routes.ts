@@ -1012,6 +1012,8 @@ export async function authRoutes(fastify: FastifyInstance) {
   fastify.post('/api/auth/logout', logout)
   fastify.get('/api/auth/user/:userId', getUserProfileById)
   fastify.get('/api/auth/subscription/:userId', getUserSubscription)
+  // Alias for frontend compatibility
+  fastify.get('/api/subscription/user/:userId', getUserSubscription)
   fastify.post('/api/auth/check-email', checkEmailExists)
   fastify.post('/api/auth/verify-email', verifyEmailToken)
   fastify.post('/api/auth/forgot-password', forgotPassword)
