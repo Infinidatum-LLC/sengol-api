@@ -103,7 +103,7 @@ export async function build() {
   await fastify.register(authRoutes) // JWT authentication routes (ENABLED)
   await fastify.register(userRoutes) // Protected user routes (JWT auth required) (ENABLED)
   await fastify.register(totpRoutes) // 2FA (TOTP) routes (ENABLED)
-  // await fastify.register(reviewRoutes) // DISABLED: Pending implementation
+  await fastify.register(reviewRoutes) // Review/question generation routes (ENABLED)
   // DISABLED: Embeddings and vector search routes depend on Vertex AI (removed)
   // await fastify.register(embeddingsRoutes)
   // await fastify.register(vectorSearchRoutes)
