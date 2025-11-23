@@ -327,7 +327,7 @@ async function getAssessmentProgress(request: FastifyRequest, reply: FastifyRepl
       success: true,
       data: {
         id: assessment.id,
-        status: assessment.status || 'draft',
+        // ✅ FIX: Removed status field - it doesn't exist in RiskAssessment table
         percentComplete,
         totalQuestions,
         answeredQuestions,
@@ -455,8 +455,9 @@ async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply)
     }
 
     // Fetch assessment with scores
+    // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
     const result = await query(
-      `SELECT "id", "riskScore", "complianceScore", "sengolScore", "status"
+      `SELECT "id", "riskScore", "complianceScore", "sengolScore"
        FROM "RiskAssessment" 
        WHERE "id" = $1 AND "userId" = $2
        LIMIT 1`,
