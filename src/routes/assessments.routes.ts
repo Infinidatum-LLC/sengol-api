@@ -53,8 +53,8 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
     // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
     // ✅ FIX: Added all Step 2 and Step 3 fields for complete data loading
     const result = await query(
-      `SELECT "id", "userId", "projectId", "aiRiskScore", "aiComplianceScore",
-              "aiSengolScore", "riskNotes", "systemDescription", "industry", 
+      `SELECT "id", "userId", "projectId", "riskScore", "complianceScore",
+              "sengolScore", "riskNotes", "systemDescription", "industry", 
               "systemCriticality", "dataTypes", "dataSources", "technologyStack",
               "selectedDomains", "jurisdictions", "riskQuestionResponses",
               "userRiskScores", "additionalRiskElements", "complianceQuestionResponses",
@@ -126,10 +126,10 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         id: assessment.id,
         userId: assessment.userId,
         projectId: assessment.projectId || null,
-        // ✅ FIX: Map database column names (aiRiskScore, aiComplianceScore, aiSengolScore) to frontend-expected names
-        riskScore: assessment.aiRiskScore || null,
-        complianceScore: assessment.aiComplianceScore || null,
-        sengolScore: assessment.aiSengolScore || null,
+        // ✅ FIX: Use actual database column names (riskScore, complianceScore, sengolScore)
+        riskScore: assessment.riskScore || null,
+        complianceScore: assessment.complianceScore || null,
+        sengolScore: assessment.sengolScore || null,
         riskNotes: parsedRiskNotes, // ✅ FIX: Use parsed riskNotes
         systemDescription: assessment.systemDescription || null,
         industry: assessment.industry || null,
