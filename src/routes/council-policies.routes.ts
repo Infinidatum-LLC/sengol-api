@@ -7,31 +7,60 @@ import { query } from '../lib/db'
 import { jwtAuthMiddleware } from '../middleware/jwt-auth'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 import { randomUUID } from 'crypto'
+import {
+  AuthenticatedRequest,
+  GeographyRequest,
+  getUserId,
+  getGeographyAccountId,
+  parsePagination,
+  PaginationQuery,
+} from '../types/request'
+import {
+  validateRequiredString,
+  validateOptionalString,
+  validateEnum,
+} from '../lib/validation'
+import {
+  sendSuccess,
+  sendPaginated,
+  sendError,
+  sendNotFound,
+  sendUnauthorized,
+  sendValidationError,
+  sendInternalError,
+  sendSuccessMessage,
+} from '../lib/response-helpers'
+
+/**
+ * Policy status enum
+ */
+const POLICY_STATUSES = ['ACTIVE', 'ARCHIVED', 'INACTIVE'] as const
+type PolicyStatus = typeof POLICY_STATUSES[number]
+
+/**
+ * Policy creation/update body
+ */
+interface PolicyBody {
+  name?: string
+  description?: string
+  category?: string
+  status?: string
+}
 
 async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const queryParams = request.query as {
-      page?: string
-      limit?: string
-      status?: string
-    }
-
-    const page = parseInt(queryParams.page || '1', 10)
-    const limit = Math.min(parseInt(queryParams.limit || '50', 10), 100)
-    const offset = (page - 1) * limit
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const queryParams = request.query as PaginationQuery & { status?: string }
+    const { page, limit, offset } = parsePagination(queryParams)
 
     const conditions: string[] = [`"geographyAccountId" = $1`]
-    const params: any[] = [geographyAccountId]
+    const params: (string | number | boolean | null)[] = [geographyAccountId]
     let paramIndex = 2
 
     if (queryParams.status) {
+      // Validate status if provided
+      validateEnum(queryParams.status, 'status', POLICY_STATUSES)
       conditions.push(`"status" = $${paramIndex}`)
       params.push(queryParams.status)
       paramIndex++
@@ -55,60 +84,47 @@ async function listPolicies(request: FastifyRequest, reply: FastifyReply) {
       params
     )
 
-    const policies = policiesResult.rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      description: row.description || '',
-      status: row.status || 'ACTIVE',
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
+    const policies = policiesResult.rows.map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      description: (row.description as string) || '',
+      status: (row.status as PolicyStatus) || 'ACTIVE',
+      createdAt: row.createdAt as Date,
+      updatedAt: row.updatedAt as Date,
     }))
 
-    return reply.status(200).send({
-      success: true,
-      policies,
-      total,
-      page,
-      limit,
-    })
+    sendPaginated(reply, policies, total, page, limit, 'policies')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'List policies error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to list policies',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to list policies', error)
   }
 }
 
 async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
+    const body = request.body as PolicyBody
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      name?: string
-      description?: string
-      status?: string
-    }
-
-    if (!body.name || typeof body.name !== 'string' || body.name.trim().length === 0) {
-      throw new ValidationError('Policy name is required', 'INVALID_INPUT')
-    }
+    // Validate required fields
+    const name = validateRequiredString(body.name, 'Policy name', 1, 255)
+    const description = validateOptionalString(body.description, 'Description')
+    const status = validateEnum(
+      body.status,
+      'status',
+      POLICY_STATUSES,
+      'ACTIVE'
+    ) as PolicyStatus
 
     const policyId = randomUUID()
     const now = new Date()
@@ -120,54 +136,49 @@ async function createPolicy(request: FastifyRequest, reply: FastifyReply) {
       [
         policyId,
         geographyAccountId,
-        body.name.trim(),
-        body.description || null,
-        body.status || 'ACTIVE',
+        name,
+        description,
+        status,
         now.toISOString(),
         now.toISOString(),
       ]
     )
 
-    return reply.status(201).send({
-      success: true,
-      data: {
+    sendSuccess(
+      reply,
+      {
         id: policyId,
-        name: body.name.trim(),
-        description: body.description || null,
-        status: body.status || 'ACTIVE',
+        name,
+        description,
+        status,
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       },
-    })
+      201
+    )
   } catch (error) {
-    if (error instanceof AuthenticationError || error instanceof ValidationError) {
-      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: error instanceof AuthenticationError ? 401 : 400,
-      })
+    if (error instanceof AuthenticationError) {
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Create policy error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to create policy',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to create policy', error)
   }
 }
 
 async function getPolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Policy ID')
 
     const result = await query(
       `SELECT "id", "name", "description", "status", "createdAt", "updatedAt"
@@ -178,62 +189,44 @@ async function getPolicy(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (result.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Policy not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Policy')
+      return
     }
 
     const policy = result.rows[0]
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: policy.id,
-        name: policy.name,
-        description: policy.description || '',
-        status: policy.status || 'ACTIVE',
-        createdAt: policy.createdAt,
-        updatedAt: policy.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: policy.id as string,
+      name: policy.name as string,
+      description: (policy.description as string) || '',
+      status: (policy.status as PolicyStatus) || 'ACTIVE',
+      createdAt: policy.createdAt as Date,
+      updatedAt: policy.updatedAt as Date,
     })
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Get policy error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to fetch policy',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to fetch policy', error)
   }
 }
 
 async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
+    const body = request.body as PolicyBody
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
-
-    const body = request.body as {
-      name?: string
-      description?: string
-      status?: string
-    }
+    validateRequiredString(id, 'Policy ID')
 
     const checkResult = await query(
       `SELECT "id" FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
@@ -241,33 +234,32 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Policy not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Policy')
+      return
     }
 
     const updateFields: string[] = []
-    const updateValues: any[] = []
+    const updateValues: (string | number | boolean | null)[] = []
     let paramIndex = 1
 
     if (body.name !== undefined) {
+      const validatedName = validateRequiredString(body.name, 'Policy name', 1, 255)
       updateFields.push(`"name" = $${paramIndex}`)
-      updateValues.push(body.name.trim())
+      updateValues.push(validatedName)
       paramIndex++
     }
 
     if (body.description !== undefined) {
+      const validatedDescription = validateOptionalString(body.description, 'Description')
       updateFields.push(`"description" = $${paramIndex}`)
-      updateValues.push(body.description)
+      updateValues.push(validatedDescription)
       paramIndex++
     }
 
     if (body.status !== undefined) {
+      const validatedStatus = validateEnum(body.status, 'status', POLICY_STATUSES) as PolicyStatus
       updateFields.push(`"status" = $${paramIndex}`)
-      updateValues.push(body.status)
+      updateValues.push(validatedStatus)
       paramIndex++
     }
 
@@ -295,46 +287,37 @@ async function updatePolicy(request: FastifyRequest, reply: FastifyReply) {
 
     const policy = result.rows[0]
 
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id: policy.id,
-        name: policy.name,
-        description: policy.description || '',
-        status: policy.status || 'ACTIVE',
-        createdAt: policy.createdAt,
-        updatedAt: policy.updatedAt,
-      },
+    sendSuccess(reply, {
+      id: policy.id as string,
+      name: policy.name as string,
+      description: (policy.description as string) || '',
+      status: (policy.status as PolicyStatus) || 'ACTIVE',
+      createdAt: policy.createdAt as Date,
+      updatedAt: policy.updatedAt as Date,
     })
   } catch (error) {
-    if (error instanceof AuthenticationError || error instanceof ValidationError) {
-      return reply.status(error instanceof AuthenticationError ? 401 : 400).send({
-        success: false,
-        error: error.message,
-        code: error.code || 'VALIDATION_ERROR',
-        statusCode: error instanceof AuthenticationError ? 401 : 400,
-      })
+    if (error instanceof AuthenticationError) {
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Update policy error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to update policy',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to update policy', error)
   }
 }
 
 async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Policy ID')
 
     const checkResult = await query(
       `SELECT "id" FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
@@ -342,12 +325,8 @@ async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (checkResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Policy not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Policy')
+      return
     }
 
     await query(
@@ -355,39 +334,30 @@ async function deletePolicy(request: FastifyRequest, reply: FastifyReply) {
       [id, geographyAccountId]
     )
 
-    return reply.status(200).send({
-      success: true,
-      message: 'Policy deleted successfully',
-    })
+    sendSuccessMessage(reply, 'Policy deleted successfully')
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Delete policy error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to delete policy',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to delete policy', error)
   }
 }
 
 async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
     const { id } = request.params as { id: string }
 
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    validateRequiredString(id, 'Policy ID')
 
     const policyResult = await query(
       `SELECT "id", "name" FROM "Policy" WHERE "id" = $1 AND "geographyAccountId" = $2 LIMIT 1`,
@@ -395,50 +365,39 @@ async function evaluatePolicy(request: FastifyRequest, reply: FastifyReply) {
     )
 
     if (policyResult.rows.length === 0) {
-      return reply.status(404).send({
-        success: false,
-        error: 'Policy not found',
-        code: 'NOT_FOUND',
-        statusCode: 404,
-      })
+      sendNotFound(reply, 'Policy')
+      return
     }
 
-    return reply.status(201).send({
-      success: true,
-      data: {
+    sendSuccess(
+      reply,
+      {
         policyId: id,
         status: 'pending',
         message: 'Policy evaluation queued successfully',
       },
-    })
+      201
+    )
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
+    }
+
+    if (error instanceof ValidationError) {
+      sendValidationError(reply, error.message, error.code)
+      return
     }
 
     request.log.error({ err: error }, 'Evaluate policy error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to evaluate policy',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to evaluate policy', error)
   }
 }
 
 async function evaluateAllPolicies(request: FastifyRequest, reply: FastifyReply) {
   try {
-    const userId = (request as any).userId
-    const geographyAccountId = (request.headers as any)['x-geography-account-id'] || 'default'
-
-    if (!userId) {
-      throw new AuthenticationError('User ID not found in token')
-    }
+    const userId = getUserId(request as AuthenticatedRequest)
+    const geographyAccountId = getGeographyAccountId(request as GeographyRequest)
 
     const policiesResult = await query(
       `SELECT "id" FROM "Policy" 
@@ -446,32 +405,24 @@ async function evaluateAllPolicies(request: FastifyRequest, reply: FastifyReply)
       [geographyAccountId]
     )
 
-    const policyIds = policiesResult.rows.map((row: any) => row.id)
+    const policyIds = policiesResult.rows.map((row) => row.id as string)
 
-    return reply.status(201).send({
-      success: true,
-      data: {
+    sendSuccess(
+      reply,
+      {
         policyCount: policyIds.length,
         message: `Evaluation queued for ${policyIds.length} policies`,
       },
-    })
+      201
+    )
   } catch (error) {
     if (error instanceof AuthenticationError) {
-      return reply.status(401).send({
-        success: false,
-        error: error.message,
-        code: 'UNAUTHORIZED',
-        statusCode: 401,
-      })
+      sendUnauthorized(reply, error.message)
+      return
     }
 
     request.log.error({ err: error }, 'Evaluate all policies error')
-    return reply.status(500).send({
-      success: false,
-      error: 'Failed to evaluate all policies',
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
-    })
+    sendInternalError(reply, 'Failed to evaluate all policies', error)
   }
 }
 
