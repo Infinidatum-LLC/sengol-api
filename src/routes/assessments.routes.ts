@@ -872,6 +872,49 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
            WHERE "id" = $${paramIndex}`,
           updateValues
         )
+        
+        // Fetch the updated assessment to return saved data
+        const updatedResult = await query(
+          `SELECT "id", "userId", "projectId", "systemDescription", "industry", 
+                  "systemCriticality", "dataTypes", "dataSources", "technologyStack",
+                  "selectedDomains", "jurisdictions", "complianceQuestionResponses",
+                  "complianceScore", "complianceCoverageScore", "complianceCoverageDetails",
+                  "complianceUserScores", "complianceNotes", "regulationIds",
+                  "createdAt", "updatedAt"
+           FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+          [id]
+        )
+        
+        if (updatedResult.rows.length > 0) {
+          const updatedAssessment = updatedResult.rows[0]
+          request.log.info({ 
+            assessmentId: id, 
+            hasComplianceResponses: !!updatedAssessment.complianceQuestionResponses,
+            complianceScore: updatedAssessment.complianceScore
+          }, 'Step3 data saved successfully')
+          
+          return reply.status(200).send({
+            success: true,
+            data: {
+              id: updatedAssessment.id,
+              userId: updatedAssessment.userId,
+              projectId: updatedAssessment.projectId || null,
+              systemDescription: updatedAssessment.systemDescription || null,
+              industry: updatedAssessment.industry || null,
+              systemCriticality: updatedAssessment.systemCriticality || null,
+              complianceQuestionResponses: updatedAssessment.complianceQuestionResponses || {},
+              complianceScore: updatedAssessment.complianceScore || null,
+              complianceCoverageScore: updatedAssessment.complianceCoverageScore || null,
+              complianceCoverageDetails: updatedAssessment.complianceCoverageDetails || null,
+              complianceUserScores: updatedAssessment.complianceUserScores || {},
+              complianceNotes: updatedAssessment.complianceNotes || {},
+              jurisdictions: updatedAssessment.jurisdictions || [],
+              regulationIds: updatedAssessment.regulationIds || [],
+              createdAt: updatedAssessment.createdAt,
+              updatedAt: updatedAssessment.updatedAt,
+            },
+          })
+        }
       }
     }
 
