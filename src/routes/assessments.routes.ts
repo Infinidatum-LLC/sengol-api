@@ -1831,3 +1831,5 @@ export async function assessmentsRoutes(fastify: FastifyInstance) {
 
   fastify.log.info('Assessment routes registered')
 }
+
+// Version: 2025-01 - All TypeScript errors resolved
