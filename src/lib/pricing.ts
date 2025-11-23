@@ -5,7 +5,7 @@
  * Based on: docs/PRICING_AND_GATING_SPECIFICATION.md
  */
 
-export type PricingTier = 'free' | 'consultant' | 'professional' | 'enterprise'
+export type PricingTier = 'free' | 'consultant' | 'professional' | 'enterprise' | 'premium'
 
 export type FeatureGateKey =
   | 'pdfExports'
@@ -213,6 +213,44 @@ export const PRICING_PLANS: Record<PricingTier, PricingPlan> = {
     target: 'Large organizations',
     recommended: false,
   },
+
+  premium: {
+    id: 'premium',
+    name: 'Premium',
+    priceMonthly: 0, // Free for existing users
+    features: [
+      'Everything in Professional',
+      'Unlimited users',
+      'Unlimited assessments',
+      'Unlimited projects',
+      'PDF & Excel exports',
+      'Advanced reports',
+      'ROI Calculator',
+      'Build vs Buy Framework',
+      'Priority support',
+    ],
+    limits: {
+      users: -1, // Unlimited
+      riskAssessmentsPerMonth: -1, // Unlimited
+      complianceAssessmentsPerMonth: -1, // Unlimited
+      projects: -1, // Unlimited
+      topRisksVisible: -1,
+      apiRateLimit: 0, // No API access
+      pdfExports: true,
+      excelExports: true,
+      apiAccess: false,
+      competitorTracking: false,
+      sso: false,
+      whiteLabel: false,
+      advancedReports: true,
+      graphs: true,
+      roiCalculator: true,
+      buildVsBuy: true,
+    },
+    support: 'Priority Email (~12-hour TAT)',
+    target: 'Existing users with premium access',
+    recommended: false,
+  },
 }
 
 /**
@@ -224,6 +262,7 @@ export function getRecommendedUpgrade(currentTier: PricingTier): PricingTier | n
     consultant: 'professional',
     professional: 'enterprise',
     enterprise: null, // No upgrade available
+    premium: 'enterprise', // Premium users can upgrade to enterprise
   }
   return upgradeMap[currentTier]
 }

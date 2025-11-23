@@ -54,6 +54,13 @@ export const PRICING_TIER_LIMITS = {
     reportGeneration: -1,
     batchOperations: -1,
   },
+  premium: {
+    incidentSearch: -1, // Unlimited
+    riskAssessment: -1,
+    complianceCheck: -1,
+    reportGeneration: -1,
+    batchOperations: -1,
+  },
 } as const
 
 /**
@@ -72,7 +79,7 @@ export const TRIAL_LIMITS = {
  * User subscription tiers
  * Determines which features and limits apply to a user
  */
-export type PricingTier = 'free' | 'trial' | 'consultant' | 'professional' | 'enterprise'
+export type PricingTier = 'free' | 'trial' | 'consultant' | 'professional' | 'enterprise' | 'premium'
 
 /**
  * Feature types that can be limited

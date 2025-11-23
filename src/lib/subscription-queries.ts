@@ -36,7 +36,11 @@ export async function getUserSubscription(userId: string): Promise<{ tier: Prici
 
     if (toolSubResult.rows.length > 0) {
       const row = toolSubResult.rows[0]
-      const tier = (row.planId.toLowerCase() as PricingTier) || 'free'
+      let tier = (row.planId.toLowerCase() as PricingTier) || 'free'
+      // Map 'premium' to 'professional' for compatibility, or keep as 'premium' if supported
+      if (tier === 'premium') {
+        tier = 'premium' // Keep premium tier
+      }
       return { tier, status: row.status }
     }
 
