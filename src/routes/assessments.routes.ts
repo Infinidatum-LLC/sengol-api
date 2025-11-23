@@ -724,25 +724,77 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
+    // Validate projectId if provided (must exist in Project table)
+    if (body.projectId) {
+      const projectCheck = await query(
+        `SELECT "id" FROM "Project" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
+        [body.projectId, userId]
+      )
+      if (projectCheck.rows.length === 0) {
+        request.log.warn({ projectId: body.projectId, userId }, 'Project not found or does not belong to user')
+        return reply.status(404).send({
+          success: false,
+          error: 'Project not found or you do not have access to it',
+          code: 'PROJECT_NOT_FOUND',
+          statusCode: 404,
+        })
+      }
+    }
+
     // Create assessment
     const assessmentId = randomUUID()
     const now = new Date()
 
     request.log.info({ assessmentId, userId, projectId: body.projectId }, 'Creating assessment in database')
 
-    await query(
-      `INSERT INTO "RiskAssessment" (
-        "id", "userId", "projectId", "status", "createdAt", "updatedAt"
-      ) VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        assessmentId,
+    try {
+      await query(
+        `INSERT INTO "RiskAssessment" (
+          "id", "userId", "projectId", "status", "createdAt", "updatedAt"
+        ) VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          assessmentId,
+          userId,
+          body.projectId || null,
+          'draft',
+          now.toISOString(),
+          now.toISOString(),
+        ]
+      )
+    } catch (dbError: any) {
+      request.log.error({ 
+        dbError: dbError.message,
+        dbErrorCode: dbError.code,
+        dbErrorDetail: dbError.detail,
         userId,
-        body.projectId || null,
-        'draft',
-        now.toISOString(),
-        now.toISOString(),
-      ]
-    )
+        projectId: body.projectId
+      }, 'Database error creating assessment')
+      
+      // Check for specific database errors
+      if (dbError.code === '23503') { // Foreign key violation
+        if (dbError.message.includes('userId')) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Invalid user ID',
+            code: 'INVALID_USER_ID',
+            statusCode: 400,
+            details: 'User does not exist in database'
+          })
+        }
+        if (dbError.message.includes('projectId')) {
+          return reply.status(400).send({
+            success: false,
+            error: 'Invalid project ID',
+            code: 'INVALID_PROJECT_ID',
+            statusCode: 400,
+            details: 'Project does not exist or does not belong to user'
+          })
+        }
+      }
+      
+      // Re-throw to be caught by outer catch block
+      throw dbError
+    }
 
     request.log.info({ assessmentId, userId }, 'Assessment created successfully')
 
