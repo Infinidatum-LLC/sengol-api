@@ -752,6 +752,95 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
          WHERE "id" = $2`,
         [JSON.stringify(updatedNotes), id]
       )
+    } else if (step === '3') {
+      // For step3, save compliance data to actual database columns
+      const updateFields: string[] = []
+      const updateValues: any[] = []
+      let paramIndex = 1
+
+      // Save complianceQuestionResponses (from questionResponses or complianceResponses)
+      const complianceResponses = body.complianceResponses || body.questionResponses
+      if (complianceResponses !== undefined) {
+        updateFields.push(`"complianceQuestionResponses" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(complianceResponses))
+        paramIndex++
+      }
+
+      // Save complianceScore if provided
+      if (body.complianceScore !== undefined) {
+        updateFields.push(`"complianceScore" = $${paramIndex}`)
+        updateValues.push(body.complianceScore)
+        paramIndex++
+      }
+
+      // Save complianceCoverageScore if provided
+      if (body.complianceCoverageScore !== undefined) {
+        updateFields.push(`"complianceCoverageScore" = $${paramIndex}`)
+        updateValues.push(body.complianceCoverageScore)
+        paramIndex++
+      }
+
+      // Save complianceCoverageDetails if provided
+      if (body.complianceCoverageDetails !== undefined) {
+        updateFields.push(`"complianceCoverageDetails" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(body.complianceCoverageDetails))
+        paramIndex++
+      }
+
+      // Save complianceUserScores if provided
+      if (body.userScores !== undefined || body.complianceUserScores !== undefined) {
+        updateFields.push(`"complianceUserScores" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(body.userScores || body.complianceUserScores))
+        paramIndex++
+      }
+
+      // Save complianceNotes if provided
+      if (body.notes !== undefined || body.complianceNotes !== undefined) {
+        updateFields.push(`"complianceNotes" = $${paramIndex}::jsonb`)
+        updateValues.push(JSON.stringify(body.notes || body.complianceNotes))
+        paramIndex++
+      }
+
+      // Save jurisdictions if provided
+      if (body.jurisdictions !== undefined) {
+        updateFields.push(`"jurisdictions" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.jurisdictions) ? body.jurisdictions : [])
+        paramIndex++
+      }
+
+      // Save regulationIds if provided
+      if (body.regulationIds !== undefined) {
+        updateFields.push(`"regulationIds" = $${paramIndex}`)
+        updateValues.push(Array.isArray(body.regulationIds) ? body.regulationIds : [])
+        paramIndex++
+      }
+
+      // Also save to riskNotes for backward compatibility
+      const currentNotes = assessment.riskNotes || {}
+      const updatedNotes = {
+        ...currentNotes,
+        step3: {
+          ...body,
+          savedAt: new Date().toISOString(),
+        },
+      }
+
+      updateFields.push(`"riskNotes" = $${paramIndex}::jsonb`)
+      updateValues.push(JSON.stringify(updatedNotes))
+      paramIndex++
+
+      // Always update updatedAt
+      updateFields.push(`"updatedAt" = NOW()`)
+
+      if (updateFields.length > 0) {
+        updateValues.push(id)
+        await query(
+          `UPDATE "RiskAssessment" 
+           SET ${updateFields.join(', ')}
+           WHERE "id" = $${paramIndex}`,
+          updateValues
+        )
+      }
     }
 
     request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
