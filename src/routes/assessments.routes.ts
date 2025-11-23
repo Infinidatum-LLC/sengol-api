@@ -746,6 +746,43 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
            WHERE "id" = $${paramIndex}`,
           updateValues
         )
+        
+        // Fetch the updated assessment to return saved data
+        const updatedResult = await query(
+          `SELECT "id", "userId", "projectId", "systemDescription", "industry", 
+                  "systemCriticality", "dataTypes", "dataSources", "technologyStack",
+                  "selectedDomains", "jurisdictions", "createdAt", "updatedAt"
+           FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+          [id]
+        )
+        
+        if (updatedResult.rows.length > 0) {
+          const updatedAssessment = updatedResult.rows[0]
+          request.log.info({ 
+            assessmentId: id, 
+            hasSystemDescription: !!updatedAssessment.systemDescription,
+            systemDescriptionLength: updatedAssessment.systemDescription?.length || 0
+          }, 'Step1 data saved successfully')
+          
+          return reply.status(200).send({
+            success: true,
+            data: {
+              id: updatedAssessment.id,
+              userId: updatedAssessment.userId,
+              projectId: updatedAssessment.projectId || null,
+              systemDescription: updatedAssessment.systemDescription || null,
+              industry: updatedAssessment.industry || null,
+              systemCriticality: updatedAssessment.systemCriticality || null,
+              dataTypes: updatedAssessment.dataTypes || [],
+              dataSources: updatedAssessment.dataSources || [],
+              technologyStack: updatedAssessment.technologyStack || [],
+              selectedDomains: updatedAssessment.selectedDomains || [],
+              jurisdictions: updatedAssessment.jurisdictions || [],
+              createdAt: updatedAssessment.createdAt,
+              updatedAt: updatedAssessment.updatedAt,
+            },
+          })
+        }
       }
     } else if (step === '3') {
       // For step3, save compliance data to actual database columns
@@ -838,16 +875,19 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
       }
     }
 
-    request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
-
-    return reply.status(200).send({
-      success: true,
-      data: {
-        id,
-        step: parseInt(step, 10),
-        message: `Step ${step} saved successfully`,
-      },
-    })
+    // For step2, return success message (step1 and step3 already return data above)
+    if (step !== '1' && step !== '3') {
+      request.log.info({ assessmentId: id, step, userId }, 'Assessment step saved')
+      
+      return reply.status(200).send({
+        success: true,
+        data: {
+          id,
+          step: parseInt(step, 10),
+          message: `Step ${step} saved successfully`,
+        },
+      })
+    }
   } catch (error) {
     request.log.error({ err: error }, 'Save assessment step error')
     return reply.status(500).send({
