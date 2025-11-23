@@ -15,7 +15,9 @@
     "check-password": "tsx scripts/check-user-password.ts",
     "reset-password": "tsx scripts/reset-user-password.ts",
     "migrate:onboarding": "tsx scripts/run-migration-002.ts",
-    "migrate:council": "tsx scripts/run-migration-003.ts"
+    "migrate:council": "tsx scripts/run-migration-003.ts",
+    "migrate:vendor": "tsx scripts/run-migration-004.ts",
+    "migrate:all": "npm run migrate:onboarding && npm run migrate:council && npm run migrate:vendor"
   },
   "keywords": [
     "api",

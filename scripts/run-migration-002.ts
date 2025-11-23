@@ -25,18 +25,16 @@ async function runMigration() {
     const sqlPath = join(__dirname, '002-add-user-onboarding-fields.sql')
     const sql = readFileSync(sqlPath, 'utf-8')
 
-    // Split by semicolons and execute each statement
-    const statements = sql
-      .split(';')
-      .map(s => s.trim())
-      .filter(s => s.length > 0 && !s.startsWith('--'))
+    // Execute the entire SQL file as one statement (handles DO blocks properly)
+    // Remove comments first
+    const cleanSql = sql
+      .split('\n')
+      .filter(line => !line.trim().startsWith('--'))
+      .join('\n')
+      .trim()
 
-    for (const statement of statements) {
-      if (statement.length > 0) {
-        console.log(`Executing: ${statement.substring(0, 50)}...`)
-        await query(statement)
-      }
-    }
+    console.log('Executing migration SQL...')
+    await query(cleanSql)
 
     console.log('✅ Migration 002 completed successfully!')
     console.log('\nAdded columns to User table:')
