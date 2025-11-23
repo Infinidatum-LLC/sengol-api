@@ -281,8 +281,13 @@ export async function saveQuestionsController(
 
   try {
     // Auth check - verify user is authenticated
-    const userId = getUserId(request)
+    // Get userId from header (x-user-id) or from JWT if available
+    const userId = (request.headers['x-user-id'] as string) || getUserId(request)
     if (!userId) {
+      request.log.warn({
+        hasXUserId: !!request.headers['x-user-id'],
+        hasJwtUserId: !!getUserId(request)
+      }, 'Missing userId in save questions request')
       return reply.code(401).send({ 
         success: false,
         error: 'Authentication required',
