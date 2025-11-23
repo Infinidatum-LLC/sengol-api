@@ -348,11 +348,247 @@ async function deleteProject(request: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * Get project by ID
+ *
+ * GET /api/projects/:id
+ *
+ * Retrieves a single project with all its related data.
+ */
+async function getProject(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const userId = request.headers['x-user-id'] as string
+    const { id } = request.params as { id: string }
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    if (!id || typeof id !== 'string') {
+      throw new ValidationError('Project ID is required', 'INVALID_INPUT')
+    }
+
+    // Fetch project
+    const result = await query(
+      `SELECT "id", "userId", "name", "description", "status", "createdAt", "updatedAt"
+       FROM "Project"
+       WHERE "id" = $1 AND "userId" = $2
+       LIMIT 1`,
+      [id, userId]
+    )
+
+    if (result.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Project not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const project = result.rows[0]
+
+    // Fetch assessment count
+    const assessmentResult = await query(
+      `SELECT COUNT(*) as count FROM "RiskAssessment" WHERE "projectId" = $1`,
+      [id]
+    )
+
+    request.log.info({ projectId: id, userId }, 'Project retrieved')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id: project.id,
+        userId: project.userId,
+        name: project.name || 'Untitled Project',
+        description: project.description || '',
+        status: project.status || 'active',
+        assessmentCount: parseInt(assessmentResult.rows[0]?.count || '0', 10),
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+      },
+    })
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Get project error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to fetch project',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
+ * Update project
+ *
+ * PUT /api/projects/:id
+ *
+ * Updates an existing project.
+ */
+async function updateProject(request: FastifyRequest, reply: FastifyReply) {
+  try {
+    const userId = request.headers['x-user-id'] as string
+    const { id } = request.params as { id: string }
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    if (!id || typeof id !== 'string') {
+      throw new ValidationError('Project ID is required', 'INVALID_INPUT')
+    }
+
+    const { name, description, status, color } = request.body as {
+      name?: string
+      description?: string | null
+      status?: string
+      color?: string | null
+    }
+
+    // Verify project exists and belongs to user
+    const checkResult = await query(
+      `SELECT "id" FROM "Project" WHERE "id" = $1 AND "userId" = $2 LIMIT 1`,
+      [id, userId]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Project not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    // Build update query
+    const updateFields: string[] = []
+    const updateValues: any[] = []
+    let paramIndex = 1
+
+    if (name !== undefined) {
+      if (!name || typeof name !== 'string' || name.trim().length === 0) {
+        throw new ValidationError('Project name cannot be empty', 'INVALID_INPUT')
+      }
+      if (name.length > 255) {
+        throw new ValidationError('Project name must be 255 characters or less', 'INVALID_INPUT')
+      }
+      updateFields.push(`"name" = $${paramIndex}`)
+      updateValues.push(name.trim())
+      paramIndex++
+    }
+
+    if (description !== undefined) {
+      updateFields.push(`"description" = $${paramIndex}`)
+      updateValues.push(description || '')
+      paramIndex++
+    }
+
+    if (status !== undefined) {
+      const validStatuses = ['active', 'archived', 'completed']
+      if (!validStatuses.includes(status)) {
+        throw new ValidationError(
+          `Invalid status. Must be one of: ${validStatuses.join(', ')}`,
+          'INVALID_STATUS'
+        )
+      }
+      updateFields.push(`"status" = $${paramIndex}`)
+      updateValues.push(status)
+      paramIndex++
+    }
+
+    if (color !== undefined) {
+      updateFields.push(`"color" = $${paramIndex}`)
+      updateValues.push(color || null)
+      paramIndex++
+    }
+
+    if (updateFields.length === 0) {
+      throw new ValidationError('No fields to update', 'INVALID_INPUT')
+    }
+
+    updateFields.push(`"updatedAt" = NOW()`)
+    updateValues.push(id, userId)
+
+    await query(
+      `UPDATE "Project"
+       SET ${updateFields.join(', ')}
+       WHERE "id" = $${paramIndex} AND "userId" = $${paramIndex + 1}`,
+      updateValues
+    )
+
+    // Fetch updated project
+    const result = await query(
+      `SELECT "id", "userId", "name", "description", "status", "createdAt", "updatedAt"
+       FROM "Project"
+       WHERE "id" = $1 AND "userId" = $2
+       LIMIT 1`,
+      [id, userId]
+    )
+
+    const project = result.rows[0]
+
+    request.log.info({ projectId: id, userId }, 'Project updated')
+
+    return reply.status(200).send({
+      success: true,
+      data: {
+        id: project.id,
+        userId: project.userId,
+        name: project.name || 'Untitled Project',
+        description: project.description || '',
+        status: project.status || 'active',
+        createdAt: project.createdAt,
+        updatedAt: project.updatedAt,
+      },
+    })
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code || 'VALIDATION_ERROR',
+        statusCode: 400,
+      })
+    }
+
+    request.log.error({ err: error }, 'Update project error')
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to update project',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    })
+  }
+}
+
+/**
  * Register all project routes
  */
 export async function projectsRoutes(fastify: FastifyInstance) {
   fastify.get('/api/projects', listProjects)
   fastify.post('/api/projects', createProject)
+  fastify.get('/api/projects/:id', getProject)
+  fastify.put('/api/projects/:id', updateProject)
   fastify.delete('/api/projects/:id', deleteProject)
 
   fastify.log.info('Project routes registered')
