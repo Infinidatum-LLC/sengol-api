@@ -744,19 +744,29 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
     // Create assessment
     const assessmentId = randomUUID()
     const now = new Date()
+    const assessmentName = body.name || 'Untitled Assessment'
 
-    request.log.info({ assessmentId, userId, projectId: body.projectId }, 'Creating assessment in database')
+    request.log.info({ assessmentId, userId, projectId: body.projectId, name: assessmentName }, 'Creating assessment in database')
 
     try {
       await query(
         `INSERT INTO "RiskAssessment" (
-          "id", "userId", "projectId", "status", "createdAt", "updatedAt"
-        ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          "id", "userId", "projectId", "name", "industry", "companySize", 
+          "budgetRange", "timeline", "teamSize", "overallRiskScore", 
+          "businessImpact", "createdAt", "updatedAt"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           assessmentId,
           userId,
           body.projectId || null,
-          'draft',
+          assessmentName,
+          '', // industry - default empty
+          'small', // companySize - default
+          '0-10k', // budgetRange - default
+          '1-3 months', // timeline - default
+          1, // teamSize - default
+          0, // overallRiskScore - default
+          JSON.stringify({}), // businessImpact - default empty object
           now.toISOString(),
           now.toISOString(),
         ]
@@ -825,7 +835,14 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
         id: assessmentId,
         userId,
         projectId: body.projectId || null,
-        status: 'draft',
+        name: assessmentName,
+        industry: '',
+        companySize: 'small',
+        budgetRange: '0-10k',
+        timeline: '1-3 months',
+        teamSize: 1,
+        overallRiskScore: 0,
+        businessImpact: {},
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       },
