@@ -369,9 +369,35 @@ export async function saveQuestionsController(
       throw error
     }
 
-    // Update assessment with generated questions
-    const existingRiskNotes = (assessment.riskNotes as any) || {}
-    const existingComplianceNotes = (assessment.complianceNotes as any) || {}
+    // ✅ FIX: Parse riskNotes if it's a JSON string (PostgreSQL JSON columns can be strings)
+    let existingRiskNotes: any = {}
+    if (assessment.riskNotes) {
+      if (typeof assessment.riskNotes === 'string') {
+        try {
+          existingRiskNotes = JSON.parse(assessment.riskNotes)
+        } catch (parseErr) {
+          request.log.warn({ err: parseErr }, 'Failed to parse existing riskNotes as JSON')
+          existingRiskNotes = {}
+        }
+      } else if (typeof assessment.riskNotes === 'object') {
+        existingRiskNotes = assessment.riskNotes
+      }
+    }
+
+    // ✅ FIX: Parse complianceNotes if it's a JSON string
+    let existingComplianceNotes: any = {}
+    if (assessment.complianceNotes) {
+      if (typeof assessment.complianceNotes === 'string') {
+        try {
+          existingComplianceNotes = JSON.parse(assessment.complianceNotes)
+        } catch (parseErr) {
+          request.log.warn({ err: parseErr }, 'Failed to parse existing complianceNotes as JSON')
+          existingComplianceNotes = {}
+        }
+      } else if (typeof assessment.complianceNotes === 'object') {
+        existingComplianceNotes = assessment.complianceNotes
+      }
+    }
 
     const updatedRiskNotes = {
       ...existingRiskNotes,

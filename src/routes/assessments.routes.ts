@@ -75,13 +75,47 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
 
     request.log.info({ assessmentId: id, userId: assessment.userId }, 'Assessment retrieved')
 
+    // ✅ FIX: Parse riskNotes if it's a JSON string (PostgreSQL JSON columns can be strings)
+    let parsedRiskNotes: any = {}
+    if (assessment.riskNotes) {
+      if (typeof assessment.riskNotes === 'string') {
+        try {
+          parsedRiskNotes = JSON.parse(assessment.riskNotes)
+        } catch (parseErr) {
+          request.log.warn({ err: parseErr }, 'Failed to parse riskNotes as JSON')
+          parsedRiskNotes = {}
+        }
+      } else if (typeof assessment.riskNotes === 'object') {
+        parsedRiskNotes = assessment.riskNotes
+      }
+    }
+
+    // ✅ FIX: Parse complianceNotes if it's a JSON string
+    let parsedComplianceNotes: any = {}
+    if (assessment.complianceNotes) {
+      if (typeof assessment.complianceNotes === 'string') {
+        try {
+          parsedComplianceNotes = JSON.parse(assessment.complianceNotes)
+        } catch (parseErr) {
+          request.log.warn({ err: parseErr }, 'Failed to parse complianceNotes as JSON')
+          parsedComplianceNotes = {}
+        }
+      } else if (typeof assessment.complianceNotes === 'object') {
+        parsedComplianceNotes = assessment.complianceNotes
+      }
+    }
+
     // Log what we're returning for debugging
     request.log.info({
       assessmentId: id,
       hasSystemDescription: !!assessment.systemDescription,
       systemDescriptionLength: assessment.systemDescription?.length || 0,
       hasIndustry: !!assessment.industry,
-      hasSystemCriticality: !!assessment.systemCriticality
+      hasSystemCriticality: !!assessment.systemCriticality,
+      hasRiskNotes: !!assessment.riskNotes,
+      riskNotesType: typeof assessment.riskNotes,
+      hasGeneratedQuestions: !!(parsedRiskNotes?.generatedQuestions),
+      generatedQuestionsCount: parsedRiskNotes?.generatedQuestions?.length || 0
     }, 'Returning assessment data')
 
     return reply.status(200).send({
@@ -94,7 +128,7 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         riskScore: assessment.riskScore || null,
         complianceScore: assessment.complianceScore || null,
         sengolScore: assessment.sengolScore || null,
-        riskNotes: assessment.riskNotes || {},
+        riskNotes: parsedRiskNotes, // ✅ FIX: Use parsed riskNotes
         systemDescription: assessment.systemDescription || null,
         industry: assessment.industry || null,
         systemCriticality: assessment.systemCriticality || null,
@@ -110,7 +144,7 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         // ✅ FIX: Added Step 3 fields for complete data loading
         complianceQuestionResponses: assessment.complianceQuestionResponses || {},
         complianceUserScores: assessment.complianceUserScores || {},
-        complianceNotes: assessment.complianceNotes || {},
+        complianceNotes: parsedComplianceNotes, // ✅ FIX: Use parsed complianceNotes
         complianceCoverageScore: assessment.complianceCoverageScore || null,
         complianceCoverageDetails: assessment.complianceCoverageDetails || null,
         regulationIds: assessment.regulationIds || [],
