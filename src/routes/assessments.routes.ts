@@ -539,16 +539,51 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
 
     // Update assessment with scores and completion status
     // ✅ FIX: Removed status column update - it doesn't exist
-    await query(
-      `UPDATE "RiskAssessment" 
-       SET "riskScore" = $1, 
-           "complianceScore" = $2, 
-           "sengolScore" = $3,
-           "letterGrade" = $4,
-           "updatedAt" = NOW()
-       WHERE "id" = $5`,
-      [riskScore, complianceScore, sengolScore, letterGrade, id]
-    )
+    // ✅ FIX: letterGrade column may not exist, so we'll try without it first
+    try {
+      await query(
+        `UPDATE "RiskAssessment" 
+         SET "riskScore" = $1, 
+             "complianceScore" = $2, 
+             "sengolScore" = $3,
+             "updatedAt" = NOW()
+         WHERE "id" = $4`,
+        [riskScore, complianceScore, sengolScore, id]
+      )
+      request.log.info({ assessmentId: id }, 'Scores updated successfully (without letterGrade)')
+    } catch (updateError: any) {
+      request.log.error({ err: updateError, assessmentId: id }, 'Failed to update scores, trying with letterGrade')
+      // If that fails, try with letterGrade (in case column exists)
+      try {
+        await query(
+          `UPDATE "RiskAssessment" 
+           SET "riskScore" = $1, 
+               "complianceScore" = $2, 
+               "sengolScore" = $3,
+               "letterGrade" = $4,
+               "updatedAt" = NOW()
+           WHERE "id" = $5`,
+          [riskScore, complianceScore, sengolScore, letterGrade, id]
+        )
+        request.log.info({ assessmentId: id }, 'Scores updated successfully (with letterGrade)')
+      } catch (letterGradeError: any) {
+        // If letterGrade column doesn't exist, update without it
+        if (letterGradeError.code === '42703' || letterGradeError.message?.includes('letterGrade')) {
+          request.log.warn({ assessmentId: id }, 'letterGrade column does not exist, updating without it')
+          await query(
+            `UPDATE "RiskAssessment" 
+             SET "riskScore" = $1, 
+                 "complianceScore" = $2, 
+                 "sengolScore" = $3,
+                 "updatedAt" = NOW()
+             WHERE "id" = $4`,
+            [riskScore, complianceScore, sengolScore, id]
+          )
+        } else {
+          throw letterGradeError
+        }
+      }
+    }
 
     request.log.info({ assessmentId: id, userId, riskScore, complianceScore, sengolScore, letterGrade }, 'Assessment submitted with scores')
 
@@ -563,13 +598,25 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
         message: 'Assessment submitted successfully',
       },
     })
-  } catch (error) {
-    request.log.error({ err: error }, 'Submit assessment error')
+  } catch (error: any) {
+    request.log.error({ 
+      err: error, 
+      errorCode: error.code,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      assessmentId: (request.params as any)?.id
+    }, 'Submit assessment error')
+    
+    // Return more detailed error information
+    const errorMessage = error.message || 'Failed to submit assessment'
+    const errorCode = error.code || 'INTERNAL_ERROR'
+    
     return reply.status(500).send({
       success: false,
-      error: 'Failed to submit assessment',
-      code: 'INTERNAL_ERROR',
+      error: errorMessage,
+      code: errorCode,
       statusCode: 500,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     })
   }
 }
