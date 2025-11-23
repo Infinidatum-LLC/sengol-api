@@ -796,9 +796,9 @@ interface LLMAnalysis {
 
 async function analyzeSystemWithLLM(
   request: QuestionGenerationRequest,
-  incidents: IncidentMatch[]
+  similarIncidents: IncidentMatch[]
 ): Promise<LLMAnalysis> {
-  const incidentSummary = incidents.slice(0, 10).map(i => ({
+  const incidentSummary = similarIncidents.slice(0, 10).map(i => ({
     type: i.incidentType,
     cost: i.estimatedCost ? `$${Number(i.estimatedCost).toLocaleString()}` : 'Unknown',
     similarity: (i.similarity * 100).toFixed(0) + '%',
