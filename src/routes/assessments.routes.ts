@@ -685,7 +685,16 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
     const body = request.body as { userId?: string; projectId?: string; name?: string }
     const userId = request.headers['x-user-id'] as string || body.userId
 
+    request.log.info({ 
+      hasUserId: !!userId,
+      userIdFromHeader: !!request.headers['x-user-id'],
+      userIdFromBody: !!body.userId,
+      projectId: body.projectId,
+      name: body.name
+    }, 'Create assessment request received')
+
     if (!userId) {
+      request.log.warn({ headers: Object.keys(request.headers) }, 'Missing userId in create assessment')
       return reply.status(401).send({
         success: false,
         error: 'User authentication required',
@@ -694,9 +703,22 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
+    // Validate userId is a valid UUID format
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)) {
+      request.log.warn({ userId }, 'Invalid userId format')
+      return reply.status(400).send({
+        success: false,
+        error: 'Invalid user ID format',
+        code: 'INVALID_USER_ID',
+        statusCode: 400,
+      })
+    }
+
     // Create assessment
     const assessmentId = randomUUID()
     const now = new Date()
+
+    request.log.info({ assessmentId, userId, projectId: body.projectId }, 'Creating assessment in database')
 
     await query(
       `INSERT INTO "RiskAssessment" (
@@ -712,7 +734,7 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
       ]
     )
 
-    request.log.info({ assessmentId, userId }, 'Assessment created')
+    request.log.info({ assessmentId, userId }, 'Assessment created successfully')
 
     return reply.status(201).send({
       success: true,
@@ -726,12 +748,38 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
       },
     })
   } catch (error) {
-    request.log.error({ err: error }, 'Create assessment error')
+    request.log.error({ 
+      err: error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined
+    }, 'Create assessment error')
+    
+    // Check if it's a database constraint error
+    if (error instanceof Error) {
+      if (error.message.includes('foreign key') || error.message.includes('constraint')) {
+        return reply.status(400).send({
+          success: false,
+          error: 'Invalid project ID or user ID',
+          code: 'INVALID_REFERENCE',
+          statusCode: 400,
+        })
+      }
+      if (error.message.includes('duplicate key') || error.message.includes('unique constraint')) {
+        return reply.status(409).send({
+          success: false,
+          error: 'Assessment already exists',
+          code: 'DUPLICATE_ASSESSMENT',
+          statusCode: 409,
+        })
+      }
+    }
+    
     return reply.status(500).send({
       success: false,
       error: 'Failed to create assessment',
       code: 'INTERNAL_ERROR',
       statusCode: 500,
+      details: error instanceof Error ? error.message : String(error)
     })
   }
 }
