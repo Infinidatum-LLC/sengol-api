@@ -162,9 +162,19 @@ export async function generateQuestionsController(
 
     // Validate systemDescription exists (either from request or database)
     if (!systemDescription || typeof systemDescription !== 'string' || systemDescription.trim().length === 0) {
+      request.log.error({
+        assessmentId: id,
+        hasRequestSystemDescription: !!requestSystemDescription,
+        hasDbSystemDescription: !!assessment.systemDescription,
+        requestSystemDescriptionLength: requestSystemDescription?.length || 0,
+        dbSystemDescriptionLength: assessment.systemDescription?.length || 0
+      }, 'System description validation failed')
       return reply.code(400).send({
+        success: false,
         error: 'System description is required',
-        message: 'Please provide a system description or ensure the assessment has one saved'
+        message: 'Please provide a system description in the request body or ensure the assessment has one saved. The system description must be at least 50 characters.',
+        code: 'MISSING_SYSTEM_DESCRIPTION',
+        statusCode: 400
       })
     }
 
@@ -190,15 +200,42 @@ export async function generateQuestionsController(
     }
 
     // Generate questions
-    const result = await generateDynamicQuestions({
-      systemDescription,
+    request.log.info({
+      assessmentId: id,
+      systemDescriptionLength: systemDescription.length,
       selectedDomains,
       jurisdictions,
       industry,
-      techStack: [...(selectedTech || []), ...(customTech || [])],
-      questionIntensity: questionIntensity || 'high', // Default to high if not specified
-      skipIncidentSearch: skipIncidentSearch // Pass through the parameter to control incident search behavior
-    })
+      questionIntensity: questionIntensity || 'high',
+      skipIncidentSearch
+    }, 'Starting question generation')
+
+    let result
+    try {
+      result = await generateDynamicQuestions({
+        systemDescription,
+        selectedDomains,
+        jurisdictions,
+        industry,
+        techStack: [...(selectedTech || []), ...(customTech || [])],
+        questionIntensity: questionIntensity || 'high', // Default to high if not specified
+        skipIncidentSearch: skipIncidentSearch // Pass through the parameter to control incident search behavior
+      })
+      request.log.info({
+        assessmentId: id,
+        riskQuestionsCount: result.riskQuestions?.length || 0,
+        complianceQuestionsCount: result.complianceQuestions?.length || 0
+      }, 'Question generation completed successfully')
+    } catch (error) {
+      request.log.error({
+        err: error,
+        assessmentId: id,
+        systemDescriptionLength: systemDescription.length,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorStack: error instanceof Error ? error.stack : undefined
+      }, 'Question generation failed')
+      throw error
+    }
 
     // Build response based on whether incidents were included
     const responseData: any = {

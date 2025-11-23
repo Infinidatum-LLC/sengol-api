@@ -766,6 +766,7 @@ Return JSON:
 }`
 
   try {
+    console.log('[LLM] Calling OpenAI API for system analysis...')
     const response = await gemini.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       responseFormat: { type: 'json_object' },
