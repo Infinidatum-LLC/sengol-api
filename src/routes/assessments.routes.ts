@@ -39,9 +39,9 @@ import { createAssessmentSnapshot } from '../services/assessment-history'
  * ```
  */
 async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string }
+  
   try {
-    const { id } = request.params as { id: string }
-    
     request.log.info({ assessmentId: id }, 'Getting assessment by ID')
 
     // Validate input
