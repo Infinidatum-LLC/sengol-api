@@ -32,13 +32,14 @@ async function archiveArticles(request: FastifyRequest, reply: FastifyReply) {
     }
 
     // Archive articles older than 90 days
+    // Note: Table is "NewsItem", not "NewsArticle"
     const archiveDate = new Date()
     archiveDate.setDate(archiveDate.getDate() - 90)
 
     const result = await query(
-      `UPDATE "NewsArticle"
+      `UPDATE "NewsItem"
        SET "status" = 'archived', "updatedAt" = NOW()
-       WHERE "status" = 'active' 
+       WHERE ("status" IS NULL OR "status" = 'active' OR "status" != 'archived')
          AND "createdAt" < $1
        RETURNING "id"`,
       [archiveDate.toISOString()]
