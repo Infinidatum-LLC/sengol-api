@@ -886,11 +886,14 @@ async function saveAssessmentStep(request: FastifyRequest, reply: FastifyReply) 
       updateFields.push(`"updatedAt" = NOW()`)
 
       if (updateFields.length > 0) {
+        // Add id to the end of updateValues for WHERE clause
         updateValues.push(id)
+        // Use the length of updateValues as the parameter index for WHERE clause
+        const whereParamIndex = updateValues.length
         await query(
           `UPDATE "RiskAssessment" 
            SET ${updateFields.join(', ')}
-           WHERE "id" = $${paramIndex}`,
+           WHERE "id" = $${whereParamIndex}`,
           updateValues
         )
         
