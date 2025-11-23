@@ -294,7 +294,6 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
           }
           return val
         })(),
-        regulationIds: assessment.regulationIds || [],
         createdAt: assessment.createdAt,
         updatedAt: assessment.updatedAt,
       },
