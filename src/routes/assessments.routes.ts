@@ -325,8 +325,6 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
       error: 'Failed to fetch assessment',
       code: 'INTERNAL_ERROR',
       details: error instanceof Error ? error.message : String(error),
-      code: 'INTERNAL_ERROR',
-      statusCode: 500,
     })
   }
 }
