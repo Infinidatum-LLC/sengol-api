@@ -9,38 +9,37 @@ This document tracks routes that the frontend calls but don't exist in the backe
 - ✅ PUT `/api/projects/:id` - Update project
 - ✅ DELETE `/api/projects/:id` - Already exists
 
-### 2. Subscription Routes
-- ❌ GET `/api/subscription/user/:userId` - Frontend calls this, backend has `/api/auth/subscription/:userId`
-  - **Action**: Add alias route or update frontend
+### 2. Subscription Routes ✅ FIXED
+- ✅ GET `/api/subscription/user/:userId` - Added alias route
 
-### 3. Council Vendor Sub-routes
-- ❌ POST `/api/council/vendors/:id/assess` - Trigger vendor assessment
-- ❌ GET `/api/council/vendors/:id/scorecard` - Get vendor risk scorecard
-- ❌ GET `/api/council/vendors/:id/assessments` - List vendor assessments
+### 3. Council Vendor Sub-routes ✅ FIXED
+- ✅ POST `/api/council/vendors/:id/assess` - Trigger vendor assessment
+- ✅ GET `/api/council/vendors/:id/scorecard` - Get vendor risk scorecard
+- ✅ GET `/api/council/vendors/:id/assessments` - List vendor assessments
 
-### 4. Council Policies Routes
-- ❌ GET `/api/council/policies` - List policies
-- ❌ POST `/api/council/policies` - Create policy
-- ❌ GET `/api/council/policies/:id` - Get policy
-- ❌ PUT `/api/council/policies/:id` - Update policy
-- ❌ DELETE `/api/council/policies/:id` - Delete policy
-- ❌ POST `/api/council/policies/:id/evaluate` - Evaluate policy
-- ❌ POST `/api/council/policies/evaluate-all` - Evaluate all policies
+### 4. Council Policies Routes ✅ FIXED
+- ✅ GET `/api/council/policies` - List policies
+- ✅ POST `/api/council/policies` - Create policy
+- ✅ GET `/api/council/policies/:id` - Get policy
+- ✅ PUT `/api/council/policies/:id` - Update policy
+- ✅ DELETE `/api/council/policies/:id` - Delete policy
+- ✅ POST `/api/council/policies/:id/evaluate` - Evaluate policy
+- ✅ POST `/api/council/policies/evaluate-all` - Evaluate all policies
 
-### 5. Council Schedules Routes
-- ❌ GET `/api/council/schedules` - List schedules
-- ❌ POST `/api/council/schedules` - Create schedule
-- ❌ GET `/api/council/schedules/:id` - Get schedule
-- ❌ PUT `/api/council/schedules/:id` - Update schedule
-- ❌ DELETE `/api/council/schedules/:id` - Delete schedule
-- ❌ POST `/api/council/schedules/:id/run-now` - Run schedule now
+### 5. Council Schedules Routes ✅ FIXED
+- ✅ GET `/api/council/schedules` - List schedules
+- ✅ POST `/api/council/schedules` - Create schedule
+- ✅ GET `/api/council/schedules/:id` - Get schedule
+- ✅ PUT `/api/council/schedules/:id` - Update schedule
+- ✅ DELETE `/api/council/schedules/:id` - Delete schedule
+- ✅ POST `/api/council/schedules/:id/run-now` - Run schedule now
 
-### 6. Council Violations Routes
-- ❌ GET `/api/council/violations` - List violations
-- ❌ PATCH `/api/council/violations/:id` - Update violation status
+### 6. Council Violations Routes ✅ FIXED
+- ✅ GET `/api/council/violations` - List violations
+- ✅ PATCH `/api/council/violations/:id` - Update violation status
 
-### 7. Council Status Route
-- ❌ GET `/api/council/status` - Get council module status
+### 7. Council Status Route ✅ FIXED
+- ✅ GET `/api/council/status` - Get council module status
 
 ## Medium Priority Routes
 
@@ -89,17 +88,18 @@ This document tracks routes that the frontend calls but don't exist in the backe
 
 ## Low Priority / Optional Routes
 
-### 12. Assessment Sub-routes
+### 12. Assessment Sub-routes ✅ FIXED
 - ✅ GET `/api/assessments/:id` - Exists
+- ✅ POST `/api/assessments` - Create new assessment
 - ✅ POST `/api/assessments/:id/save-progress` - Exists
 - ✅ GET `/api/assessments/:id/progress` - Exists
-- ❌ POST `/api/assessments/:id/submit` - Submit assessment
-- ❌ GET `/api/assessments/:id/scores` - Get scores
-- ❌ GET `/api/assessments/:id/benchmark` - Get benchmark
-- ❌ GET `/api/assessments/:id/similar-cases` - Get similar cases
-- ❌ POST `/api/assessments/:id/step1` - Save step 1
-- ❌ POST `/api/assessments/:id/step2` - Save step 2
-- ❌ POST `/api/assessments/:id/step3` - Save step 3
+- ✅ POST `/api/assessments/:id/submit` - Submit assessment
+- ✅ GET `/api/assessments/:id/scores` - Get scores
+- ✅ GET `/api/assessments/:id/benchmark` - Get benchmark
+- ✅ GET `/api/assessments/:id/similar-cases` - Get similar cases
+- ✅ PUT `/api/assessments/:id/step1` - Save step 1
+- ✅ PUT `/api/assessments/:id/step2` - Save step 2
+- ✅ PUT `/api/assessments/:id/step3` - Save step 3
 
 ### 13. Review Routes
 - ✅ POST `/review/analyze-system` - Exists (no /api prefix)
