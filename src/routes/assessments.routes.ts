@@ -294,8 +294,9 @@ async function getAssessmentProgress(request: FastifyRequest, reply: FastifyRepl
     }
 
     // Fetch assessment
+    // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
     const result = await query(
-      `SELECT "id", "status", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      `SELECT "id", "riskNotes" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
       [id]
     )
 
@@ -381,7 +382,8 @@ async function submitAssessment(request: FastifyRequest, reply: FastifyReply) {
 
     // Verify assessment exists and belongs to user
     const checkResult = await query(
-      `SELECT "id", "userId", "status" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
+      `SELECT "id", "userId" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
       [id]
     )
 
@@ -479,7 +481,7 @@ async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply)
         riskScore: assessment.riskScore || null,
         complianceScore: assessment.complianceScore || null,
         sengolScore: assessment.sengolScore || null,
-        status: assessment.status || 'draft',
+        // ✅ FIX: Removed status field - it doesn't exist in RiskAssessment table
       },
     })
   } catch (error) {
