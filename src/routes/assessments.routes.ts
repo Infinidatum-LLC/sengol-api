@@ -126,10 +126,10 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
         id: assessment.id,
         userId: assessment.userId,
         projectId: assessment.projectId || null,
-        // ✅ FIX: Removed status field - it doesn't exist in RiskAssessment table
-        riskScore: assessment.riskScore || null,
-        complianceScore: assessment.complianceScore || null,
-        sengolScore: assessment.sengolScore || null,
+        // ✅ FIX: Map database column names (aiRiskScore, aiComplianceScore, aiSengolScore) to frontend-expected names
+        riskScore: assessment.aiRiskScore || null,
+        complianceScore: assessment.aiComplianceScore || null,
+        sengolScore: assessment.aiSengolScore || null,
         riskNotes: parsedRiskNotes, // ✅ FIX: Use parsed riskNotes
         systemDescription: assessment.systemDescription || null,
         industry: assessment.industry || null,
