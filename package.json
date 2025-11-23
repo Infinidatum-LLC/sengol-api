@@ -14,7 +14,8 @@
     "grant-premium": "tsx scripts/grant-premium-access.ts",
     "check-password": "tsx scripts/check-user-password.ts",
     "reset-password": "tsx scripts/reset-user-password.ts",
-    "migrate:onboarding": "tsx scripts/run-migration-002.ts"
+    "migrate:onboarding": "tsx scripts/run-migration-002.ts",
+    "migrate:council": "tsx scripts/run-migration-003.ts"
   },
   "keywords": [
     "api",

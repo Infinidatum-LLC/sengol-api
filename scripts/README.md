@@ -82,3 +82,53 @@ npm run grant-premium
 - This script is idempotent - it's safe to run multiple times
 - Users who already have premium subscriptions will be skipped
 - The script uses `ON CONFLICT DO UPDATE` to handle duplicate subscriptions gracefully
+
+## Migration 003: Create AI Risk Council Tables
+
+This migration creates the database tables required for the AI Risk Council functionality:
+- `Policy` - Stores AI governance policies
+- `AssessmentSchedule` - Stores scheduled risk assessments
+- `PolicyViolation` - Stores policy violations detected during assessments
+- `ProductAccess` - Stores user product access permissions (if not exists)
+
+### Usage
+
+```bash
+# Make sure DATABASE_URL is set in your .env file
+npm run migrate:council
+```
+
+Or directly:
+```bash
+tsx scripts/run-migration-003.ts
+```
+
+### What it does
+
+1. Creates `Policy` table with columns:
+   - id, geographyAccountId, name, description, category, status, createdAt, updatedAt
+   - Indexes on geographyAccountId, status, createdAt
+
+2. Creates `AssessmentSchedule` table with columns:
+   - id, geographyAccountId, name, description, frequency, status, nextRunAt, lastRunAt, createdAt, updatedAt
+   - Indexes on geographyAccountId, status, nextRunAt
+
+3. Creates `PolicyViolation` table with columns:
+   - id, geographyAccountId, policyId, assessmentId, severity, status, description, resolution, createdAt, updatedAt
+   - Indexes on geographyAccountId, policyId, status, severity
+
+4. Creates `ProductAccess` table (if not exists) with columns:
+   - id, userId, productSlug, status, expiresAt, grantedAt, createdAt, updatedAt
+   - Indexes on userId, productSlug, status
+
+### Requirements
+
+- `DATABASE_URL` environment variable must be set
+- Database connection must be accessible
+- User must have CREATE TABLE permissions
+
+### Notes
+
+- This migration is idempotent (uses `IF NOT EXISTS`)
+- Safe to run multiple times
+- All tables support multi-tenancy via `geographyAccountId`
