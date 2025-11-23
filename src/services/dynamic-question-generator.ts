@@ -1614,9 +1614,17 @@ Format: Return ONLY the question text, nothing else. No preamble, explanation, o
       // ✅ Strip any "Based on X incidents" prefix from compliance questions
       complianceQuestionText = stripIncidentPrefix(complianceQuestionText)
     }
-    console.log(`[LLM_COMPLIANCE] Generated: ${complianceQuestionText.substring(0, 80)}...`)
+    const providerUsed = (completion as any).provider || 'unknown'
+    console.log(`[LLM_COMPLIANCE] Generated: ${complianceQuestionText.substring(0, 80)}... (Provider: ${providerUsed})`)
   } catch (error) {
     console.error(`[LLM_COMPLIANCE] Failed to generate compliance question for ${complianceArea}:`, error)
+    // Log error details for debugging fallback
+    if (error instanceof Error) {
+      console.error(`[LLM_COMPLIANCE] Error details: ${error.message}`)
+      if (error.message.includes('All LLM providers failed')) {
+        console.error(`[LLM_COMPLIANCE] ⚠️  All LLM providers failed - check API keys`)
+      }
+    }
     // Use comprehensive fallback question generation
     complianceQuestionText = generateComplianceFallbackQuestion(
       complianceArea,
