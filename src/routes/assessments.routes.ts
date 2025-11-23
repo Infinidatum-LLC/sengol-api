@@ -41,6 +41,8 @@ import { createAssessmentSnapshot } from '../services/assessment-history'
 async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
   try {
     const { id } = request.params as { id: string }
+    
+    request.log.info({ assessmentId: id }, 'Getting assessment by ID')
 
     // Validate input
     if (!id || typeof id !== 'string') {
@@ -309,10 +311,20 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    request.log.error({ err: error }, 'Get assessment error')
+    // ✅ CRITICAL: Log detailed error information
+    request.log.error({ 
+      err: error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      errorName: error instanceof Error ? error.name : typeof error,
+      assessmentId: id
+    }, 'Get assessment error')
+    
     return reply.status(500).send({
       success: false,
       error: 'Failed to fetch assessment',
+      code: 'INTERNAL_ERROR',
+      details: error instanceof Error ? error.message : String(error),
       code: 'INTERNAL_ERROR',
       statusCode: 500,
     })
