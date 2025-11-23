@@ -504,10 +504,32 @@ export async function generateDynamicQuestions(
   const overallStartTime = Date.now()
 
   try {
-    console.log('\n🎯 Starting Dynamic Question Generation...')
+    console.log('\n🎯 Starting Dynamic Question Generation with Multi-Provider LLM...')
     console.log('System: "' + request.systemDescription.substring(0, 100) + '..."')
     console.log('Domains:', request.selectedDomains || 'Not specified')
     console.log('Industry:', request.industry || 'Not specified')
+    
+    // Log available LLM providers
+    try {
+      const { getProviderStatus } = await import('../lib/multi-llm-client')
+      const providerStatus = getProviderStatus()
+      const availableProviders = Object.entries(providerStatus)
+        .filter(([_, status]) => status.enabled)
+        .map(([name, _]) => name.toUpperCase())
+        .join(', ')
+      console.log(`[LLM] Available providers: ${availableProviders || 'NONE - Please configure API keys'}`)
+      if (availableProviders) {
+        const providerOrder = Object.entries(providerStatus)
+          .filter(([_, status]) => status.enabled)
+          .sort(([_, a], [__, b]) => a.priority - b.priority)
+          .map(([name, _]) => name.toUpperCase())
+          .join(' → ')
+        console.log(`[LLM] Provider fallback order: ${providerOrder}`)
+      }
+    } catch (err) {
+      console.warn('[LLM] Could not check provider status:', err)
+    }
+    
     if (request.forceRegenerate) {
       console.log('🔄 Force Regenerate: ENABLED - Bypassing all caches')
     }
