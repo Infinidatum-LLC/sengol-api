@@ -4,6 +4,7 @@ import { generateDynamicQuestions } from '../services/dynamic-question-generator
 import { analyzeSystem } from '../services/system-analysis.service'
 import { ValidationError, AuthenticationError } from '../lib/errors'
 import { getUserId, requireResourceOwnership } from '../middleware/jwt-auth'
+import { generateActionableError, formatErrorForUI } from '../lib/error-messages'
 
 // ============================================================================
 // TYPES
@@ -242,29 +243,32 @@ export async function generateQuestionsController(
         errorName: error instanceof Error ? error.name : 'UnknownError'
       }, 'Question generation failed')
       
-      // Return a user-friendly error response instead of throwing
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      const isOpenAIError = errorMessage.includes('OpenAI') || errorMessage.includes('API key') || errorMessage.includes('OPENAI_API_KEY')
+      // ✅ NEW: Use actionable error messages
+      const actionableError = generateActionableError(error, {
+        operation: 'question_generation',
+        errorType: error instanceof Error ? error.name : 'UnknownError',
+        details: {
+          assessmentId: id,
+          systemDescriptionLength: systemDescription.length,
+        },
+        userId: (request.headers['x-user-id'] as string) || undefined,
+        assessmentId: id
+      })
       
-      if (isOpenAIError) {
-        return reply.code(500).send({
-          success: false,
-          error: 'LLM service unavailable',
-          message: 'The AI question generation service is temporarily unavailable. Please check your OpenAI API key configuration or try again later.',
-          code: 'LLM_SERVICE_ERROR',
-          statusCode: 500,
-          details: errorMessage
-        })
-      }
+      const formattedError = formatErrorForUI(actionableError)
       
-      // For other errors, return a generic error
       return reply.code(500).send({
         success: false,
-        error: 'Failed to generate questions',
-        message: errorMessage,
-        code: 'QUESTION_GENERATION_ERROR',
+        error: actionableError.errorCode,
+        message: formattedError.title,
+        userMessage: formattedError.message,
+        actionableSteps: formattedError.steps,
+        canRetry: formattedError.canRetry,
+        canContinue: formattedError.canContinue,
+        severity: actionableError.severity,
+        estimatedFixTime: actionableError.estimatedFixTime,
         statusCode: 500,
-        details: error instanceof Error ? error.stack : undefined
+        details: error instanceof Error ? error.message : 'Unknown error'
       })
     }
 

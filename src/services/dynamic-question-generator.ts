@@ -16,6 +16,7 @@ import { getFromCache, setInCache, CACHE_TTL } from '../lib/redis-cache'
 import { PRE_FILTER_THRESHOLDS, QUESTION_INTENSITY, WEIGHT_FORMULAS, VECTOR_SEARCH_CONFIG, type QuestionIntensity } from '../config/thresholds'
 import { retryWithBackoff } from '../lib/retry'
 import { validateQuestions, filterValidQuestions } from './question-validator'
+import { shouldInvalidateCache } from './cache-invalidation'
 import crypto from 'crypto'
 
 // ============================================================================
@@ -544,17 +545,26 @@ export async function generateDynamicQuestions(
       const cachedResult = await getFromCache<QuestionGenerationResult>(cacheKey)
 
       if (cachedResult) {
-        const cacheLatency = Date.now() - overallStartTime
-        console.log(`\n🚀 [CACHE HIT] Returning cached questions in ${cacheLatency}ms (99% faster!)`)
-        console.log(`   Risk: ${cachedResult.riskQuestions.length}, Compliance: ${cachedResult.complianceQuestions.length}`)
-        // Update timestamp to reflect cache hit (safely handle potential undefined)
-        if (cachedResult.generationMetadata) {
-          cachedResult.generationMetadata = {
-            ...cachedResult.generationMetadata,
-            timestamp: new Date()
+        // ✅ NEW: Smart cache invalidation - check if system description changed significantly
+        const cachedDescription = (cachedResult as any).cachedSystemDescription || ''
+        const currentDescription = request.systemDescription || ''
+        
+        if (cachedDescription && shouldInvalidateCache(cachedDescription, currentDescription, 0.8)) {
+          console.log(`[CACHE_INVALIDATION] System description changed significantly (similarity < 80%), invalidating cache`)
+          // Don't return cached result, continue to generate fresh questions
+        } else {
+          const cacheLatency = Date.now() - overallStartTime
+          console.log(`\n🚀 [CACHE HIT] Returning cached questions in ${cacheLatency}ms (99% faster!)`)
+          console.log(`   Risk: ${cachedResult.riskQuestions.length}, Compliance: ${cachedResult.complianceQuestions.length}`)
+          // Update timestamp to reflect cache hit (safely handle potential undefined)
+          if (cachedResult.generationMetadata) {
+            cachedResult.generationMetadata = {
+              ...cachedResult.generationMetadata,
+              timestamp: new Date()
+            }
           }
+          return cachedResult
         }
-        return cachedResult
       }
 
       console.log(`[CACHE MISS] Generating fresh questions...`)
@@ -778,7 +788,12 @@ export async function generateDynamicQuestions(
 
     // ✅ OPTIMIZATION: Cache the result for future requests (10 minute TTL)
     // This makes repeat requests 99% faster (<500ms vs 6-12s)
-    await setInCache(cacheKey, result, 600) // 10 minute cache
+    // ✅ NEW: Store system description with cache for smart invalidation
+    const cachePayload = {
+      ...result,
+      cachedSystemDescription: request.systemDescription, // Store for comparison
+    }
+    await setInCache(cacheKey, cachePayload, 600) // 10 minute cache
     console.log(`\n💾 [CACHE STORED] Questions cached for 10 minutes (key: ${cacheKey.substring(0, 30)}...)`)
 
     return result
