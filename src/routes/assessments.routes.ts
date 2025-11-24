@@ -52,9 +52,9 @@ async function getAssessmentById(request: FastifyRequest, reply: FastifyReply) {
     // Fetch assessment from database
     // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
     // ✅ FIX: Added all Step 2 and Step 3 fields for complete data loading
-    // Use the same column names as other queries in this file (lines 1032, 1092)
+    // ✅ FIX: Use correct column names - database uses aiRiskScore, complianceScore, sengolScore
     const result = await query(
-      `SELECT "id", "userId", "projectId", "riskScore", "complianceScore",
+      `SELECT "id", "userId", "projectId", "aiRiskScore" as "riskScore", "complianceScore",
               "sengolScore", "riskNotes", "systemDescription", "industry", 
               "systemCriticality", "dataTypes", "dataSources", "technologyStack",
               "selectedDomains", "jurisdictions", "riskQuestionResponses",
@@ -1028,7 +1028,7 @@ async function getAssessmentScores(request: FastifyRequest, reply: FastifyReply)
     // Fetch assessment with scores
     // ✅ FIX: Removed "status" column - it doesn't exist in RiskAssessment table
     const result = await query(
-      `SELECT "id", "riskScore", "complianceScore", "sengolScore"
+      `SELECT "id", "aiRiskScore" as "riskScore", "complianceScore", "sengolScore"
        FROM "RiskAssessment" 
        WHERE "id" = $1 AND "userId" = $2
        LIMIT 1`,
@@ -2004,6 +2004,107 @@ async function createAssessment(request: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
+ * Delete assessment endpoint
+ *
+ * DELETE /api/assessments/:id
+ *
+ * Deletes an assessment. Only the owner can delete their assessment.
+ *
+ * Response (200):
+ * ```json
+ * {
+ *   "success": true,
+ *   "message": "Assessment deleted successfully"
+ * }
+ * ```
+ */
+async function deleteAssessment(request: FastifyRequest, reply: FastifyReply) {
+  const { id } = request.params as { id: string }
+  const userId = request.headers['x-user-id'] as string
+
+  try {
+    request.log.info({ assessmentId: id, userId }, 'Delete assessment request')
+
+    if (!id || typeof id !== 'string') {
+      throw new ValidationError('Assessment ID is required', 'INVALID_INPUT')
+    }
+
+    if (!userId) {
+      return reply.status(401).send({
+        success: false,
+        error: 'User authentication required',
+        code: 'UNAUTHORIZED',
+        statusCode: 401,
+      })
+    }
+
+    // Check if assessment exists and belongs to user
+    const checkResult = await query(
+      `SELECT "id", "userId" FROM "RiskAssessment" WHERE "id" = $1 LIMIT 1`,
+      [id]
+    )
+
+    if (checkResult.rows.length === 0) {
+      return reply.status(404).send({
+        success: false,
+        error: 'Assessment not found',
+        code: 'NOT_FOUND',
+        statusCode: 404,
+      })
+    }
+
+    const assessment = checkResult.rows[0]
+
+    // Verify ownership
+    if (assessment.userId !== userId) {
+      request.log.warn({ assessmentId: id, userId, ownerId: assessment.userId }, 'Unauthorized delete attempt')
+      return reply.status(403).send({
+        success: false,
+        error: 'You do not have permission to delete this assessment',
+        code: 'FORBIDDEN',
+        statusCode: 403,
+      })
+    }
+
+    // Delete assessment
+    await query(
+      `DELETE FROM "RiskAssessment" WHERE "id" = $1`,
+      [id]
+    )
+
+    request.log.info({ assessmentId: id, userId }, 'Assessment deleted successfully')
+
+    return reply.status(200).send({
+      success: true,
+      message: 'Assessment deleted successfully',
+    })
+  } catch (error) {
+    request.log.error({ 
+      err: error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined
+    }, 'Delete assessment error')
+    
+    if (error instanceof ValidationError) {
+      return reply.status(400).send({
+        success: false,
+        error: error.message,
+        code: error.code,
+        statusCode: 400,
+      })
+    }
+    
+    return reply.status(500).send({
+      success: false,
+      error: 'Failed to delete assessment',
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+      details: error instanceof Error ? error.message : String(error)
+    })
+  }
+}
+
+/**
  * Register all assessment routes
  */
 export async function assessmentsRoutes(fastify: FastifyInstance) {
@@ -2019,6 +2120,7 @@ export async function assessmentsRoutes(fastify: FastifyInstance) {
   fastify.put('/api/assessments/:id/step1', saveAssessmentStep)
   fastify.put('/api/assessments/:id/step2', saveAssessmentStep)
   fastify.put('/api/assessments/:id/step3', saveAssessmentStep)
+  fastify.delete('/api/assessments/:id', deleteAssessment)
 
   fastify.log.info('Assessment routes registered')
 }

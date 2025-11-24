@@ -1,8 +1,20 @@
 import dotenv from 'dotenv'
+import { existsSync } from 'fs'
+import { resolve } from 'path'
 
 // Only load .env file in development - Vercel sets vars via dashboard
 if (process.env.NODE_ENV !== 'production') {
-  dotenv.config()
+  // Try .env.local first, then fall back to .env
+  const envLocalPath = resolve(process.cwd(), '.env.local')
+  const envPath = resolve(process.cwd(), '.env')
+  
+  if (existsSync(envLocalPath)) {
+    dotenv.config({ path: envLocalPath })
+  } else if (existsSync(envPath)) {
+    dotenv.config({ path: envPath })
+  } else {
+    dotenv.config() // Default behavior
+  }
 }
 
 export const config = {

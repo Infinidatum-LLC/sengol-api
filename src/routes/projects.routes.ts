@@ -186,10 +186,11 @@ async function createProject(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    const { name, description, status } = request.body as {
+    const { name, description, status, color } = request.body as {
       name?: string
       description?: string
       status?: string
+      color?: string
     }
 
     // Validate input
@@ -217,9 +218,9 @@ async function createProject(request: FastifyRequest, reply: FastifyReply) {
     const now = new Date()
 
     await query(
-      `INSERT INTO "Project" ("id", "userId", "name", "description", "status", "createdAt", "updatedAt")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [projectId, userId, name.trim(), description || '', projectStatus, now.toISOString(), now.toISOString()]
+      `INSERT INTO "Project" ("id", "userId", "name", "description", "status", "color", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [projectId, userId, name.trim(), description || '', projectStatus, color || null, now.toISOString(), now.toISOString()]
     )
 
     request.log.info({ projectId, userId, name }, 'Project created')
@@ -246,12 +247,39 @@ async function createProject(request: FastifyRequest, reply: FastifyReply) {
       })
     }
 
-    request.log.error({ err: error }, 'Create project error')
+    request.log.error({ 
+      err: error,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : undefined,
+      errorName: error instanceof Error ? error.name : undefined
+    }, 'Create project error')
+    
+    // Provide more detailed error information
+    let errorMessage = 'Failed to create project'
+    let errorCode = 'INTERNAL_ERROR'
+    
+    if (error instanceof Error) {
+      // Check for database errors
+      if (error.message.includes('duplicate key') || error.message.includes('unique constraint')) {
+        errorMessage = 'A project with this name already exists'
+        errorCode = 'DUPLICATE_PROJECT'
+      } else if (error.message.includes('foreign key') || error.message.includes('constraint')) {
+        errorMessage = 'Invalid user or project reference'
+        errorCode = 'INVALID_REFERENCE'
+      } else if (error.message.includes('violates not-null constraint')) {
+        errorMessage = 'Required field is missing'
+        errorCode = 'MISSING_REQUIRED_FIELD'
+      } else {
+        errorMessage = error.message || errorMessage
+      }
+    }
+    
     return reply.status(500).send({
       success: false,
-      error: 'Failed to create project',
-      code: 'INTERNAL_ERROR',
+      error: errorMessage,
+      code: errorCode,
       statusCode: 500,
+      details: error instanceof Error ? error.message : String(error)
     })
   }
 }
@@ -398,7 +426,36 @@ async function getProject(request: FastifyRequest, reply: FastifyReply) {
       [id]
     )
 
-    request.log.info({ projectId: id, userId }, 'Project retrieved')
+    // ✅ FIX: Fetch actual risk assessments for the project
+    const riskAssessmentsResult = await query(
+      `SELECT "id", "name", "aiRiskScore" as "overallRiskScore", "aiRiskScore", 
+              "cyberRiskScore", "cloudRiskScore", "complianceScore", "sengolScore", 
+              "letterGrade", "systemDescription", "systemCriticality", 
+              "createdAt", "updatedAt"
+       FROM "RiskAssessment" 
+       WHERE "projectId" = $1 
+       ORDER BY "updatedAt" DESC`,
+      [id]
+    )
+
+    // Parse JSON fields if needed
+    const riskAssessments = riskAssessmentsResult.rows.map((assessment: any) => ({
+      id: assessment.id,
+      name: assessment.name || 'Untitled Assessment',
+      overallRiskScore: assessment.overallRiskScore || null,
+      aiRiskScore: assessment.aiRiskScore || null,
+      cyberRiskScore: assessment.cyberRiskScore || null,
+      cloudRiskScore: assessment.cloudRiskScore || null,
+      complianceScore: assessment.complianceScore || null,
+      sengolScore: assessment.sengolScore || null,
+      letterGrade: assessment.letterGrade || null,
+      systemDescription: assessment.systemDescription || null,
+      systemCriticality: assessment.systemCriticality || null,
+      createdAt: assessment.createdAt,
+      updatedAt: assessment.updatedAt,
+    }))
+
+    request.log.info({ projectId: id, userId, assessmentCount: riskAssessments.length }, 'Project retrieved with assessments')
 
     return reply.status(200).send({
       success: true,
@@ -409,6 +466,7 @@ async function getProject(request: FastifyRequest, reply: FastifyReply) {
         description: project.description || '',
         status: project.status || 'active',
         assessmentCount: parseInt(assessmentResult.rows[0]?.count || '0', 10),
+        riskAssessments: riskAssessments,
         createdAt: project.createdAt,
         updatedAt: project.updatedAt,
       },

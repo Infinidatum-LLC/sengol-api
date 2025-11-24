@@ -48,15 +48,37 @@ async function getCouncilStatus(request: FastifyRequest, reply: FastifyReply) {
 
     let hasAccess = false
     try {
-      const accessResult = await query(
+      // First try by userId
+      let accessResult = await query(
         `SELECT "id" FROM "ProductAccess" 
          WHERE "userId" = $1 
            AND "productSlug" IN ('ai-council-complete', 'ai-council')
-           AND "status" = 'active'
+           AND LOWER("status") = 'active'
            AND ("expiresAt" IS NULL OR "expiresAt" >= NOW())
          LIMIT 1`,
         [userId]
       )
+      
+      // If not found by userId, try by email (fallback for mismatched user IDs)
+      if (accessResult.rows.length === 0) {
+        const userEmail = (request.headers['x-user-email'] as string) || ''
+        if (userEmail) {
+          accessResult = await query(
+            `SELECT pa."id" FROM "ProductAccess" pa
+             JOIN "User" u ON pa."userId" = u.id
+             WHERE u.email = $1 
+               AND pa."productSlug" IN ('ai-council-complete', 'ai-council')
+               AND LOWER(pa."status") = 'active'
+               AND (pa."expiresAt" IS NULL OR pa."expiresAt" >= NOW())
+             LIMIT 1`,
+            [userEmail]
+          )
+          if (accessResult.rows.length > 0) {
+            request.log.info({ userId, userEmail }, 'Found access by email fallback')
+          }
+        }
+      }
+      
       hasAccess = accessResult.rows.length > 0
     } catch (e: unknown) {
       const error = e as Error

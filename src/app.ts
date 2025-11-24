@@ -35,6 +35,7 @@ import { councilPoliciesRoutes } from './routes/council-policies.routes' // Coun
 import { councilSchedulesRoutes } from './routes/council-schedules.routes' // Council schedule routes
 import { councilViolationsRoutes } from './routes/council-violations.routes' // Council violation routes
 import { councilStatusRoutes } from './routes/council-status.routes' // Council status routes
+import { councilPolicyValidationRoutes } from './routes/council-policy-validation.routes' // Council policy validation routes
 import { userOnboardingRoutes } from './routes/user-onboarding.routes' // User onboarding routes
 import { userChangePasswordRoutes } from './routes/user-change-password.routes' // User change password routes
 import { userUsageRoutes } from './routes/user-usage.routes' // User usage routes
@@ -127,6 +128,7 @@ export async function build() {
   await fastify.register(councilSchedulesRoutes) // Council schedule routes (ENABLED)
   await fastify.register(councilViolationsRoutes) // Council violation routes (ENABLED)
   await fastify.register(councilStatusRoutes) // Council status routes (ENABLED)
+  await fastify.register(councilPolicyValidationRoutes) // Council policy validation routes (ENABLED)
   await fastify.register(userOnboardingRoutes) // User onboarding routes (ENABLED)
   await fastify.register(userChangePasswordRoutes) // User change password routes (ENABLED)
   await fastify.register(userUsageRoutes) // User usage routes (ENABLED)
