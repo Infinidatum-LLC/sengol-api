@@ -208,7 +208,7 @@ async function getValidationResult(request: FastifyRequest, reply: FastifyReply)
     )
 
     if (result.rows.length === 0) {
-      sendError(reply, 'Validation result not found', 404)
+      sendError(reply, 'Validation result not found', 'NOT_FOUND', 404)
       return
     }
 
